@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "usbc-average-lookup"
+version = "0.2.0"
+description = "Windows GUI for BOWL.com composite-average lookup"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "USBC Average Lookup contributors" }]
+dependencies = [
+  "openpyxl>=3.1,<4",
+  "playwright>=1.49,<2",
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Win32 (MS Windows)",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "ruff>=0.6,<1",
+]
+build = [
+  "pyinstaller>=6.10,<7",
+]
+
+[project.scripts]
+usbc-average-lookup = "usbc_average_lookup.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
