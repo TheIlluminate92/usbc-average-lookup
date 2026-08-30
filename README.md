@@ -86,7 +86,8 @@ Every input row remains visible in the output, including failures:
 - A runnable Tkinter Windows GUI shell
 - Domain models for members, composite averages, and lookup outcomes
 - Verified selection logic for the newest standard composite record
-- Placeholder authentication and BOWL.com client boundaries
+- Browser-based BOWL.com sign-in through the genuine site; passwords are never
+  exposed to the application
 - JSON export containing every input row, status, average, and notes
 - Unit tests and a GitHub Actions workflow
 - Requirements, architecture, and API discovery notes under [`docs/`](docs/)
@@ -102,9 +103,9 @@ python -m pip install -e ".[dev]"
 python -m usbc_average_lookup
 ```
 
-The current **Look Up Averages** control clearly reports that the starter is not
-connected yet. This prevents the foundation from sending guessed requests to
-BOWL.com.
+The sign-in flow opens Microsoft Edge and waits for the genuine BOWL.com site to
+establish an authenticated API session. The session token is held in memory and
+is never written to application logs or configuration.
 
 ## Run tests
 
@@ -140,4 +141,3 @@ docs/                     Requirements, architecture, and discovery notes
 
 See [`docs/requirements.md`](docs/requirements.md) for acceptance criteria and
 [`docs/api-notes.md`](docs/api-notes.md) for what is known versus still unknown.
-
