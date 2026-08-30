@@ -1,0 +1,47 @@
+name: Build Windows test app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - ".github/workflows/build-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build tools
+        run: python -m pip install -e ".[build]"
+      - name: Build application
+        run: >-
+          pyinstaller
+          --noconfirm
+          --clean
+          --windowed
+          --onedir
+          --name USBC-Average-Lookup
+          --collect-all playwright
+          src/usbc_average_lookup/__main__.py
+      - name: Package test build
+        shell: pwsh
+        run: >-
+          Compress-Archive
+          -Path dist/USBC-Average-Lookup/*
+          -DestinationPath dist/USBC-Average-Lookup-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: USBC-Average-Lookup-Windows
+          path: dist/USBC-Average-Lookup-Windows.zip
+          if-no-files-found: error
+          retention-days: 14
+
