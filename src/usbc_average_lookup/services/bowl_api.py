@@ -132,7 +132,7 @@ def _split_name(name: str) -> tuple[str, str]:
     pieces = name.strip().split()
     if len(pieces) < 2:
         raise ValueError("Enter both a first and last name")
-    return pieces[0], " ".join(pieces[1:])
+    return pieces[0], pieces[-1]
 
 
 def _parse_member(record: dict) -> Member:
@@ -162,3 +162,4 @@ def _parse_composite_average(record: dict) -> CompositeAverage:
         )
     except (KeyError, TypeError, ValueError) as error:
         raise BowlApiError("BOWL.com returned an incomplete average record") from error
+
