@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import tkinter as tk
 from collections import Counter
+from os import environ
 from pathlib import Path
+from threading import Thread
 from tkinter import filedialog, messagebox, ttk
 
 from usbc_average_lookup.models import InputBowler, LookupResult, LookupStatus
+from usbc_average_lookup.services.auth import AuthSession, AuthState, BrowserAuthenticator
+from usbc_average_lookup.services.bowl_api import HttpBowlApi
 from usbc_average_lookup.services.exports import export_json
 from usbc_average_lookup.services.input_parser import parse_input_file
+from usbc_average_lookup.services.lookup import look_up_all
 
 
 class AverageLookupApp(tk.Tk):
@@ -18,6 +23,10 @@ class AverageLookupApp(tk.Tk):
         self.minsize(760, 520)
         self.results: list[LookupResult] = []
         self.bowlers: list[InputBowler] = []
+        self.auth_session = AuthSession(AuthState.SIGNED_OUT)
+        local_data = Path(environ.get("LOCALAPPDATA", Path.home())) / "USBC Average Lookup"
+        self.authenticator = BrowserAuthenticator(local_data / "browser-profile")
+        self.api: HttpBowlApi | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -28,8 +37,12 @@ class AverageLookupApp(tk.Tk):
 
         auth = ttk.Frame(container)
         auth.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-        self.auth_status = ttk.Label(auth, text="Ready for names")
-        self.auth_status.pack(side=tk.LEFT)
+        self.auth_status = ttk.Label(auth, text="Sign in to begin")
+        self.auth_status.pack(side=tk.LEFT, padx=(0, 12))
+        self.sign_in_button = ttk.Button(
+            auth, text="Sign in to BOWL.com", command=self._start_sign_in
+        )
+        self.sign_in_button.pack(side=tk.LEFT)
 
         ttk.Label(container, text="Bowler file").grid(
             row=1, column=0, sticky="w"
@@ -42,7 +55,10 @@ class AverageLookupApp(tk.Tk):
         controls = ttk.Frame(input_area)
         controls.grid(row=0, column=1, sticky="ns", padx=(10, 0))
         ttk.Button(controls, text="Choose file", command=self._choose_file).pack(fill=tk.X)
-        ttk.Button(controls, text="Look up averages", command=self._lookup).pack(fill=tk.X)
+        self.lookup_button = ttk.Button(
+            controls, text="Look up averages", command=self._start_lookup, state=tk.DISABLED
+        )
+        self.lookup_button.pack(fill=tk.X, pady=(8, 0))
 
         results_frame = ttk.LabelFrame(container, text="Results", padding=8)
         results_frame.grid(row=3, column=0, sticky="nsew")
@@ -71,6 +87,31 @@ class AverageLookupApp(tk.Tk):
             side=tk.RIGHT
         )
 
+    def _start_sign_in(self) -> None:
+        self.sign_in_button.configure(state=tk.DISABLED)
+        self.auth_status.configure(text="Complete sign-in in the Edge window…")
+        Thread(target=self._sign_in_worker, daemon=True).start()
+
+    def _sign_in_worker(self) -> None:
+        try:
+            session = self.authenticator.sign_in()
+        except Exception as error:
+            self.after(0, self._sign_in_failed, str(error))
+            return
+        self.after(0, self._signed_in, session)
+
+    def _signed_in(self, session: AuthSession) -> None:
+        self.auth_session = session
+        self.api = HttpBowlApi(lambda: self.auth_session.bearer_token)
+        self.auth_status.configure(text="Signed in — ready")
+        self.sign_in_button.configure(text="Sign in again", state=tk.NORMAL)
+        self.lookup_button.configure(state=tk.NORMAL)
+
+    def _sign_in_failed(self, message: str) -> None:
+        self.auth_status.configure(text="Sign-in not completed")
+        self.sign_in_button.configure(state=tk.NORMAL)
+        messagebox.showerror("Could not sign in", message)
+
     def _choose_file(self) -> None:
         selected = filedialog.askopenfilename(
             title="Choose bowler file",
@@ -84,22 +125,30 @@ class AverageLookupApp(tk.Tk):
             messagebox.showerror("Could not read file", str(error))
             return
         self.file_label.configure(text=f"{Path(selected).name} — {len(self.bowlers)} bowlers")
-        self.auth_status.configure(text="Ready to look up averages")
+        if self.api is not None:
+            self.auth_status.configure(text="Signed in — ready")
 
-    def _lookup(self) -> None:
+    def _start_lookup(self) -> None:
         if not self.bowlers:
             messagebox.showwarning("No file", "Choose a bowler file first.")
             return
-        self.results = [
-            LookupResult(
-                input_name=bowler.name,
-                status=LookupStatus.API_ERROR,
-                membership_id=bowler.membership_id,
-                note="This starter version is not connected to BOWL.com yet",
-            )
-            for bowler in self.bowlers
-        ]
+        if self.api is None:
+            messagebox.showwarning("Sign in needed", "Sign in to BOWL.com first.")
+            return
+        self.lookup_button.configure(state=tk.DISABLED)
+        self.auth_status.configure(text="Looking up averages…")
+        Thread(target=self._lookup_worker, daemon=True).start()
+
+    def _lookup_worker(self) -> None:
+        assert self.api is not None
+        results = look_up_all(self.api, self.bowlers)
+        self.after(0, self._lookup_finished, results)
+
+    def _lookup_finished(self, results: list[LookupResult]) -> None:
+        self.results = results
         self._render_results()
+        self.lookup_button.configure(state=tk.NORMAL)
+        self.auth_status.configure(text="Lookup complete")
 
     def _render_results(self) -> None:
         self.table.delete(*self.table.get_children())
@@ -116,7 +165,11 @@ class AverageLookupApp(tk.Tk):
             )
         counts = Counter(result.status for result in self.results)
         parts = [f"Processed: {len(self.results)}"]
-        parts.extend(f"{status.value}: {counts[status]}" for status in LookupStatus if counts[status])
+        parts.extend(
+            f"{status.value}: {counts[status]}"
+            for status in LookupStatus
+            if counts[status]
+        )
         self.summary.configure(text="  |  ".join(parts))
 
     def _save_results(self) -> None:
@@ -136,3 +189,4 @@ class AverageLookupApp(tk.Tk):
 
 def main() -> None:
     AverageLookupApp().mainloop()
+
