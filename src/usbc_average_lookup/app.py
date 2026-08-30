@@ -203,9 +203,18 @@ class AverageLookupApp(tk.Tk):
             style="Primary.TButton",
         )
         self.sign_in_button.grid(row=0, column=2, rowspan=2, padx=(10, 0), sticky="e")
+        self.sign_out_button = ttk.Button(
+            header,
+            text="Sign out",
+            command=self._sign_out,
+            state=tk.DISABLED,
+        )
+        self.sign_out_button.grid(
+            row=0, column=3, rowspan=2, padx=(8, 0), sticky="e"
+        )
 
         steps = ttk.Frame(header, style="Surface.TFrame")
-        steps.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(18, 0))
+        steps.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(18, 0))
         for column, (number, title) in enumerate(
             (("1", "Sign in"), ("2", "Choose roster"), ("3", "Review"), ("4", "Save"))
         ):
@@ -331,6 +340,7 @@ class AverageLookupApp(tk.Tk):
 
     def _start_sign_in(self) -> None:
         self.sign_in_button.configure(state=tk.DISABLED)
+        self.sign_out_button.configure(state=tk.DISABLED)
         self.auth_status.configure(text="Finish signing in in Edge…")
         Thread(target=self._sign_in_worker, daemon=True).start()
 
@@ -347,12 +357,23 @@ class AverageLookupApp(tk.Tk):
         self.api = HttpBowlApi(lambda: self.auth_session.bearer_token)
         self.auth_status.configure(text="Signed in — ready")
         self.sign_in_button.configure(text="Sign in again", state=tk.NORMAL)
+        self.sign_out_button.configure(state=tk.NORMAL)
         self._update_action_states()
 
     def _sign_in_failed(self, message: str) -> None:
         self.auth_status.configure(text="Sign-in not completed")
         self.sign_in_button.configure(state=tk.NORMAL)
+        self.sign_out_button.configure(state=tk.DISABLED)
         messagebox.showerror("Could not sign in", message)
+
+    def _sign_out(self) -> None:
+        self.authenticator.sign_out()
+        self.auth_session = AuthSession(AuthState.SIGNED_OUT)
+        self.api = None
+        self.auth_status.configure(text="Not signed in")
+        self.sign_in_button.configure(text="Sign in to BOWL.com", state=tk.NORMAL)
+        self.sign_out_button.configure(state=tk.DISABLED)
+        self._update_action_states()
 
     def _choose_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -831,8 +852,14 @@ class IssueDialog(tk.Toplevel):
             self.candidate_table.selection_set("0")
             self.candidate_table.focus("0")
         else:
+            guidance = (
+                "Enter a member ID above and retry"
+                if self.result.status is LookupStatus.API_ERROR
+                and not self.result.membership_id
+                else "Edit above and retry"
+            )
             self.candidate_table.insert(
-                "", tk.END, values=("No saved matches", "—", "Edit above and retry", "—")
+                "", tk.END, values=("No selectable matches", "—", guidance, "—")
             )
 
         self.next_var = tk.BooleanVar(value=True)

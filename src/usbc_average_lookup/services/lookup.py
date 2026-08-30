@@ -19,7 +19,7 @@ def look_up_bowler(api: BowlApi, bowler: InputBowler) -> LookupResult:
         return _result(
             bowler,
             LookupStatus.API_ERROR,
-            str(error) or "BOWL.com could not complete this lookup",
+            _lookup_error_note(bowler, error),
         )
     except ValueError as error:
         return _result(bowler, LookupStatus.API_ERROR, str(error))
@@ -113,3 +113,10 @@ def _result(
         member=member,
         candidates=tuple(candidates or ()),
     )
+
+
+def _lookup_error_note(bowler: InputBowler, error: BowlApiError) -> str:
+    message = str(error).strip()
+    if not bowler.membership_id and "unexpected error" in message.casefold():
+        return "BOWL.com could not resolve this name search. Enter a membership ID and retry."
+    return message or "BOWL.com could not complete this lookup"
