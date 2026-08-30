@@ -1,8 +1,8 @@
-from usbc_average_lookup.models import InputBowler
 import json
 
 from openpyxl import Workbook
 
+from usbc_average_lookup.models import InputBowler
 from usbc_average_lookup.services.input_parser import (
     parse_input_file,
     parse_input_json,

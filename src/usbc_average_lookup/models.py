@@ -65,7 +65,7 @@ class LookupResult:
             self.status is LookupStatus.INACTIVE_MEMBER and self.confirmed_inactive
         )
         if not may_have_average and self.average is not None:
-            raise ValueError("This result status may not include an average")
+            raise ValueError("Only Found or confirmed inactive results may include an average")
 
     @property
     def needs_attention(self) -> bool:
