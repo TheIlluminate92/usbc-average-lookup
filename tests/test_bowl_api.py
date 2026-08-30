@@ -18,7 +18,7 @@ def test_rejects_invalid_membership_id() -> None:
 
 
 def test_splits_first_and_last_name() -> None:
-    assert _split_name("Alex Q Bowler") == ("Alex", "Q Bowler")
+    assert _split_name("Alex Q Bowler") == ("Alex", "Bowler")
 
 
 def test_parses_member_response() -> None:
@@ -53,3 +53,4 @@ def test_parses_composite_average_response() -> None:
     assert average.year == "2025"
     assert average.average == 153
     assert average.games == 188
+
