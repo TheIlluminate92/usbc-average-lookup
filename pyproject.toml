@@ -24,6 +24,9 @@ dev = [
   "pytest>=8,<9",
   "ruff>=0.6,<1",
 ]
+build = [
+  "pyinstaller>=6.10,<7",
+]
 
 [project.scripts]
 usbc-average-lookup = "usbc_average_lookup.app:main"
@@ -41,3 +44,4 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
