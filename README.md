@@ -13,8 +13,8 @@ average data.
 ## Intended workflow
 
 1. Open the app; it handles sign-in only if BOWL.com requires it.
-2. Choose a CSV or delimited text file containing bowler names and optional
-   membership IDs.
+2. Choose a roster file, or use **Single lookup** for one bowler by name or
+   membership ID.
 3. Click **Look Up Averages**.
 4. Pick the right person only when the app finds more than one match.
 5. Click **Save Results** to create the JSON result file.

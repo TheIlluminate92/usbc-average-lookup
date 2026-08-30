@@ -15,8 +15,12 @@ def look_up_bowler(api: BowlApi, bowler: InputBowler) -> LookupResult:
         return _resolve_matches(api, bowler, matches)
     except AuthenticationExpiredError:
         return _result(bowler, LookupStatus.LOGIN_EXPIRED, "Sign in to BOWL.com again")
-    except BowlApiError:
-        return _result(bowler, LookupStatus.API_ERROR, "BOWL.com could not complete this lookup")
+    except BowlApiError as error:
+        return _result(
+            bowler,
+            LookupStatus.API_ERROR,
+            str(error) or "BOWL.com could not complete this lookup",
+        )
     except ValueError as error:
         return _result(bowler, LookupStatus.API_ERROR, str(error))
 
@@ -32,11 +36,11 @@ def resolve_selected_member(
         return resolve_member(api, bowler, member)
     except AuthenticationExpiredError:
         return _result(bowler, LookupStatus.LOGIN_EXPIRED, "Sign in to BOWL.com again")
-    except BowlApiError:
+    except BowlApiError as error:
         return _result(
             bowler,
             LookupStatus.API_ERROR,
-            "BOWL.com could not complete this lookup",
+            str(error) or "BOWL.com could not complete this lookup",
             member=member,
         )
     except ValueError as error:
@@ -82,7 +86,7 @@ def resolve_member(api: BowlApi, bowler: InputBowler, member: Member) -> LookupR
             member=member,
         )
     return LookupResult(
-        input_name=bowler.name,
+        input_name=bowler.name or member.display_name,
         status=LookupStatus.FOUND if member.active else LookupStatus.INACTIVE_MEMBER,
         membership_id=bowler.membership_id or f"{member.prefix}-{member.suffix}",
         average=selected.average,
@@ -102,7 +106,7 @@ def _result(
     candidates: list[Member] | None = None,
 ) -> LookupResult:
     return LookupResult(
-        input_name=bowler.name,
+        input_name=bowler.name or bowler.membership_id,
         status=status,
         membership_id=bowler.membership_id,
         note=note,

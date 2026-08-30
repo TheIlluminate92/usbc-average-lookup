@@ -116,6 +116,29 @@ class AverageLookupApp(tk.Tk):
         )
         style.map("Warm.TButton", background=[("active", "#C98447")])
         style.configure(
+            "TCombobox",
+            fieldbackground=COLORS["surface_raised"],
+            background=COLORS["surface_raised"],
+            foreground=COLORS["text"],
+            arrowcolor=COLORS["text"],
+            bordercolor=COLORS["line"],
+            lightcolor=COLORS["line"],
+            darkcolor=COLORS["line"],
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[
+                ("readonly", COLORS["surface_raised"]),
+                ("disabled", COLORS["surface"]),
+            ],
+            foreground=[
+                ("readonly", COLORS["text"]),
+                ("disabled", COLORS["muted"]),
+            ],
+            selectbackground=[("readonly", COLORS["navy_soft"])],
+            selectforeground=[("readonly", COLORS["text"])],
+        )
+        style.configure(
             "TNotebook",
             background=COLORS["canvas"],
             borderwidth=0,
@@ -152,13 +175,6 @@ class AverageLookupApp(tk.Tk):
             padding=(8, 8),
         )
         style.map("Treeview.Heading", background=[("active", COLORS["surface_raised"])])
-        style.configure(
-            "TCombobox",
-            fieldbackground=COLORS["surface_raised"],
-            background=COLORS["surface_raised"],
-            foreground=COLORS["text"],
-            arrowcolor=COLORS["text"],
-        )
         style.configure(
             "TEntry",
             fieldbackground=COLORS["surface_raised"],
@@ -225,6 +241,13 @@ class AverageLookupApp(tk.Tk):
         self.file_detail.grid(row=1, column=0, sticky="w", pady=(2, 0))
         controls = ttk.Frame(filebar, style="Surface.TFrame")
         controls.grid(row=0, column=1, rowspan=2, sticky="e", padx=(14, 0))
+        self.single_button = ttk.Button(
+            controls,
+            text="Single lookup",
+            command=self._start_single_lookup,
+            state=tk.DISABLED,
+        )
+        self.single_button.pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(controls, text="Choose roster", command=self._choose_file).pack(
             side=tk.LEFT, padx=(0, 8)
         )
@@ -391,6 +414,54 @@ class AverageLookupApp(tk.Tk):
         self._render_results()
         self.auth_status.configure(text="Lookup complete")
         self._update_action_states()
+
+    def _start_single_lookup(self) -> None:
+        if self.api is None:
+            messagebox.showwarning("Sign in needed", "Sign in to BOWL.com first.")
+            return
+        if self.bowlers and len(self.bowlers) != len(self.results):
+            replace = messagebox.askyesno(
+                "Roster not processed",
+                "The selected roster has not been looked up. Start a separate single lookup?",
+            )
+            if not replace:
+                return
+            self.bowlers = []
+            self.results = []
+            self.selected_path = None
+        bowler = SingleLookupDialog(self).show()
+        if bowler is None:
+            return
+        self.single_button.configure(state=tk.DISABLED)
+        self.auth_status.configure(text="Looking up one bowler…")
+        Thread(target=self._single_lookup_worker, args=(bowler,), daemon=True).start()
+
+    def _single_lookup_worker(self, bowler: InputBowler) -> None:
+        assert self.api is not None
+        result = look_up_bowler(self.api, bowler)
+        self.after(0, self._single_lookup_finished, bowler, result)
+
+    def _single_lookup_finished(
+        self, bowler: InputBowler, result: LookupResult
+    ) -> None:
+        self.bowlers.append(bowler)
+        self.results.append(result)
+        if self.selected_path is None:
+            self.file_label.configure(text="Manual lookups")
+            self.file_detail.configure(text=f"{len(self.bowlers)} bowlers added individually")
+        else:
+            self.file_detail.configure(
+                text=f"{len(self.bowlers)} total bowlers, including manual lookups"
+            )
+        self._render_results()
+        self.auth_status.configure(text="Single lookup complete")
+        self._update_action_states()
+        if result.needs_attention:
+            index = len(self.results) - 1
+            self.notebook.select(self.fixes_tab)
+            self.fixes_table.selection_set(str(index))
+            self.fixes_table.focus(str(index))
+            self.fixes_table.see(str(index))
 
     def _clear_results(self) -> None:
         self.results = []
@@ -588,12 +659,90 @@ class AverageLookupApp(tk.Tk):
         )
 
     def _update_action_states(self) -> None:
+        self.single_button.configure(
+            state=tk.NORMAL if self.api is not None else tk.DISABLED
+        )
         self.lookup_button.configure(
             state=tk.NORMAL if self.bowlers and self.api is not None else tk.DISABLED
         )
         has_results = bool(self.results)
         self.clear_button.configure(state=tk.NORMAL if has_results else tk.DISABLED)
         self.save_button.configure(state=tk.NORMAL if has_results else tk.DISABLED)
+
+
+class SingleLookupDialog(tk.Toplevel):
+    def __init__(self, parent: AverageLookupApp) -> None:
+        super().__init__(parent)
+        self.choice: InputBowler | None = None
+        self.title("Single bowler lookup")
+        self.geometry("520x310")
+        self.resizable(False, False)
+        self.configure(background=COLORS["canvas"])
+        self.transient(parent)
+        self.grab_set()
+        self._build()
+
+    def _build(self) -> None:
+        content = ttk.Frame(self, style="App.TFrame", padding=24)
+        content.pack(fill=tk.BOTH, expand=True)
+        content.columnconfigure(1, weight=1)
+        ttk.Label(
+            content,
+            text="Look up one bowler",
+            style="Muted.TLabel",
+            font=("Segoe UI", 18, "bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            content,
+            text="Enter a full name, a membership ID, or both.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 18))
+        ttk.Label(content, text="Bowler name", style="Muted.TLabel").grid(
+            row=2, column=0, sticky="w", padx=(0, 12), pady=6
+        )
+        self.name_var = tk.StringVar()
+        name_entry = ttk.Entry(content, textvariable=self.name_var)
+        name_entry.grid(row=2, column=1, sticky="ew", pady=6)
+        ttk.Label(content, text="Member ID", style="Muted.TLabel").grid(
+            row=3, column=0, sticky="w", padx=(0, 12), pady=6
+        )
+        self.id_var = tk.StringVar()
+        ttk.Entry(content, textvariable=self.id_var).grid(
+            row=3, column=1, sticky="ew", pady=6
+        )
+        ttk.Label(
+            content,
+            text="Example: 7824-376245",
+            style="Muted.TLabel",
+        ).grid(row=4, column=1, sticky="w")
+        buttons = ttk.Frame(content, style="App.TFrame")
+        buttons.grid(row=5, column=0, columnspan=2, sticky="e", pady=(28, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
+        ttk.Button(
+            buttons,
+            text="Look up bowler",
+            command=self._accept,
+            style="Primary.TButton",
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        name_entry.focus_set()
+        self.bind("<Return>", lambda _event: self._accept())
+
+    def _accept(self) -> None:
+        name = self.name_var.get().strip()
+        membership_id = self.id_var.get().strip()
+        if not name and not membership_id:
+            messagebox.showwarning(
+                "Name or ID needed",
+                "Enter a bowler name or membership ID.",
+                parent=self,
+            )
+            return
+        self.choice = InputBowler(name, membership_id)
+        self.destroy()
+
+    def show(self) -> InputBowler | None:
+        self.wait_window()
+        return self.choice
 
 
 class IssueDialog(tk.Toplevel):
@@ -709,10 +858,15 @@ class IssueDialog(tk.Toplevel):
 
     def _bowler(self) -> InputBowler | None:
         name = self.name_var.get().strip()
-        if not name:
-            messagebox.showwarning("Name needed", "Enter the bowler's name.", parent=self)
+        membership_id = self.id_var.get().strip()
+        if not name and not membership_id:
+            messagebox.showwarning(
+                "Name or ID needed",
+                "Enter the bowler's name or membership ID.",
+                parent=self,
+            )
             return None
-        return InputBowler(name, self.id_var.get().strip())
+        return InputBowler(name, membership_id)
 
     def _retry(self) -> None:
         bowler = self._bowler()

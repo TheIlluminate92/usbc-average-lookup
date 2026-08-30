@@ -74,8 +74,10 @@ class HttpBowlApi:
                 "Page": "1",
                 "Size": "10",
             },
+            allow_empty_failure=True,
         )
-        records = payload.get("data", {}).get("results", [])
+        data = payload.get("data")
+        records = data.get("results", []) if isinstance(data, dict) else []
         if not isinstance(records, list):
             raise BowlApiError("BOWL.com returned an unexpected member-search response")
         return [_parse_member(record) for record in records]
@@ -92,12 +94,19 @@ class HttpBowlApi:
                 "suffix": suffix,
             },
         )
-        records = payload.get("data", {}).get("results", [])
+        data = payload.get("data")
+        records = data.get("results", []) if isinstance(data, dict) else []
         if not isinstance(records, list):
             raise BowlApiError("BOWL.com returned an unexpected average response")
         return [_parse_composite_average(record) for record in records]
 
-    def _get_json(self, path: str, parameters: dict[str, str]) -> dict:
+    def _get_json(
+        self,
+        path: str,
+        parameters: dict[str, str],
+        *,
+        allow_empty_failure: bool = False,
+    ) -> dict:
         token = self._token_provider()
         if not token:
             raise AuthenticationExpiredError("Sign in to BOWL.com")
@@ -114,9 +123,35 @@ class HttpBowlApi:
             raise BowlApiError(f"BOWL.com returned HTTP {error.code}") from error
         except (URLError, TimeoutError, json.JSONDecodeError) as error:
             raise BowlApiError("BOWL.com could not be reached") from error
-        if not isinstance(payload, dict) or payload.get("isSuccess") is not True:
-            raise BowlApiError("BOWL.com did not complete the member search")
+        if not isinstance(payload, dict):
+            raise BowlApiError("BOWL.com returned an unexpected response")
+        if payload.get("isSuccess") is not True:
+            detail = _response_error(payload)
+            if allow_empty_failure and not detail:
+                return payload
+            raise BowlApiError(detail or "BOWL.com did not complete the lookup")
         return payload
+
+
+def _response_error(payload: dict) -> str:
+    """Return a useful service message without exposing request credentials."""
+
+    messages: list[str] = []
+    for key in ("validationErrors", "errors"):
+        _collect_messages(payload.get(key), messages)
+    return "; ".join(dict.fromkeys(messages))
+
+
+def _collect_messages(value: object, messages: list[str]) -> None:
+    if isinstance(value, str):
+        if value.strip():
+            messages.append(value.strip())
+    elif isinstance(value, dict):
+        for child in value.values():
+            _collect_messages(child, messages)
+    elif isinstance(value, list):
+        for child in value:
+            _collect_messages(child, messages)
 
 
 def _split_membership_id(membership_id: str) -> tuple[str, str]:

@@ -1,6 +1,11 @@
+import io
+
 import pytest
 
+from usbc_average_lookup.services import bowl_api
 from usbc_average_lookup.services.bowl_api import (
+    BowlApiError,
+    HttpBowlApi,
     _parse_composite_average,
     _parse_member,
     _split_membership_id,
@@ -53,3 +58,22 @@ def test_parses_composite_average_response() -> None:
     assert average.year == "2025"
     assert average.average == 153
     assert average.games == 188
+
+
+def test_unsuccessful_empty_member_search_is_not_found(monkeypatch) -> None:
+    response = io.BytesIO(
+        b'{"isSuccess": false, "validationErrors": [], "errors": [], "data": null}'
+    )
+    monkeypatch.setattr(bowl_api, "urlopen", lambda request, timeout: response)
+
+    assert HttpBowlApi(lambda: "token").search_members("Missing Bowler") == []
+
+
+def test_member_search_preserves_service_validation_message(monkeypatch) -> None:
+    response = io.BytesIO(
+        b'{"isSuccess": false, "validationErrors": ["Narrow the search"], "errors": []}'
+    )
+    monkeypatch.setattr(bowl_api, "urlopen", lambda request, timeout: response)
+
+    with pytest.raises(BowlApiError, match="Narrow the search"):
+        HttpBowlApi(lambda: "token").search_members("Common Bowler")

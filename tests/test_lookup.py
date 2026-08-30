@@ -1,4 +1,5 @@
 from usbc_average_lookup.models import CompositeAverage, InputBowler, LookupStatus, Member
+from usbc_average_lookup.services.bowl_api import BowlApiError
 from usbc_average_lookup.services.lookup import look_up_bowler, resolve_selected_member
 
 
@@ -32,10 +33,31 @@ def test_returns_found_with_newest_standard_average() -> None:
     assert result.average == 187
 
 
+def test_id_only_lookup_uses_the_member_name_in_results() -> None:
+    result = look_up_bowler(
+        FakeApi([member()], [average()]),
+        InputBowler("", "1234-567890"),
+    )
+
+    assert result.input_name == "Alex Bowler"
+    assert result.membership_id == "1234-567890"
+
+
 def test_returns_not_found() -> None:
     result = look_up_bowler(FakeApi(), InputBowler("Missing Bowler"))
 
     assert result.status is LookupStatus.NOT_FOUND
+
+
+def test_preserves_api_error_detail_for_the_fixes_screen() -> None:
+    class ErrorApi(FakeApi):
+        def search_members(self, name="", membership_id=""):
+            raise BowlApiError("Narrow the member search")
+
+    result = look_up_bowler(ErrorApi(), InputBowler("Common Bowler"))
+
+    assert result.status is LookupStatus.API_ERROR
+    assert result.note == "Narrow the member search"
 
 
 def test_returns_multiple_matches() -> None:

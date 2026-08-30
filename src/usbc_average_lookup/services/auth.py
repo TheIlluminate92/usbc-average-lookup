@@ -61,6 +61,8 @@ class BrowserAuthenticator:
                 str(self._profile_path),
                 channel="msedge",
                 headless=False,
+                reduced_motion="reduce",
+                args=["--disable-gpu"],
             )
             page = self._context.pages[0] if self._context.pages else self._context.new_page()
             self._context.on("request", observe_request)
@@ -72,7 +74,7 @@ class BrowserAuthenticator:
                     captured_token = stored_token
                     token_ready.set()
                     break
-                page.wait_for_timeout(500)
+                page.wait_for_timeout(1000)
             if not token_ready.is_set():
                 self._context.close()
                 self._context = None
