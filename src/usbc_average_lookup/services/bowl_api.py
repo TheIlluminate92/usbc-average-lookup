@@ -258,9 +258,34 @@ def _parse_league_average(record: dict, index: int = 0) -> list[AverageOption]:
     condition = _record_condition(record)
     season = _record_text(record, "year", "season", "seasonYear", "seasonyear")
     games = _record_optional_int(record, "games", "gameCount", "gamecount")
-    league = _record_text(record, "league", "leagueName", "leaguename", "name")
-    center = _record_text(record, "center", "centerName", "centername", "bowlingCenter")
-    association = _record_text(record, "assn", "association", "associationName")
+    league = _record_text(
+        record,
+        "league",
+        "leagueName",
+        "leaguename",
+        "leagueNm",
+        "leagueTitle",
+        "leagueDescription",
+        "lgName",
+        "lgname",
+        "lname",
+        "name",
+    ) or _record_descriptive_text(record, "league")
+    center = _record_text(
+        record,
+        "center",
+        "centerName",
+        "centername",
+        "bowlingCenter",
+        "cname",
+    )
+    association = _record_text(
+        record,
+        "assn",
+        "association",
+        "associationName",
+        "aname",
+    )
     hand = _record_text(record, "hand")
     base_key = f"league:{season}:{league}:{average}:{games}:{index}"
     options = [
@@ -284,6 +309,7 @@ def _parse_league_average(record: dict, index: int = 0) -> list[AverageOption]:
         "convertedAverage",
         "convertedaverage",
         "conversionAverage",
+        "adjavg",
     )
     if converted is not None and converted > 0 and converted != average:
         options.append(
@@ -392,6 +418,25 @@ def _record_value(record: dict, *keys: str) -> object | None:
 def _record_text(record: dict, *keys: str) -> str:
     value = _record_value(record, *keys)
     return "" if value is None else str(value)
+
+
+def _record_descriptive_text(record: dict, subject: str) -> str:
+    """Find an undocumented descriptive text field without accepting IDs/averages."""
+
+    excluded = ("avg", "average", "id", "number", "num", "code", "count")
+    for key, value in record.items():
+        folded = str(key).casefold()
+        is_subject = subject.casefold() in folded or (
+            subject == "league" and folded.startswith("lg")
+        )
+        if (
+            is_subject
+            and not any(word in folded for word in excluded)
+            and isinstance(value, str)
+            and value.strip()
+        ):
+            return value.strip()
+    return ""
 
 
 def _record_int(record: dict, *keys: str) -> int:

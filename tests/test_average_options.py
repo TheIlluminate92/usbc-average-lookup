@@ -64,6 +64,9 @@ def test_filters_by_season_type_and_league() -> None:
 
     assert [item.key for item in filtered] == ["sport"]
 
+    labeled = filter_average_options(records, league="Monday Sport — 2024")
+    assert [item.key for item in labeled] == ["sport"]
+
 
 def test_rerates_remain_visible_without_a_game_count() -> None:
     rerate = option(

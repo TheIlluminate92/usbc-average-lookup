@@ -1144,7 +1144,11 @@ class AverageLookupApp(tk.Tk):
         if self.season_filter_var.get() not in season_values:
             self.season_filter_var.set("All seasons")
         leagues = sorted(
-            {option.league for option in result.available_averages if option.league},
+            {
+                option.league_season_label
+                for option in result.available_averages
+                if option.source in {AverageSource.LEAGUE, AverageSource.CONVERTED}
+            },
             key=str.casefold,
         )
         league_values = ("All leagues", *leagues)

@@ -1,4 +1,6 @@
 import io
+import json
+from pathlib import Path
 
 import pytest
 
@@ -79,6 +81,48 @@ def test_parses_league_and_converted_average_choices() -> None:
     assert options[0].league == "Tuesday Twisters"
     assert options[0].condition.value == "Sport"
     assert options[1].original_average == 156
+
+
+def test_parses_abbreviated_league_name_and_labels_it_with_season() -> None:
+    options = _parse_league_average(
+        {
+            "year": "2025",
+            "leagueNm": "Monday Misfits",
+            "avg": 171,
+            "games": 24,
+        }
+    )
+
+    assert options[0].league == "Monday Misfits"
+    assert options[0].source_detail == "Monday Misfits — 2025"
+
+
+def test_missing_league_name_is_shown_honestly_with_season() -> None:
+    options = _parse_league_average(
+        {"year": "2025", "avg": 171, "games": 24}
+    )
+
+    assert options[0].source_detail == "League name unavailable — 2025"
+
+
+def test_parses_sanitized_live_league_activity_shape() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "leagueactivities.json"
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
+
+    options = [
+        option
+        for index, record in enumerate(payload["data"]["results"])
+        for option in _parse_league_average(record, index)
+    ]
+
+    assert [option.source_detail for option in options] == [
+        "Tuesday Twisters Fall SP — 2025",
+        "Tuesday Twisters — 2025",
+        "Tuesday Twisters — 2025",
+    ]
+    assert options[0].center == "Example Lanes"
+    assert options[0].association == "Example USBC"
+    assert options[2].average == 168
 
 
 def test_parses_rerated_average_choice() -> None:

@@ -112,11 +112,17 @@ include league name, average, games, condition, converted average, season, and
 center/association. The rerate list can include adjusted and entering averages,
 tournament, date, and assigning official.
 
-The exact raw JSON field names for these two responses have not yet been saved
-as sanitized fixtures. Version 0.4 therefore accepts common case and naming
-variations, retains every parsed record, and raises a visible schema error if a
-nonempty record cannot be understood. It must never silently substitute or
-drop an unknown record. A live authorized test and sanitized fixtures are
+An authorized `leagueactivities` response has now been captured as a sanitized
+fixture. Its league records use `lname` for league name, `cname` for center,
+`aname` for association, `year` for the review year, and `adjavg` for the
+converted/adjusted value shown by the member page. The separate `season` field
+contains BOWL.com's short `S`/`W` classification rather than the year.
+
+The exact raw JSON field names for `reratedaverage` have not yet been saved as a
+sanitized fixture. Version 0.4 accepts common case and naming variations,
+retains every parsed record, and raises a visible schema error if a nonempty
+record cannot be understood. It must never silently substitute or drop an
+unknown record. A live authorized rerate test and sanitized fixture are still
 required before merging the experimental branch into `main`.
 
 ## Unknowns to resolve

@@ -1,0 +1,35 @@
+{
+  "isSuccess": true,
+  "validationErrors": [],
+  "errors": [],
+  "data": {
+    "results": [
+      {
+        "lname": "Tuesday Twisters Fall SP",
+        "season": "S",
+        "cname": "Example Lanes",
+        "aname": "Example USBC",
+        "avg": 160,
+        "games": 12,
+        "year": "2025",
+        "sport": false,
+        "challenge": false,
+        "hand": "",
+        "adjavg": 0
+      },
+      {
+        "lname": "Tuesday Twisters",
+        "season": "W",
+        "cname": "Example Lanes",
+        "aname": "Example USBC",
+        "avg": 156,
+        "games": 72,
+        "year": "2025",
+        "sport": false,
+        "challenge": false,
+        "hand": "",
+        "adjavg": 168
+      }
+    ]
+  }
+}

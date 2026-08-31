@@ -83,10 +83,15 @@ class AverageOption:
     @property
     def source_detail(self) -> str:
         if self.source in {AverageSource.LEAGUE, AverageSource.CONVERTED}:
-            return self.league or self.source.value
+            return self.league_season_label
         if self.source is AverageSource.RERATE:
             return self.tournament or self.source.value
         return f"{self.condition.value} composite"
+
+    @property
+    def league_season_label(self) -> str:
+        league = self.league or "League name unavailable"
+        return f"{league} — {self.season}" if self.season else league
 
 
 @dataclass(frozen=True, slots=True)

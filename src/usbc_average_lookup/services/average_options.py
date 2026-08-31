@@ -74,7 +74,7 @@ def filter_average_options(
             continue
         if condition_key and option.condition.value.casefold() != condition_key:
             continue
-        if league_key and league_key not in option.league.casefold():
+        if league_key and league_key not in option.league_season_label.casefold():
             continue
         location = " ".join((option.center, option.association)).casefold()
         if center_key and center_key not in location:
