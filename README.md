@@ -108,8 +108,9 @@ python -m usbc_average_lookup
 The sign-in flow quietly checks for a valid remembered session first. When a
 fresh login is needed, it opens the selected Microsoft Edge, Google Chrome, or
 Brave browser and waits for the genuine BOWL.com site to establish an
-authenticated API session. The session token is held in memory and is never
-written to application logs or configuration.
+authenticated API session. Restored and blank tabs are removed so the user sees
+one stable BOWL.com sign-in page. The session token is held in memory and is
+never written to application logs or configuration.
 
 ## Run tests
 

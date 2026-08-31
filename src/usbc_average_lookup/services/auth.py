@@ -97,10 +97,10 @@ class BrowserAuthenticator:
             context = self._launch_context(playwright, headless=False)
             self._context = context
             try:
-                page = context.pages[0] if context.pages else context.new_page()
                 context.on("request", observe_request)
-                page.goto(self.MEMBER_URL, wait_until="domcontentloaded")
+                page = _single_sign_in_page(context)
                 page.bring_to_front()
+                page.goto(self.MEMBER_URL, wait_until="domcontentloaded")
                 deadline = monotonic() + self._timeout_seconds
                 while not token_ready.is_set() and monotonic() < deadline:
                     stored_token = _token_from_browser_storage(context)
@@ -148,9 +148,12 @@ class BrowserAuthenticator:
 
         try:
             context.on("request", observe_request)
-            page = context.pages[0] if context.pages else context.new_page()
+            page = _single_sign_in_page(context)
             page.goto(self.MEMBER_URL, wait_until="domcontentloaded", timeout=30_000)
-            deadline = monotonic() + 5
+            # OIDC redirects and the first authorized API request can take more
+            # than five seconds on a cold browser profile. Keep that work hidden
+            # rather than falling back to a briefly visible browser too early.
+            deadline = monotonic() + 15
             while monotonic() < deadline:
                 token = captured_token or _token_from_browser_storage(context)
                 if token:
@@ -213,6 +216,27 @@ def _browser_executable_path(browser: SignInBrowser) -> Path | None:
         (Path(root) / relative for root in roots if root and (Path(root) / relative).is_file()),
         None,
     )
+
+
+def _single_sign_in_page(context):
+    """Keep one predictable page instead of restoring tabs plus about:blank."""
+
+    pages = list(context.pages)
+    if not pages:
+        return context.new_page()
+    page = next(
+        (candidate for candidate in reversed(pages) if candidate.url == "about:blank"),
+        pages[-1],
+    )
+    for extra in pages:
+        if extra is page:
+            continue
+        try:
+            extra.close()
+        except Exception:
+            # A restored tab may already be closing during browser startup.
+            pass
+    return page
 
 
 def _bearer_token_from_headers(headers: dict[str, str]) -> str:

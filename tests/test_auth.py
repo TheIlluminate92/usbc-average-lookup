@@ -3,6 +3,7 @@ from usbc_average_lookup.services.auth import (
     SignInBrowser,
     _bearer_token_from_headers,
     _bearer_token_from_storage_values,
+    _single_sign_in_page,
     available_sign_in_browsers,
 )
 
@@ -55,3 +56,23 @@ def test_forget_saved_login_removes_only_selected_profile(tmp_path) -> None:
 
     assert not selected_profile.exists()
     assert other_profile.exists()
+
+
+def test_sign_in_reuses_blank_page_and_closes_restored_tabs() -> None:
+    class FakePage:
+        def __init__(self, url: str) -> None:
+            self.url = url
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    restored = FakePage("https://webapps.bowl.com/USBCFindA/Home/Welcome")
+    blank = FakePage("about:blank")
+    context = type("FakeContext", (), {"pages": [restored, blank]})()
+
+    selected = _single_sign_in_page(context)
+
+    assert selected is blank
+    assert restored.closed is True
+    assert blank.closed is False
