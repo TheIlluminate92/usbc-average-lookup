@@ -1,13 +1,27 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from usbc_average_lookup.models import (
     AverageCondition,
     AverageOption,
     AverageSource,
     CompositeAverage,
+    LookupResult,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class BulkReviewCandidate:
+    result_index: int
+    option: AverageOption
+    choice_count: int
+    warnings: tuple[str, ...]
+
+    @property
+    def is_clean(self) -> bool:
+        return self.choice_count == 1 and not self.warnings
 
 
 def composite_options(records: Iterable[CompositeAverage]) -> list[AverageOption]:
@@ -91,6 +105,55 @@ def suggested_option(options: Iterable[AverageOption]) -> AverageOption | None:
         and (option.games or 0) > 0
     ]
     return max(standard, key=lambda item: _season_key(item.season), default=None)
+
+
+def bulk_review_candidates(
+    results: Iterable[LookupResult],
+    *,
+    minimum_games: int = 21,
+    season: str = "",
+    condition: str = "",
+    league: str = "",
+    center: str = "",
+    include_rerates: bool = True,
+    qualifying_only: bool = True,
+    sort_by: str = "Newest",
+) -> tuple[list[BulkReviewCandidate], int]:
+    """Prepare, but never confirm, one visible candidate per unreviewed bowler."""
+
+    candidates: list[BulkReviewCandidate] = []
+    excluded = 0
+    for index, result in enumerate(results):
+        if not result.needs_review:
+            continue
+        choices = filter_average_options(
+            result.available_averages,
+            minimum_games=minimum_games,
+            season=season,
+            condition=condition,
+            league=league,
+            center=center,
+            include_rerates=include_rerates,
+            qualifying_only=qualifying_only,
+            sort_by=sort_by,
+        )
+        if not choices:
+            excluded += 1
+            continue
+        selected = choices[0]
+        warnings: list[str] = []
+        if len(choices) > 1:
+            warnings.append(f"{len(choices)} matching choices")
+        if result.member is not None and not result.member.active:
+            warnings.append("Inactive member")
+        if selected.source is AverageSource.RERATE:
+            warnings.append("Rerated / adjusted")
+        if selected.games is not None and selected.games < minimum_games:
+            warnings.append(f"Below {minimum_games} games")
+        candidates.append(
+            BulkReviewCandidate(index, selected, len(choices), tuple(warnings))
+        )
+    return candidates, excluded
 
 
 def _season_key(value: str) -> tuple[int, str]:

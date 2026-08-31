@@ -132,6 +132,13 @@ Every input row must end in one of these states:
   the full set of returned choices.
 - Show review progress and provide **Confirm selected and go to next** for a
   fast, auditable 40–150 bowler workflow.
+- Provide a bulk-review table containing one clearly displayed proposed value,
+  match count, and warnings per bowler. Start with no rows selected.
+- Let the operator select only one-choice rows, select arbitrary reviewed rows,
+  or deliberately select all displayed rows before a separate batch
+  confirmation.
+- Leave every unselected, filtered-out, ambiguous, rerated, inactive, or
+  otherwise exceptional bowler in the individual review queue.
 - Block the ready-roster export while any bowler remains unreviewed or
   unresolved. Permit only clearly warned unfinished full-roster drafts.
 - Preserve selected-source details and all available choices in structured JSON

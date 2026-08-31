@@ -44,6 +44,11 @@ for normal users.
   against the BOWL.com member page for at least three varied members.
 - Work through a 150-bowler fixture using **Confirm selected and go to next**;
   verify no row is skipped or confirmed without an operator action.
+- Open bulk review and verify that no rows begin selected. Confirm a mixed
+  selection and verify every unselected and filtered-out row remains in the
+  individual queue.
+- Verify **Select one-choice rows** excludes ambiguous, rerated, inactive, and
+  below-minimum choices.
 - Confirm ready-roster export is blocked with even one unreviewed or unresolved
   bowler.
 - Confirm an unfinished full export is visibly identified as a draft and its

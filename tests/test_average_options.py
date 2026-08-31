@@ -1,5 +1,14 @@
-from usbc_average_lookup.models import AverageCondition, AverageOption, AverageSource
-from usbc_average_lookup.services.average_options import filter_average_options
+from usbc_average_lookup.models import (
+    AverageCondition,
+    AverageOption,
+    AverageSource,
+    LookupResult,
+    LookupStatus,
+)
+from usbc_average_lookup.services.average_options import (
+    bulk_review_candidates,
+    filter_average_options,
+)
 
 
 def option(
@@ -68,3 +77,49 @@ def test_rerates_remain_visible_without_a_game_count() -> None:
 
     assert filter_average_options([rerate], minimum_games=21) == [rerate]
     assert filter_average_options([rerate], include_rerates=False) == []
+
+
+def test_bulk_review_only_prepares_unreviewed_bowlers_and_never_confirms() -> None:
+    clean = option("clean", 180, games=30)
+    ambiguous = option("ambiguous", 181, games=40)
+    results = [
+        LookupResult(
+            "Clean Bowler",
+            LookupStatus.REVIEW_REQUIRED,
+            average=180,
+            available_averages=(clean,),
+            selected_average_key=clean.key,
+        ),
+        LookupResult(
+            "Ambiguous Bowler",
+            LookupStatus.REVIEW_REQUIRED,
+            average=180,
+            available_averages=(clean, ambiguous),
+            selected_average_key=clean.key,
+        ),
+        LookupResult("Already Reviewed", LookupStatus.FOUND, average=190),
+    ]
+
+    candidates, excluded = bulk_review_candidates(results)
+
+    assert excluded == 0
+    assert [candidate.result_index for candidate in candidates] == [0, 1]
+    assert candidates[0].is_clean is True
+    assert candidates[1].is_clean is False
+    assert results[0].status is LookupStatus.REVIEW_REQUIRED
+
+
+def test_bulk_review_leaves_filter_mismatches_for_individual_review() -> None:
+    short = option("short", 200, games=12)
+    result = LookupResult(
+        "Short Bowler",
+        LookupStatus.REVIEW_REQUIRED,
+        average=200,
+        available_averages=(short,),
+        selected_average_key=short.key,
+    )
+
+    candidates, excluded = bulk_review_candidates([result], minimum_games=21)
+
+    assert candidates == []
+    assert excluded == 1

@@ -60,9 +60,13 @@ underlying choices.
 
 The app may preselect the newest Standard Composite Average to reduce clicking,
 but it never confirms that selection. Every bowler requires an explicit
-**Confirm selected and go to next** action. Ready-roster export is blocked
-until no review or identity issues remain; full unfinished drafts remain
-available with a warning.
+confirmation action. Individual review provides **Confirm selected and go to
+next**. Bulk review shows one proposed value per bowler but initially selects
+nothing; the operator may select one-choice rows, selected rows, or all visible
+rows before one explicit batch confirmation. Every unselected or filtered-out
+bowler remains in the individual queue. Ready-roster export is blocked until no
+review or identity issues remain; full unfinished drafts remain available with
+a warning.
 
 ## Input formats
 

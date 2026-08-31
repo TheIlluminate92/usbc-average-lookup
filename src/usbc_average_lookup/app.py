@@ -23,7 +23,11 @@ from usbc_average_lookup.services.auth import (
     WebViewAuthenticator,
     clear_legacy_sign_in_data,
 )
-from usbc_average_lookup.services.average_options import filter_average_options
+from usbc_average_lookup.services.average_options import (
+    BulkReviewCandidate,
+    bulk_review_candidates,
+    filter_average_options,
+)
 from usbc_average_lookup.services.bowl_api import HttpBowlApi
 from usbc_average_lookup.services.exports import ExportSubset, export_results, select_results
 from usbc_average_lookup.services.input_parser import (
@@ -45,7 +49,7 @@ COLORS = {
     "surface_raised": "#263139",
     "line": "#3A4852",
     "text": "#EDF4FA",
-    "muted": "#9FB0BF",
+    "muted": "#C6D3DE",
     "wood": "#E6A260",
     "green": "#72D6A5",
     "green_bg": "#183B2D",
@@ -131,7 +135,11 @@ class AverageLookupApp(tk.Tk):
             foreground="#1B120A",
             bordercolor=COLORS["wood"],
         )
-        style.map("Warm.TButton", background=[("active", "#C98447")])
+        style.map(
+            "Warm.TButton",
+            background=[("active", "#C98447"), ("disabled", COLORS["surface_raised"])],
+            foreground=[("disabled", COLORS["muted"])],
+        )
         style.configure(
             "TCombobox",
             fieldbackground=COLORS["surface_raised"],
@@ -197,6 +205,30 @@ class AverageLookupApp(tk.Tk):
             fieldbackground=COLORS["surface_raised"],
             foreground=COLORS["text"],
             insertcolor=COLORS["text"],
+        )
+        style.configure(
+            "TSpinbox",
+            fieldbackground=COLORS["surface_raised"],
+            background=COLORS["surface_raised"],
+            foreground=COLORS["text"],
+            arrowcolor=COLORS["text"],
+            bordercolor=COLORS["line"],
+            insertcolor=COLORS["text"],
+        )
+        style.map(
+            "TSpinbox",
+            fieldbackground=[("readonly", COLORS["surface_raised"])],
+            foreground=[("disabled", COLORS["muted"])],
+        )
+        style.configure(
+            "TCheckbutton",
+            background=COLORS["canvas"],
+            foreground=COLORS["text"],
+        )
+        style.map(
+            "TCheckbutton",
+            background=[("active", COLORS["canvas"])],
+            foreground=[("disabled", COLORS["muted"])],
         )
 
     def _build_ui(self) -> None:
@@ -563,6 +595,13 @@ class AverageLookupApp(tk.Tk):
             state=tk.DISABLED,
         )
         self.confirm_average_button.pack(side=tk.RIGHT, padx=(0, 8))
+        self.bulk_review_button = ttk.Button(
+            review_actions,
+            text="Bulk review…",
+            command=self._open_bulk_review,
+            state=tk.DISABLED,
+        )
+        self.bulk_review_button.pack(side=tk.RIGHT, padx=(0, 8))
 
     def _start_sign_in(self) -> None:
         self.authenticator.sign_out()
@@ -973,6 +1012,13 @@ class AverageLookupApp(tk.Tk):
                     else tk.DISABLED
                 )
             )
+            self.bulk_review_button.configure(
+                state=(
+                    tk.NORMAL
+                    if any(result.needs_review for result in self.results)
+                    else tk.DISABLED
+                )
+            )
             return
 
         result = self.results[int(selected[0])]
@@ -1074,6 +1120,9 @@ class AverageLookupApp(tk.Tk):
         self.next_review_button.configure(
             state=tk.NORMAL if any(item.needs_review for item in self.results) else tk.DISABLED
         )
+        self.bulk_review_button.configure(
+            state=tk.NORMAL if any(item.needs_review for item in self.results) else tk.DISABLED
+        )
         self._update_confirm_button()
 
     def _selected_average_option(self) -> AverageOption | None:
@@ -1129,6 +1178,66 @@ class AverageLookupApp(tk.Tk):
         current = int(selected[0]) if selected else -1
         index = next((item for item in unresolved if item > current), unresolved[0])
         self._show_review_index(index)
+
+    def _open_bulk_review(self) -> None:
+        try:
+            minimum_games = int(self.minimum_games_var.get())
+            if minimum_games < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning(
+                "Minimum games",
+                "Minimum games must be zero or greater.",
+            )
+            return
+        season = self.season_filter_var.get()
+        condition = self.condition_filter_var.get()
+        league = self.league_filter_var.get()
+        candidates, excluded = bulk_review_candidates(
+            self.results,
+            minimum_games=minimum_games,
+            season="" if season == "All seasons" else season,
+            condition="" if condition == "All types" else condition,
+            league="" if league == "All leagues" else league,
+            center=self.center_filter_var.get(),
+            include_rerates=self.include_rerates_var.get(),
+            qualifying_only=self.qualifying_only_var.get(),
+            sort_by=self.sort_filter_var.get(),
+        )
+        if not candidates:
+            messagebox.showinfo(
+                "No bulk candidates",
+                "No unreviewed bowlers match the current filters. "
+                "Change the filters or continue individual review.",
+            )
+            return
+        BulkReviewDialog(
+            self,
+            candidates,
+            self.results,
+            excluded,
+            minimum_games,
+            on_confirm=self._confirm_bulk_review,
+        )
+
+    def _confirm_bulk_review(self, candidates: list[BulkReviewCandidate]) -> None:
+        confirmed = 0
+        for candidate in candidates:
+            result = self.results[candidate.result_index]
+            if not result.needs_review:
+                continue
+            self.results[candidate.result_index] = confirm_average(result, candidate.option)
+            confirmed += 1
+        self._render_results()
+        self.auth_status.configure(text=f"{confirmed} averages confirmed")
+        if any(result.needs_review for result in self.results):
+            self.notebook.select(self.review_tab)
+            self._next_unreviewed()
+        else:
+            messagebox.showinfo(
+                "Review complete",
+                "Every available average has been confirmed.",
+            )
 
     def _save_results(self) -> None:
         if not self.results:
@@ -1190,6 +1299,177 @@ class AverageLookupApp(tk.Tk):
         has_results = bool(self.results)
         self.clear_button.configure(state=tk.NORMAL if has_results else tk.DISABLED)
         self.save_button.configure(state=tk.NORMAL if has_results else tk.DISABLED)
+
+
+class BulkReviewDialog(tk.Toplevel):
+    def __init__(
+        self,
+        parent: AverageLookupApp,
+        candidates: list[BulkReviewCandidate],
+        results: list[LookupResult],
+        excluded: int,
+        minimum_games: int,
+        on_confirm: Callable[[list[BulkReviewCandidate]], None],
+    ) -> None:
+        super().__init__(parent)
+        self.candidates = candidates
+        self.results = results
+        self.excluded = excluded
+        self.minimum_games = minimum_games
+        self.on_confirm = on_confirm
+        self.title("Bulk average review")
+        self.geometry("1180x680")
+        self.minsize(900, 540)
+        self.configure(background=COLORS["canvas"])
+        self.transient(parent)
+        self.grab_set()
+        self._build()
+
+    def _build(self) -> None:
+        content = ttk.Frame(self, style="App.TFrame", padding=22)
+        content.pack(fill=tk.BOTH, expand=True)
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(3, weight=1)
+        ttk.Label(
+            content,
+            text="Bulk review",
+            style="Muted.TLabel",
+            font=("Segoe UI", 18, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            content,
+            text=(
+                "Review the proposed value in every selected row. Nothing is confirmed "
+                "until you press the final button."
+            ),
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(3, 4))
+        self.summary_label = ttk.Label(content, text="", style="Muted.TLabel")
+        self.summary_label.grid(row=2, column=0, sticky="ew", pady=(5, 8))
+
+        table_frame = ttk.Frame(content, style="Surface.TFrame")
+        table_frame.grid(row=3, column=0, sticky="nsew")
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        self.table = ttk.Treeview(
+            table_frame,
+            columns=(
+                "bowler",
+                "average",
+                "games",
+                "season",
+                "type",
+                "source",
+                "choices",
+                "warnings",
+            ),
+            show="headings",
+            selectmode="extended",
+        )
+        for column, label, width in (
+            ("bowler", "Bowler", 190),
+            ("average", "Avg", 55),
+            ("games", "Games", 60),
+            ("season", "Season", 75),
+            ("type", "Type", 85),
+            ("source", "Source", 160),
+            ("choices", "Matches", 65),
+            ("warnings", "Warnings", 230),
+        ):
+            self.table.heading(column, text=label)
+            self.table.column(column, width=width, minwidth=50, anchor="w")
+        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.table.yview)
+        self.table.configure(yscrollcommand=scrollbar.set)
+        self.table.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.table.tag_configure("clean", foreground=COLORS["green"])
+        self.table.tag_configure("warning", foreground=COLORS["gold"])
+        for position, candidate in enumerate(self.candidates):
+            result = self.results[candidate.result_index]
+            option = candidate.option
+            self.table.insert(
+                "",
+                tk.END,
+                iid=str(position),
+                values=(
+                    result.input_name,
+                    option.average,
+                    option.games if option.games is not None else "—",
+                    option.season or "—",
+                    option.condition.value,
+                    option.source_detail,
+                    candidate.choice_count,
+                    "; ".join(candidate.warnings) or "One qualifying choice",
+                ),
+                tags=("clean" if candidate.is_clean else "warning",),
+            )
+        self.table.bind("<<TreeviewSelect>>", lambda _event: self._update_selection())
+
+        controls = ttk.Frame(content, style="App.TFrame")
+        controls.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        ttk.Button(
+            controls,
+            text="Select one-choice rows",
+            command=self._select_clean,
+        ).pack(side=tk.LEFT)
+        ttk.Button(
+            controls,
+            text="Select all displayed",
+            command=lambda: self.table.selection_set(self.table.get_children()),
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(
+            controls,
+            text="Clear selection",
+            command=lambda: self.table.selection_remove(self.table.selection()),
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(controls, text="Cancel", command=self.destroy).pack(side=tk.RIGHT)
+        self.confirm_button = ttk.Button(
+            controls,
+            text="Confirm selected bowlers",
+            command=self._confirm,
+            style="Warm.TButton",
+            state=tk.DISABLED,
+        )
+        self.confirm_button.pack(side=tk.RIGHT, padx=(0, 8))
+        self._update_selection()
+
+    def _select_clean(self) -> None:
+        clean = [
+            str(index)
+            for index, candidate in enumerate(self.candidates)
+            if candidate.is_clean
+        ]
+        self.table.selection_set(clean)
+        self._update_selection()
+
+    def _update_selection(self) -> None:
+        selected_count = len(self.table.selection())
+        remaining = len(self.candidates) + self.excluded - selected_count
+        self.summary_label.configure(
+            text=(
+                f"{selected_count} selected   •   {len(self.candidates)} displayed   •   "
+                f"{remaining} will remain for individual review   •   "
+                f"minimum {self.minimum_games} games"
+            )
+        )
+        self.confirm_button.configure(
+            state=tk.NORMAL if selected_count else tk.DISABLED
+        )
+
+    def _confirm(self) -> None:
+        selected = [self.candidates[int(iid)] for iid in self.table.selection()]
+        if not selected:
+            return
+        proceed = messagebox.askyesno(
+            "Confirm bulk averages",
+            f"Mark the displayed average as reviewed for {len(selected)} bowlers?\n\n"
+            "Unselected bowlers will remain in the individual review queue.",
+            parent=self,
+        )
+        if not proceed:
+            return
+        self.destroy()
+        self.on_confirm(selected)
 
 
 class SingleLookupDialog(tk.Toplevel):
