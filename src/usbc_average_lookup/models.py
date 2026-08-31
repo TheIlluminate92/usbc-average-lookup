@@ -5,6 +5,7 @@ from enum import StrEnum
 
 
 class LookupStatus(StrEnum):
+    REVIEW_REQUIRED = "Review required"
     FOUND = "Found"
     NOT_FOUND = "Not found"
     MULTIPLE_MATCHES = "Multiple matches"
@@ -43,6 +44,49 @@ class CompositeAverage:
     average: int
     sport: bool
     challenge: bool
+    hand: str = ""
+
+
+class AverageSource(StrEnum):
+    COMPOSITE = "Composite"
+    LEAGUE = "League"
+    CONVERTED = "Converted league"
+    RERATE = "Rerated / adjusted"
+
+
+class AverageCondition(StrEnum):
+    STANDARD = "Standard"
+    SPORT = "Sport"
+    CHALLENGE = "Challenge"
+    ADJUSTED = "Adjusted"
+
+
+@dataclass(frozen=True, slots=True)
+class AverageOption:
+    """One average a tournament operator may inspect and select."""
+
+    key: str
+    average: int
+    source: AverageSource
+    condition: AverageCondition
+    season: str = ""
+    games: int | None = None
+    league: str = ""
+    center: str = ""
+    association: str = ""
+    original_average: int | None = None
+    tournament: str = ""
+    adjusted_by: str = ""
+    adjusted_date: str = ""
+    hand: str = ""
+
+    @property
+    def source_detail(self) -> str:
+        if self.source in {AverageSource.LEAGUE, AverageSource.CONVERTED}:
+            return self.league or self.source.value
+        if self.source is AverageSource.RERATE:
+            return self.tournament or self.source.value
+        return f"{self.condition.value} composite"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,11 +101,19 @@ class LookupResult:
     member: Member | None = None
     candidates: tuple[Member, ...] = field(default_factory=tuple)
     confirmed_inactive: bool = False
+    available_averages: tuple[AverageOption, ...] = field(default_factory=tuple)
+    selected_average_key: str = ""
 
     def __post_init__(self) -> None:
-        if self.status is LookupStatus.FOUND and self.average is None:
-            raise ValueError("Found results require an average")
-        may_have_average = self.status is LookupStatus.FOUND or (
+        if (
+            self.status in {LookupStatus.FOUND, LookupStatus.REVIEW_REQUIRED}
+            and self.average is None
+        ):
+            raise ValueError("Found and review-required results require an average")
+        may_have_average = self.status in {
+            LookupStatus.FOUND,
+            LookupStatus.REVIEW_REQUIRED,
+        } or (
             self.status is LookupStatus.INACTIVE_MEMBER and self.confirmed_inactive
         )
         if not may_have_average and self.average is not None:
@@ -69,4 +121,18 @@ class LookupResult:
 
     @property
     def needs_attention(self) -> bool:
-        return self.status is not LookupStatus.FOUND and not self.confirmed_inactive
+        return self.needs_resolution or self.needs_review
+
+    @property
+    def needs_review(self) -> bool:
+        return self.status is LookupStatus.REVIEW_REQUIRED
+
+    @property
+    def needs_resolution(self) -> bool:
+        return self.status not in {LookupStatus.FOUND, LookupStatus.REVIEW_REQUIRED} and not (
+            self.status is LookupStatus.INACTIVE_MEMBER and self.confirmed_inactive
+        )
+
+    @property
+    def reviewed(self) -> bool:
+        return not self.needs_attention

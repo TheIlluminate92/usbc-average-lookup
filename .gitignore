@@ -4,7 +4,8 @@ __pycache__/
 .pytest_cache/
 .pip-cache/
 .test-tmp*/
-.package-check/
+.package-check*/
+.test-build*/
 .ruff_cache/
 .venv/
 venv/

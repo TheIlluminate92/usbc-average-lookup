@@ -14,7 +14,7 @@ def test_json_export_keeps_every_bowler_and_optional_id(tmp_path) -> None:
     export_json(path, results)
 
     document = json.loads(path.read_text(encoding="utf-8"))
-    assert document["schemaVersion"] == 2
+    assert document["schemaVersion"] == 3
     assert document["summary"]["processed"] == 2
     assert document["bowlers"] == [
         {
@@ -22,23 +22,29 @@ def test_json_export_keeps_every_bowler_and_optional_id(tmp_path) -> None:
             "membershipId": "1234-567890",
             "average": 187,
             "year": None,
-            "games": None,
-            "status": "Found",
+                "games": None,
+                "reviewed": True,
+                "status": "Found",
             "notes": None,
             "active": None,
             "association": None,
-            "associationState": None,
+                "associationState": None,
+                "selectedAverage": None,
+                "availableAverages": [],
         },
         {
             "name": "Jamie Bowler",
             "membershipId": None,
             "average": None,
             "year": None,
-            "games": None,
-            "status": "Not found",
+                "games": None,
+                "reviewed": False,
+                "status": "Not found",
             "notes": "Check the spelling",
             "active": None,
             "association": None,
-            "associationState": None,
+                "associationState": None,
+                "selectedAverage": None,
+                "availableAverages": [],
         },
     ]

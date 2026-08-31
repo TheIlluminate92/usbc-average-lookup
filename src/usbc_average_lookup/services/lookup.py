@@ -1,7 +1,14 @@
 from collections.abc import Iterable
+from dataclasses import replace
 
-from usbc_average_lookup.models import InputBowler, LookupResult, LookupStatus, Member
-from usbc_average_lookup.services.average_selector import select_latest_standard
+from usbc_average_lookup.models import (
+    AverageOption,
+    InputBowler,
+    LookupResult,
+    LookupStatus,
+    Member,
+)
+from usbc_average_lookup.services.average_options import suggested_option
 from usbc_average_lookup.services.bowl_api import (
     AuthenticationExpiredError,
     BowlApi,
@@ -76,25 +83,46 @@ def _resolve_matches(
 def resolve_member(api: BowlApi, bowler: InputBowler, member: Member) -> LookupResult:
     """Complete one result after the user selects a specific member."""
 
-    averages = api.get_composite_averages(member.prefix, member.suffix)
-    selected = select_latest_standard(averages)
+    averages = tuple(api.get_average_options(member.prefix, member.suffix))
+    selected = suggested_option(averages) or (averages[0] if averages else None)
     if selected is None:
         return _result(
             bowler,
             LookupStatus.NO_AVERAGE,
-            "Member found, but no standard composite average is available",
+            "Member found, but BOWL.com returned no selectable averages",
             member=member,
         )
     return LookupResult(
         input_name=bowler.name or member.display_name,
-        status=LookupStatus.FOUND if member.active else LookupStatus.INACTIVE_MEMBER,
+        status=LookupStatus.REVIEW_REQUIRED,
         membership_id=bowler.membership_id or f"{member.prefix}-{member.suffix}",
         average=selected.average,
-        year=selected.year,
+        year=selected.season,
         games=selected.games,
-        note=f"{selected.year} standard composite, {selected.games} games",
+        note="Review and confirm an average before export",
         member=member,
-        confirmed_inactive=not member.active,
+        available_averages=averages,
+        selected_average_key=selected.key,
+    )
+
+
+def confirm_average(result: LookupResult, selected: AverageOption) -> LookupResult:
+    """Record the operator's explicit choice for one bowler."""
+
+    if selected not in result.available_averages:
+        raise ValueError("The selected average is not available for this bowler")
+    inactive = result.member is not None and not result.member.active
+    games = f", {selected.games} games" if selected.games is not None else ""
+    season = f" — {selected.season}" if selected.season else ""
+    return replace(
+        result,
+        status=LookupStatus.INACTIVE_MEMBER if inactive else LookupStatus.FOUND,
+        average=selected.average,
+        year=selected.season,
+        games=selected.games,
+        note=f"Confirmed: {selected.source_detail}{season}{games}",
+        selected_average_key=selected.key,
+        confirmed_inactive=inactive,
     )
 
 

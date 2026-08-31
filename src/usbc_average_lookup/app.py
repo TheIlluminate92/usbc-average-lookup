@@ -8,13 +8,22 @@ from pathlib import Path
 from threading import Thread
 from tkinter import filedialog, messagebox, ttk
 
-from usbc_average_lookup.models import InputBowler, LookupResult, LookupStatus, Member
+from usbc_average_lookup.models import (
+    AverageCondition,
+    AverageOption,
+    AverageSource,
+    InputBowler,
+    LookupResult,
+    LookupStatus,
+    Member,
+)
 from usbc_average_lookup.services.auth import (
     AuthSession,
     AuthState,
     WebViewAuthenticator,
     clear_legacy_sign_in_data,
 )
+from usbc_average_lookup.services.average_options import filter_average_options
 from usbc_average_lookup.services.bowl_api import HttpBowlApi
 from usbc_average_lookup.services.exports import ExportSubset, export_results, select_results
 from usbc_average_lookup.services.input_parser import (
@@ -22,6 +31,7 @@ from usbc_average_lookup.services.input_parser import (
     workbook_sheet_names,
 )
 from usbc_average_lookup.services.lookup import (
+    confirm_average,
     look_up_all,
     look_up_bowler,
     resolve_selected_member,
@@ -50,8 +60,8 @@ class AverageLookupApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Average Assistant")
-        self.geometry("1080x720")
-        self.minsize(820, 580)
+        self.geometry("1280x800")
+        self.minsize(980, 650)
         self.configure(background=COLORS["canvas"])
         self.results: list[LookupResult] = []
         self.bowlers: list[InputBowler] = []
@@ -283,19 +293,24 @@ class AverageLookupApp(tk.Tk):
 
         self.notebook = ttk.Notebook(main)
         self.notebook.grid(row=2, column=0, sticky="nsew")
-        self.notebook.bind("<<NotebookTabChanged>>", lambda _event: self._update_fix_button())
+        self.notebook.bind(
+            "<<NotebookTabChanged>>", lambda _event: self._update_selection_buttons()
+        )
         self.all_tab = ttk.Frame(self.notebook, style="Surface.TFrame")
         self.fixes_tab = ttk.Frame(self.notebook, style="Surface.TFrame")
+        self.review_tab = ttk.Frame(self.notebook, style="Surface.TFrame")
         self.notebook.add(self.all_tab, text="All results")
         self.notebook.add(self.fixes_tab, text="Fixes needed (0)")
+        self.notebook.add(self.review_tab, text="Review averages (0)")
         self.all_table = self._make_result_table(self.all_tab)
         self.fixes_table = self._make_result_table(self.fixes_tab)
+        self._build_review_panel()
 
         footer = ttk.Frame(main, style="App.TFrame")
         footer.grid(row=3, column=0, sticky="ew", pady=(14, 0))
         self.help_label = ttk.Label(
             footer,
-            text="Double-click a highlighted row to fix it.",
+            text="Every selected average must be reviewed before it is ready.",
             style="Muted.TLabel",
         )
         self.help_label.pack(side=tk.LEFT)
@@ -314,6 +329,13 @@ class AverageLookupApp(tk.Tk):
             state=tk.DISABLED,
         )
         self.fix_button.pack(side=tk.RIGHT, padx=(0, 8))
+        self.review_button = ttk.Button(
+            footer,
+            text="Review selected",
+            command=self._review_selected,
+            state=tk.DISABLED,
+        )
+        self.review_button.pack(side=tk.RIGHT, padx=(0, 8))
 
     def _make_result_table(self, parent: ttk.Frame) -> ttk.Treeview:
         parent.columnconfigure(0, weight=1)
@@ -337,11 +359,210 @@ class AverageLookupApp(tk.Tk):
         table.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
         table.tag_configure("ready", foreground=COLORS["green"])
+        table.tag_configure("review", foreground=COLORS["gold"])
         table.tag_configure("issue", foreground=COLORS["red"])
         table.tag_configure("inactive", foreground=COLORS["gold"])
-        table.bind("<Double-1>", lambda _event: self._fix_selected())
-        table.bind("<<TreeviewSelect>>", lambda _event: self._update_fix_button())
+        table.bind("<Double-1>", lambda _event: self._open_selected_result())
+        table.bind("<<TreeviewSelect>>", lambda _event: self._update_selection_buttons())
         return table
+
+    def _build_review_panel(self) -> None:
+        self.review_tab.columnconfigure(0, weight=2)
+        self.review_tab.columnconfigure(1, weight=3)
+        self.review_tab.rowconfigure(1, weight=1)
+
+        self.review_progress = ttk.Label(
+            self.review_tab,
+            text="No averages waiting for review",
+            style="Surface.TLabel",
+            padding=(12, 10),
+        )
+        self.review_progress.grid(row=0, column=0, columnspan=2, sticky="ew")
+
+        list_frame = ttk.Frame(self.review_tab, style="Surface.TFrame", padding=(8, 0, 4, 8))
+        list_frame.grid(row=1, column=0, sticky="nsew")
+        list_frame.columnconfigure(0, weight=1)
+        list_frame.rowconfigure(0, weight=1)
+        self.review_table = ttk.Treeview(
+            list_frame,
+            columns=("name", "average", "games", "source", "review"),
+            show="headings",
+        )
+        for column, label, width in (
+            ("name", "Bowler", 185),
+            ("average", "Avg", 55),
+            ("games", "Games", 55),
+            ("source", "Source", 130),
+            ("review", "Review", 90),
+        ):
+            self.review_table.heading(column, text=label)
+            self.review_table.column(column, width=width, minwidth=50, anchor="w")
+        review_scrollbar = ttk.Scrollbar(
+            list_frame, orient=tk.VERTICAL, command=self.review_table.yview
+        )
+        self.review_table.configure(yscrollcommand=review_scrollbar.set)
+        self.review_table.grid(row=0, column=0, sticky="nsew")
+        review_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.review_table.tag_configure("ready", foreground=COLORS["green"])
+        self.review_table.tag_configure("review", foreground=COLORS["gold"])
+        self.review_table.bind("<<TreeviewSelect>>", self._review_selection_changed)
+
+        detail = ttk.Frame(self.review_tab, style="App.TFrame", padding=(12, 8, 8, 8))
+        detail.grid(row=1, column=1, sticky="nsew")
+        detail.columnconfigure(0, weight=1)
+        detail.rowconfigure(4, weight=1)
+        self.review_name = ttk.Label(
+            detail,
+            text="Select a bowler",
+            style="Muted.TLabel",
+            font=("Segoe UI", 14, "bold"),
+        )
+        self.review_name.grid(row=0, column=0, sticky="w")
+
+        filters = ttk.Frame(detail, style="App.TFrame")
+        filters.grid(row=1, column=0, sticky="ew", pady=(8, 4))
+        for column in range(4):
+            filters.columnconfigure(column, weight=1)
+        self.minimum_games_var = tk.StringVar(value="21")
+        self.season_filter_var = tk.StringVar(value="All seasons")
+        self.condition_filter_var = tk.StringVar(value="All types")
+        self.league_filter_var = tk.StringVar(value="All leagues")
+        self.center_filter_var = tk.StringVar(value="")
+        self.sort_filter_var = tk.StringVar(value="Newest")
+        self.include_rerates_var = tk.BooleanVar(value=True)
+        self.qualifying_only_var = tk.BooleanVar(value=True)
+
+        ttk.Label(filters, text="Minimum games", style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        minimum_games = ttk.Spinbox(
+            filters,
+            from_=0,
+            to=999,
+            textvariable=self.minimum_games_var,
+            width=8,
+            command=self._render_average_choices,
+        )
+        minimum_games.grid(row=1, column=0, sticky="ew", padx=(0, 6))
+        minimum_games.bind("<KeyRelease>", lambda _event: self._render_average_choices())
+
+        ttk.Label(filters, text="Season", style="Muted.TLabel").grid(
+            row=0, column=1, sticky="w"
+        )
+        self.season_filter = ttk.Combobox(
+            filters, textvariable=self.season_filter_var, state="readonly"
+        )
+        self.season_filter.grid(row=1, column=1, sticky="ew", padx=(0, 6))
+        self.season_filter.bind(
+            "<<ComboboxSelected>>", lambda _event: self._render_average_choices()
+        )
+
+        ttk.Label(filters, text="Average type", style="Muted.TLabel").grid(
+            row=0, column=2, sticky="w"
+        )
+        self.condition_filter = ttk.Combobox(
+            filters,
+            textvariable=self.condition_filter_var,
+            values=("All types", *(condition.value for condition in AverageCondition)),
+            state="readonly",
+        )
+        self.condition_filter.grid(row=1, column=2, sticky="ew", padx=(0, 6))
+        self.condition_filter.bind(
+            "<<ComboboxSelected>>", lambda _event: self._render_average_choices()
+        )
+
+        ttk.Label(filters, text="League", style="Muted.TLabel").grid(
+            row=0, column=3, sticky="w"
+        )
+        self.league_filter = ttk.Combobox(
+            filters, textvariable=self.league_filter_var, state="readonly"
+        )
+        self.league_filter.grid(row=1, column=3, sticky="ew")
+        self.league_filter.bind(
+            "<<ComboboxSelected>>", lambda _event: self._render_average_choices()
+        )
+
+        ttk.Label(filters, text="Center / association", style="Muted.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(7, 0)
+        )
+        center_entry = ttk.Entry(filters, textvariable=self.center_filter_var)
+        center_entry.grid(row=3, column=0, columnspan=2, sticky="ew", padx=(0, 6))
+        center_entry.bind("<KeyRelease>", lambda _event: self._render_average_choices())
+        ttk.Label(filters, text="Sort", style="Muted.TLabel").grid(
+            row=2, column=2, sticky="w", pady=(7, 0)
+        )
+        sort_filter = ttk.Combobox(
+            filters,
+            textvariable=self.sort_filter_var,
+            values=("Newest", "Highest average", "Most games"),
+            state="readonly",
+        )
+        sort_filter.grid(row=3, column=2, sticky="ew", padx=(0, 6))
+        sort_filter.bind("<<ComboboxSelected>>", lambda _event: self._render_average_choices())
+        checks = ttk.Frame(filters, style="App.TFrame")
+        checks.grid(row=2, column=3, rowspan=2, sticky="w", pady=(7, 0))
+        ttk.Checkbutton(
+            checks,
+            text="Include rerates",
+            variable=self.include_rerates_var,
+            command=self._render_average_choices,
+        ).pack(anchor="w")
+        ttk.Checkbutton(
+            checks,
+            text="Qualifying only",
+            variable=self.qualifying_only_var,
+            command=self._render_average_choices,
+        ).pack(anchor="w")
+
+        self.review_guidance = ttk.Label(detail, text="", style="Muted.TLabel")
+        self.review_guidance.grid(row=2, column=0, sticky="ew", pady=(5, 5))
+        option_frame = ttk.Frame(detail, style="Surface.TFrame")
+        option_frame.grid(row=4, column=0, sticky="nsew")
+        option_frame.columnconfigure(0, weight=1)
+        option_frame.rowconfigure(0, weight=1)
+        self.average_table = ttk.Treeview(
+            option_frame,
+            columns=("average", "games", "season", "type", "source", "details"),
+            show="headings",
+        )
+        for column, label, width in (
+            ("average", "Avg", 50),
+            ("games", "Games", 55),
+            ("season", "Season", 70),
+            ("type", "Type", 75),
+            ("source", "Source", 95),
+            ("details", "League / tournament", 220),
+        ):
+            self.average_table.heading(column, text=label)
+            self.average_table.column(column, width=width, minwidth=45, anchor="w")
+        option_scrollbar = ttk.Scrollbar(
+            option_frame, orient=tk.VERTICAL, command=self.average_table.yview
+        )
+        self.average_table.configure(yscrollcommand=option_scrollbar.set)
+        self.average_table.grid(row=0, column=0, sticky="nsew")
+        option_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.average_table.bind("<<TreeviewSelect>>", lambda _event: self._update_confirm_button())
+        self.average_table.bind("<Double-1>", lambda _event: self._confirm_selected_average())
+
+        review_actions = ttk.Frame(detail, style="App.TFrame")
+        review_actions.grid(row=5, column=0, sticky="ew", pady=(8, 0))
+        self.review_warning = ttk.Label(review_actions, text="", style="Muted.TLabel")
+        self.review_warning.pack(side=tk.LEFT)
+        self.next_review_button = ttk.Button(
+            review_actions,
+            text="Next unreviewed",
+            command=self._next_unreviewed,
+            state=tk.DISABLED,
+        )
+        self.next_review_button.pack(side=tk.RIGHT)
+        self.confirm_average_button = ttk.Button(
+            review_actions,
+            text="Confirm selected and go to next",
+            command=self._confirm_selected_average,
+            style="Warm.TButton",
+            state=tk.DISABLED,
+        )
+        self.confirm_average_button.pack(side=tk.RIGHT, padx=(0, 8))
 
     def _start_sign_in(self) -> None:
         self.authenticator.sign_out()
@@ -492,7 +713,13 @@ class AverageLookupApp(tk.Tk):
         self._render_results()
         self.auth_status.configure(text="Single lookup complete")
         self._update_action_states()
-        if result.needs_attention:
+        if result.needs_review:
+            index = len(self.results) - 1
+            self.notebook.select(self.review_tab)
+            self.review_table.selection_set(str(index))
+            self.review_table.focus(str(index))
+            self.review_table.see(str(index))
+        elif result.needs_resolution:
             index = len(self.results) - 1
             self.notebook.select(self.fixes_tab)
             self.fixes_table.selection_set(str(index))
@@ -508,7 +735,9 @@ class AverageLookupApp(tk.Tk):
         self._update_action_states()
 
     def _render_results(self) -> None:
-        for table in (self.all_table, self.fixes_table):
+        selected_review = self.review_table.selection()
+        selected_review_id = selected_review[0] if selected_review else None
+        for table in (self.all_table, self.fixes_table, self.review_table):
             table.delete(*table.get_children())
         for index, result in enumerate(self.results):
             values = (
@@ -520,12 +749,50 @@ class AverageLookupApp(tk.Tk):
             )
             tag = self._result_tag(result)
             self.all_table.insert("", tk.END, iid=str(index), values=values, tags=(tag,))
-            if result.needs_attention:
+            if result.needs_resolution:
                 self.fixes_table.insert(
                     "", tk.END, iid=str(index), values=values, tags=(tag,)
                 )
-        issue_count = sum(result.needs_attention for result in self.results)
+            if result.available_averages:
+                selected = next(
+                    (
+                        option
+                        for option in result.available_averages
+                        if option.key == result.selected_average_key
+                    ),
+                    None,
+                )
+                source = selected.source_detail if selected else "—"
+                review_state = "Confirmed" if result.reviewed else "Required"
+                self.review_table.insert(
+                    "",
+                    tk.END,
+                    iid=str(index),
+                    values=(
+                        result.input_name,
+                        result.average if result.average is not None else "—",
+                        result.games if result.games is not None else "—",
+                        source,
+                        review_state,
+                    ),
+                    tags=("ready" if result.reviewed else "review",),
+                )
+        issue_count = sum(result.needs_resolution for result in self.results)
+        review_count = sum(result.needs_review for result in self.results)
+        reviewed_count = sum(
+            result.reviewed and bool(result.available_averages) for result in self.results
+        )
+        review_total = sum(bool(result.available_averages) for result in self.results)
         self.notebook.tab(self.fixes_tab, text=f"Fixes needed ({issue_count})")
+        self.notebook.tab(self.review_tab, text=f"Review averages ({review_count})")
+        self.review_progress.configure(
+            text=(
+                f"Reviewed: {reviewed_count} of {review_total}   •   "
+                f"{review_count} still require confirmation"
+                if review_total
+                else "No averages waiting for review"
+            )
+        )
         if not self.results:
             self.summary.configure(text="No current results")
         else:
@@ -535,35 +802,57 @@ class AverageLookupApp(tk.Tk):
             self.summary.configure(
                 text=(
                     f"{len(self.results)} processed   •   {ready} ready   •   "
-                    f"{issue_count} need attention   •   {inactive} inactive"
+                    f"{review_count} need review   •   {issue_count} need fixes   •   "
+                    f"{inactive} inactive"
                 )
             )
-        self._update_fix_button()
+        if selected_review_id and self.review_table.exists(selected_review_id):
+            self.review_table.selection_set(selected_review_id)
+            self.review_table.focus(selected_review_id)
+        self._update_selection_buttons()
+        self._review_selection_changed()
 
     @staticmethod
     def _result_tag(result: LookupResult) -> str:
         if result.status is LookupStatus.FOUND:
             return "ready"
+        if result.status is LookupStatus.REVIEW_REQUIRED:
+            return "inactive" if result.member and not result.member.active else "review"
         if result.status is LookupStatus.INACTIVE_MEMBER:
             return "inactive"
         return "issue"
 
     def _active_table(self) -> ttk.Treeview:
-        return self.fixes_table if self.notebook.select() == str(self.fixes_tab) else self.all_table
+        if self.notebook.select() == str(self.fixes_tab):
+            return self.fixes_table
+        if self.notebook.select() == str(self.review_tab):
+            return self.review_table
+        return self.all_table
 
     def _selected_result_index(self) -> int | None:
         table = self._active_table()
         selected = table.selection()
         return int(selected[0]) if selected else None
 
-    def _update_fix_button(self) -> None:
+    def _update_selection_buttons(self) -> None:
         index = self._selected_result_index()
-        can_fix = index is not None and self.results[index].needs_attention
+        can_fix = index is not None and self.results[index].needs_resolution
+        can_review = index is not None and bool(self.results[index].available_averages)
         self.fix_button.configure(state=tk.NORMAL if can_fix else tk.DISABLED)
+        self.review_button.configure(state=tk.NORMAL if can_review else tk.DISABLED)
+
+    def _open_selected_result(self) -> None:
+        index = self._selected_result_index()
+        if index is None:
+            return
+        if self.results[index].available_averages:
+            self._show_review_index(index)
+        elif self.results[index].needs_resolution:
+            self._fix_selected()
 
     def _fix_selected(self) -> None:
         index = self._selected_result_index()
-        if index is None or not self.results[index].needs_attention:
+        if index is None or not self.results[index].needs_resolution:
             return
         IssueDialog(
             self,
@@ -640,10 +929,14 @@ class AverageLookupApp(tk.Tk):
 
     def _open_next_issue(self, after_index: int) -> None:
         unresolved = [
-            index for index, result in enumerate(self.results) if result.needs_attention
+            index for index, result in enumerate(self.results) if result.needs_resolution
         ]
         if not unresolved:
-            messagebox.showinfo("All fixed", "No results currently need attention.")
+            if any(result.needs_review for result in self.results):
+                self.notebook.select(self.review_tab)
+                self._next_unreviewed()
+            else:
+                messagebox.showinfo("All fixed", "No results currently need attention.")
             return
         index = next((item for item in unresolved if item > after_index), unresolved[0])
         self.notebook.select(self.fixes_tab)
@@ -651,6 +944,191 @@ class AverageLookupApp(tk.Tk):
         self.fixes_table.focus(str(index))
         self.fixes_table.see(str(index))
         self._fix_selected()
+
+    def _review_selected(self) -> None:
+        index = self._selected_result_index()
+        if index is not None and self.results[index].available_averages:
+            self._show_review_index(index)
+
+    def _show_review_index(self, index: int) -> None:
+        self.notebook.select(self.review_tab)
+        self.review_table.selection_set(str(index))
+        self.review_table.focus(str(index))
+        self.review_table.see(str(index))
+        self._review_selection_changed()
+
+    def _review_selection_changed(self, _event=None) -> None:
+        selected = self.review_table.selection()
+        self.average_table.delete(*self.average_table.get_children())
+        self.review_option_map: dict[str, AverageOption] = {}
+        if not selected:
+            self.review_name.configure(text="Select a bowler")
+            self.review_guidance.configure(text="")
+            self.review_warning.configure(text="")
+            self.confirm_average_button.configure(state=tk.DISABLED)
+            self.next_review_button.configure(
+                state=(
+                    tk.NORMAL
+                    if any(result.needs_review for result in self.results)
+                    else tk.DISABLED
+                )
+            )
+            return
+
+        result = self.results[int(selected[0])]
+        inactive_note = " — inactive member" if result.member and not result.member.active else ""
+        self.review_name.configure(text=f"{result.input_name}{inactive_note}")
+        seasons = sorted(
+            {option.season for option in result.available_averages if option.season},
+            reverse=True,
+        )
+        season_values = ("All seasons", *seasons)
+        self.season_filter.configure(values=season_values)
+        if self.season_filter_var.get() not in season_values:
+            self.season_filter_var.set("All seasons")
+        leagues = sorted(
+            {option.league for option in result.available_averages if option.league},
+            key=str.casefold,
+        )
+        league_values = ("All leagues", *leagues)
+        self.league_filter.configure(values=league_values)
+        if self.league_filter_var.get() not in league_values:
+            self.league_filter_var.set("All leagues")
+        self._render_average_choices()
+
+    def _render_average_choices(self) -> None:
+        if not hasattr(self, "average_table"):
+            return
+        self.average_table.delete(*self.average_table.get_children())
+        self.review_option_map = {}
+        selected_result = self.review_table.selection()
+        if not selected_result:
+            self._update_confirm_button()
+            return
+        result = self.results[int(selected_result[0])]
+        try:
+            minimum_games = int(self.minimum_games_var.get())
+            if minimum_games < 0:
+                raise ValueError
+        except ValueError:
+            self.review_guidance.configure(text="Minimum games must be zero or greater.")
+            self._update_confirm_button()
+            return
+        season = self.season_filter_var.get()
+        condition = self.condition_filter_var.get()
+        league = self.league_filter_var.get()
+        choices = filter_average_options(
+            result.available_averages,
+            minimum_games=minimum_games,
+            season="" if season == "All seasons" else season,
+            condition="" if condition == "All types" else condition,
+            league="" if league == "All leagues" else league,
+            center=self.center_filter_var.get(),
+            include_rerates=self.include_rerates_var.get(),
+            qualifying_only=self.qualifying_only_var.get(),
+            sort_by=self.sort_filter_var.get(),
+        )
+        for index, option in enumerate(choices):
+            iid = f"option-{index}"
+            self.review_option_map[iid] = option
+            details = option.source_detail
+            location = " / ".join(
+                part for part in (option.center, option.association) if part
+            )
+            if location:
+                details = f"{details} — {location}"
+            self.average_table.insert(
+                "",
+                tk.END,
+                iid=iid,
+                values=(
+                    option.average,
+                    option.games if option.games is not None else "—",
+                    option.season or "—",
+                    option.condition.value,
+                    option.source.value,
+                    details,
+                ),
+            )
+        matching = next(
+            (
+                iid
+                for iid, option in self.review_option_map.items()
+                if option.key == result.selected_average_key
+            ),
+            None,
+        )
+        if matching is None and choices:
+            matching = "option-0"
+        if matching:
+            self.average_table.selection_set(matching)
+            self.average_table.focus(matching)
+            self.average_table.see(matching)
+        hidden = len(result.available_averages) - len(choices)
+        message = f"Showing {len(choices)} of {len(result.available_averages)} available averages"
+        if hidden:
+            message += f" — {hidden} hidden by filters"
+        if not choices:
+            message += ". Turn off ‘Qualifying only’ or change the filters."
+        self.review_guidance.configure(text=message)
+        self.next_review_button.configure(
+            state=tk.NORMAL if any(item.needs_review for item in self.results) else tk.DISABLED
+        )
+        self._update_confirm_button()
+
+    def _selected_average_option(self) -> AverageOption | None:
+        selected = self.average_table.selection()
+        return self.review_option_map.get(selected[0]) if selected else None
+
+    def _update_confirm_button(self) -> None:
+        option = self._selected_average_option()
+        self.confirm_average_button.configure(
+            state=tk.NORMAL if option is not None else tk.DISABLED
+        )
+        warning = ""
+        selected_result = self.review_table.selection()
+        result = self.results[int(selected_result[0])] if selected_result else None
+        if result and result.member and not result.member.active:
+            warning = "Inactive member — confirmation is still required"
+        if option and option.source is AverageSource.RERATE:
+            warning = "Rerated/adjusted average — verify the event rule"
+        elif option and option.games is not None:
+            try:
+                minimum_games = int(self.minimum_games_var.get())
+            except ValueError:
+                minimum_games = 0
+            if option.games < minimum_games:
+                warning = f"Below the {minimum_games}-game minimum"
+        self.review_warning.configure(text=warning)
+
+    def _confirm_selected_average(self) -> None:
+        selected_result = self.review_table.selection()
+        option = self._selected_average_option()
+        if not selected_result or option is None:
+            return
+        index = int(selected_result[0])
+        try:
+            self.results[index] = confirm_average(self.results[index], option)
+        except ValueError as error:
+            messagebox.showerror("Could not confirm average", str(error))
+            return
+        self._render_results()
+        self.auth_status.configure(text="Average confirmed")
+        self._show_review_index(index)
+        self.after(50, self._next_unreviewed)
+
+    def _next_unreviewed(self) -> None:
+        unresolved = [
+            index for index, result in enumerate(self.results) if result.needs_review
+        ]
+        if not unresolved:
+            self.next_review_button.configure(state=tk.DISABLED)
+            messagebox.showinfo("Review complete", "Every available average has been confirmed.")
+            return
+        selected = self.review_table.selection()
+        current = int(selected[0]) if selected else -1
+        index = next((item for item in unresolved if item > current), unresolved[0])
+        self._show_review_index(index)
 
     def _save_results(self) -> None:
         if not self.results:
@@ -662,10 +1140,18 @@ class AverageLookupApp(tk.Tk):
         subset, extension = choice
         selected_count = len(select_results(self.results, subset))
         unresolved = sum(result.needs_attention for result in self.results)
+        if subset is ExportSubset.READY and unresolved:
+            messagebox.showwarning(
+                "Review not complete",
+                f"{unresolved} bowlers still need review or correction. "
+                "The ready roster cannot be saved until every bowler is confirmed.",
+            )
+            return
         if subset is ExportSubset.FULL and unresolved:
             proceed = messagebox.askyesno(
-                "Unresolved bowlers",
-                f"{unresolved} bowlers still need attention. Save the full roster anyway?",
+                "Save an unfinished draft?",
+                f"{unresolved} bowlers still need review or correction. "
+                "Save the full roster as an unfinished draft anyway?",
             )
             if not proceed:
                 return

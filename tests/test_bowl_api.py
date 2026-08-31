@@ -7,7 +7,9 @@ from usbc_average_lookup.services.bowl_api import (
     BowlApiError,
     HttpBowlApi,
     _parse_composite_average,
+    _parse_league_average,
     _parse_member,
+    _parse_rerated_average,
     _split_membership_id,
     _split_name,
 )
@@ -58,6 +60,41 @@ def test_parses_composite_average_response() -> None:
     assert average.year == "2025"
     assert average.average == 153
     assert average.games == 188
+
+
+def test_parses_league_and_converted_average_choices() -> None:
+    options = _parse_league_average(
+        {
+            "year": "2025",
+            "leagueName": "Tuesday Twisters",
+            "avg": 156,
+            "games": 72,
+            "convAvg": 168,
+            "condition": "Sport",
+            "centerName": "Lucky Strike",
+        }
+    )
+
+    assert [option.average for option in options] == [156, 168]
+    assert options[0].league == "Tuesday Twisters"
+    assert options[0].condition.value == "Sport"
+    assert options[1].original_average == 156
+
+
+def test_parses_rerated_average_choice() -> None:
+    option = _parse_rerated_average(
+        {
+            "dateAdjusted": "2025-04-13",
+            "adjustedAverage": 197,
+            "enteringAverage": 162,
+            "tournamentAdjustedIn": "State Tournament",
+            "adjustedBy": "Tournament Director",
+        }
+    )
+
+    assert option.average == 197
+    assert option.original_average == 162
+    assert option.tournament == "State Tournament"
 
 
 def test_unsuccessful_empty_member_search_is_not_found(monkeypatch) -> None:
@@ -145,3 +182,43 @@ def test_member_search_uses_the_correct_route(
     HttpBowlApi(lambda: "token").search_members(name, membership_id)
 
     assert expected_path in requested_urls[0]
+
+
+def test_collects_composite_league_converted_and_rerated_choices(monkeypatch) -> None:
+    requested_urls: list[str] = []
+
+    def fake_urlopen(request, timeout):
+        requested_urls.append(request.full_url)
+        if "compositeaverages" in request.full_url:
+            body = b'''{
+                "isSuccess": true,
+                "data": {"results": [
+                    {"year": "2025", "sport": false, "challenge": false,
+                     "games": 100, "avg": 180}
+                ]}
+            }'''
+        elif "leagueactivities" in request.full_url:
+            body = b'''{
+                "isSuccess": true,
+                "data": {"results": [
+                    {"year": "2025", "league": "Test League", "games": 60,
+                     "avg": 175, "convAvg": 182, "sport": true}
+                ]}
+            }'''
+        else:
+            body = b'''{
+                "isSuccess": true,
+                "data": {"results": [
+                    {"adjustedAverage": 190, "enteringAverage": 180,
+                     "tournament": "Test Event", "dateAdjusted": "2025-01-01"}
+                ]}
+            }'''
+        return io.BytesIO(body)
+
+    monkeypatch.setattr(bowl_api, "urlopen", fake_urlopen)
+
+    options = HttpBowlApi(lambda: "token").get_average_options("1234", "567890")
+
+    assert [option.average for option in options] == [180, 175, 182, 190]
+    assert any("leagueactivities" in url for url in requested_urls)
+    assert any("reratedaverage" in url for url in requested_urls)

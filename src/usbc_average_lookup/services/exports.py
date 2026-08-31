@@ -12,7 +12,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from usbc_average_lookup.models import LookupResult, LookupStatus
+from usbc_average_lookup.models import AverageOption, LookupResult, LookupStatus
 
 _HEADERS = (
     "Name",
@@ -20,7 +20,11 @@ _HEADERS = (
     "Average",
     "Year",
     "Games",
+    "Average Source",
+    "Average Type",
+    "League / Tournament",
     "Status",
+    "Reviewed",
     "Notes",
     "Active",
     "Association",
@@ -126,7 +130,7 @@ def export_json(
     result_list = list(results)
     counts = Counter(result.status for result in result_list)
     document = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": datetime.now(UTC).isoformat(),
         "rosterType": subset.value,
         "summary": {
@@ -140,6 +144,7 @@ def export_json(
                 "average": result.average,
                 "year": result.year or None,
                 "games": result.games,
+                "reviewed": result.reviewed,
                 "status": result.status.value,
                 "notes": result.note or None,
                 "active": result.member.active if result.member else None,
@@ -147,6 +152,10 @@ def export_json(
                 "associationState": (
                     result.member.association_state if result.member else None
                 ),
+                "selectedAverage": _option_document(_selected_option(result)),
+                "availableAverages": [
+                    _option_document(option) for option in result.available_averages
+                ],
             }
             for result in result_list
         ],
@@ -156,13 +165,18 @@ def export_json(
 
 def _row(result: LookupResult) -> tuple[object, ...]:
     member = result.member
+    selected = _selected_option(result)
     return (
         result.input_name,
         result.membership_id,
         result.average if result.average is not None else "",
         result.year,
         result.games if result.games is not None else "",
+        selected.source.value if selected else "",
+        selected.condition.value if selected else "",
+        selected.source_detail if selected else "",
         result.status.value,
+        "Yes" if result.reviewed else "No",
         result.note,
         "Yes" if member and member.active else "No" if member else "",
         ", ".join(part for part in (member.association, member.association_state) if part)
@@ -178,7 +192,7 @@ def _write_sheet(sheet, results: list[LookupResult]) -> None:
         cell.fill = PatternFill("solid", fgColor="153252")
     for result in results:
         sheet.append(_row(result))
-        status_cell = sheet.cell(sheet.max_row, 6)
+        status_cell = sheet.cell(sheet.max_row, 9)
         if result.status is LookupStatus.FOUND:
             status_cell.fill = PatternFill("solid", fgColor="E4F3EA")
         elif result.status is LookupStatus.INACTIVE_MEMBER:
@@ -191,3 +205,35 @@ def _write_sheet(sheet, results: list[LookupResult]) -> None:
         values = [str(sheet.cell(row, index).value or "") for row in range(1, sheet.max_row + 1)]
         width = min(max(len(header), *(len(value) for value in values)) + 2, 42)
         sheet.column_dimensions[get_column_letter(index)].width = width
+
+
+def _selected_option(result: LookupResult) -> AverageOption | None:
+    return next(
+        (
+            option
+            for option in result.available_averages
+            if option.key == result.selected_average_key
+        ),
+        None,
+    )
+
+
+def _option_document(option: AverageOption | None) -> dict[str, object] | None:
+    if option is None:
+        return None
+    return {
+        "id": option.key,
+        "average": option.average,
+        "games": option.games,
+        "season": option.season or None,
+        "source": option.source.value,
+        "condition": option.condition.value,
+        "league": option.league or None,
+        "center": option.center or None,
+        "association": option.association or None,
+        "originalAverage": option.original_average,
+        "tournament": option.tournament or None,
+        "adjustedBy": option.adjusted_by or None,
+        "adjustedDate": option.adjusted_date or None,
+        "hand": option.hand or None,
+    }

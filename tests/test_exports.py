@@ -74,13 +74,17 @@ def test_exports_csv_tsv_and_excel_with_issue_sheet(tmp_path) -> None:
     assert export_results(tsv_path, results) == 2
     assert export_results(excel_path, results) == 2
 
-    assert read_rows(csv_path)[1][:7] == [
+    assert read_rows(csv_path)[1][:11] == [
         "Ready Bowler",
         "",
         "180",
         "2025",
         "60",
+        "",
+        "",
+        "",
         "Found",
+        "Yes",
         "",
     ]
     with tsv_path.open(encoding="utf-8-sig") as handle:

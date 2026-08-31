@@ -3,7 +3,7 @@ name: Build Windows test app
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/manual-average-review]
     paths:
       - "src/**"
       - "pyproject.toml"
@@ -55,7 +55,7 @@ jobs:
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: USBC-Average-Lookup-Windows
+          name: ${{ github.ref_name == 'main' && 'USBC-Average-Lookup-Windows' || 'USBC-Average-Lookup-Review-Test' }}
           path: dist/USBC-Average-Lookup
           if-no-files-found: error
           retention-days: 14

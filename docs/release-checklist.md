@@ -34,6 +34,21 @@ for normal users.
 - Confirm cancelling, closing, and retrying do not leave worker or WebView2
   processes running.
 
+## Tournament review safeguards
+
+- Confirm that every successful lookup enters **Review required**, even when a
+  Standard Composite Average is preselected.
+- Change the minimum-games value and verify that turning filters on and off
+  restores every original choice.
+- Compare league, season, type, center/association, converted, and rerate data
+  against the BOWL.com member page for at least three varied members.
+- Work through a 150-bowler fixture using **Confirm selected and go to next**;
+  verify no row is skipped or confirmed without an operator action.
+- Confirm ready-roster export is blocked with even one unreviewed or unresolved
+  bowler.
+- Confirm an unfinished full export is visibly identified as a draft and its
+  JSON retains every choice for later audit.
+
 ## Privacy and shutdown
 
 - Sign out and verify that single lookup and roster lookup are disabled.

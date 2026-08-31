@@ -97,6 +97,28 @@ This rule is implemented in `services/average_selector.py` and covered by unit
 tests. It remains subject to the league operator confirming that Standard
 Composite Average is the desired number.
 
+## Experimental complete-average review
+
+The member detail page was also observed calling:
+
+```text
+https://apps1.bowl.com/Mobile/api/v1/leagueactivities
+https://apps1.bowl.com/Mobile/api/v1/reratedaverage
+```
+
+Both calls appeared to use `size`, `page`, `prefix`, and `suffix`, like the
+composite request. The rendered page confirms that league information can
+include league name, average, games, condition, converted average, season, and
+center/association. The rerate list can include adjusted and entering averages,
+tournament, date, and assigning official.
+
+The exact raw JSON field names for these two responses have not yet been saved
+as sanitized fixtures. Version 0.4 therefore accepts common case and naming
+variations, retains every parsed record, and raises a visible schema error if a
+nonempty record cannot be understood. It must never silently substitute or
+drop an unknown record. A live authorized test and sanitized fixtures are
+required before merging the experimental branch into `main`.
+
 ## Unknowns to resolve
 
 - Whether either endpoint works in a signed-out browser session.

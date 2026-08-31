@@ -1,8 +1,12 @@
 # USBC Average Lookup
 
 A small Windows desktop utility for turning a list of bowler names into
-`Name,Average` results using BOWL.com's JSON-backed member search and composite
-average data.
+reviewed `Name,Average` results using BOWL.com's JSON-backed member search,
+composite, league, converted, and rerated-average data.
+
+> [!CAUTION]
+> Version 0.4 is an experimental review-workflow branch. The tested 0.3.1
+> release remains unchanged on `main` until this workflow is approved.
 
 > [!IMPORTANT]
 > This is an early, unofficial foundation. It is not affiliated with or endorsed
@@ -16,8 +20,10 @@ average data.
 2. Choose a roster file, or use **Single lookup** for one bowler by name or
    membership ID.
 3. Click **Look Up Averages**.
-4. Pick the right person only when the app finds more than one match.
-5. Click **Save Results** to create the JSON result file.
+4. Resolve identity problems under **Fixes needed**.
+5. Review and explicitly confirm one average for every bowler under **Review
+   averages**.
+6. Click **Save Results** only after the roster is fully reviewed.
 
 The app never asks for or stores a BOWL.com password. Authentication opens the
 real BOWL.com page in a private sign-in window owned by Average Assistant. It
@@ -31,6 +37,7 @@ it does not touch the user's normal browser data.
 
 Every input name receives exactly one visible result:
 
+- `Review required`
 - `Found`
 - `Not found`
 - `Multiple matches`
@@ -39,8 +46,23 @@ Every input name receives exactly one visible result:
 - `Login expired`
 - `API error`
 
-Only `Found` rows belong in the clean `Name,Average` export. All other rows are
-retained in the UI and issue export with an explanatory note.
+Only explicitly confirmed `Found` rows belong in the clean ready-roster export.
+An average returned by BOWL.com remains `Review required` until the operator
+confirms it. All other rows are retained with an explanatory note.
+
+## Manual average review
+
+The review queue keeps all average choices returned for each selected member.
+Operators can filter by season, configurable minimum games, Standard/Sport/
+Challenge type, league, center/association, and rerate inclusion. Choices can
+be sorted by newest, highest average, or most games. Filters never delete the
+underlying choices.
+
+The app may preselect the newest Standard Composite Average to reduce clicking,
+but it never confirms that selection. Every bowler requires an explicit
+**Confirm selected and go to next** action. Ready-roster export is blocked
+until no review or identity issues remain; full unfinished drafts remain
+available with a warning.
 
 ## Input formats
 
@@ -89,7 +111,8 @@ Every input row remains visible in the output, including failures:
 
 - A runnable Tkinter Windows GUI shell
 - Domain models for members, composite averages, and lookup outcomes
-- Verified selection logic for the newest standard composite record
+- Required per-bowler review with configurable minimum-games and average filters
+- Composite, league, converted, and rerated/adjusted average models
 - Browser-based BOWL.com sign-in through the genuine site; passwords are never
   exposed to the application
 - JSON export containing every input row, status, average, and notes
@@ -127,7 +150,8 @@ src/usbc_average_lookup/
   models.py              Shared member, average, and result types
   services/
     auth.py              Private WebView2 sign-in boundary
-    average_selector.py  Composite-average selection rule
+    average_options.py   Complete choice filtering and safe suggestion logic
+    average_selector.py  Legacy composite-average selection rule
     bowl_api.py          Member-search and average API boundary
     exports.py           Results and issues CSV output
 tests/                    Unit tests

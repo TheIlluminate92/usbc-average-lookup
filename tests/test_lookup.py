@@ -1,6 +1,11 @@
 from usbc_average_lookup.models import CompositeAverage, InputBowler, LookupStatus, Member
+from usbc_average_lookup.services.average_options import composite_options
 from usbc_average_lookup.services.bowl_api import BowlApiError
-from usbc_average_lookup.services.lookup import look_up_bowler, resolve_selected_member
+from usbc_average_lookup.services.lookup import (
+    confirm_average,
+    look_up_bowler,
+    resolve_selected_member,
+)
 
 
 class FakeApi:
@@ -14,6 +19,9 @@ class FakeApi:
     def get_composite_averages(self, prefix, suffix):
         return self.averages
 
+    def get_average_options(self, prefix, suffix):
+        return composite_options(self.averages)
+
 
 def member(*, active=True, suffix="567890"):
     return Member("100", "1234", suffix, "Alex", "Bowler", active)
@@ -23,14 +31,15 @@ def average(year="2025", value=187):
     return CompositeAverage(year, 60, value, False, False)
 
 
-def test_returns_found_with_newest_standard_average() -> None:
+def test_returns_suggested_average_that_requires_review() -> None:
     result = look_up_bowler(
         FakeApi([member()], [average("2024", 170), average("2025", 187)]),
         InputBowler("Alex Bowler", "1234-567890"),
     )
 
-    assert result.status is LookupStatus.FOUND
+    assert result.status is LookupStatus.REVIEW_REQUIRED
     assert result.average == 187
+    assert result.needs_review is True
 
 
 def test_id_only_lookup_uses_the_member_name_in_results() -> None:
@@ -108,14 +117,14 @@ def test_resolves_selected_candidate_without_rerunning_search() -> None:
         selected,
     )
 
-    assert result.status is LookupStatus.FOUND
+    assert result.status is LookupStatus.REVIEW_REQUIRED
     assert result.membership_id == "1234-999999"
     assert result.average == 181
     assert result.year == "2025"
     assert result.games == 60
 
 
-def test_confirmed_inactive_member_keeps_average_and_leaves_attention_queue() -> None:
+def test_inactive_member_requires_average_review_then_leaves_attention_queue() -> None:
     selected = member(active=False)
     result = resolve_selected_member(
         FakeApi([selected], [average(value=150)]),
@@ -123,7 +132,25 @@ def test_confirmed_inactive_member_keeps_average_and_leaves_attention_queue() ->
         selected,
     )
 
-    assert result.status is LookupStatus.INACTIVE_MEMBER
+    assert result.status is LookupStatus.REVIEW_REQUIRED
     assert result.average == 150
-    assert result.confirmed_inactive is True
-    assert result.needs_attention is False
+    assert result.confirmed_inactive is False
+    assert result.needs_attention is True
+
+    confirmed = confirm_average(result, result.available_averages[0])
+
+    assert confirmed.status is LookupStatus.INACTIVE_MEMBER
+    assert confirmed.confirmed_inactive is True
+    assert confirmed.needs_attention is False
+
+
+def test_active_member_does_not_become_ready_without_explicit_confirmation() -> None:
+    result = look_up_bowler(
+        FakeApi([member()], [average(value=181)]), InputBowler("Alex Bowler")
+    )
+
+    confirmed = confirm_average(result, result.available_averages[0])
+
+    assert result.status is LookupStatus.REVIEW_REQUIRED
+    assert confirmed.status is LookupStatus.FOUND
+    assert confirmed.reviewed is True

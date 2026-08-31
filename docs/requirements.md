@@ -115,6 +115,30 @@ Every input row must end in one of these states:
 - Publishing the repository or distributing an executable before the live
   integration and usage terms are reviewed.
 
+## Version 3 experimental tournament review
+
+- Retrieve and retain all available composite, individual-league, converted,
+  and rerated/adjusted average choices for the selected member.
+- A returned or suggested average must remain **Review required** until the
+  operator explicitly confirms it.
+- Keep identity/API corrections in **Fixes needed** and average decisions in a
+  separate **Review averages** queue.
+- Show a single compact roster list and one detail panel instead of opening a
+  separate dialog for every bowler.
+- Provide filters for season, configurable minimum games, average type, league,
+  center/association, rerate inclusion, and qualifying-only choices.
+- Provide sorting by newest season, highest average, and most games.
+- Filters affect only what is displayed. They must never delete or overwrite
+  the full set of returned choices.
+- Show review progress and provide **Confirm selected and go to next** for a
+  fast, auditable 40–150 bowler workflow.
+- Block the ready-roster export while any bowler remains unreviewed or
+  unresolved. Permit only clearly warned unfinished full-roster drafts.
+- Preserve selected-source details and all available choices in structured JSON
+  output.
+- Do not merge this experimental work into `main` until the operator approves
+  the workflow and live league/rerate response fixtures have been verified.
+
 ## Version 2 working scope
 
 This milestone turns the verified working model into an appliance-like tool for
