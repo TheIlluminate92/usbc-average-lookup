@@ -7,6 +7,7 @@ from enum import StrEnum
 class LookupStatus(StrEnum):
     REVIEW_REQUIRED = "Review required"
     FOUND = "Found"
+    DUPLICATE_ENTRY = "Duplicate entry"
     NOT_FOUND = "Not found"
     MULTIPLE_MATCHES = "Multiple matches"
     NO_AVERAGE = "No average"

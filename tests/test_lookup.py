@@ -3,6 +3,9 @@ from usbc_average_lookup.services.average_options import composite_options
 from usbc_average_lookup.services.bowl_api import BowlApiError
 from usbc_average_lookup.services.lookup import (
     confirm_average,
+    find_duplicate_inputs,
+    flag_duplicate_results,
+    look_up_all,
     look_up_bowler,
     resolve_selected_member,
 )
@@ -154,3 +157,68 @@ def test_active_member_does_not_become_ready_without_explicit_confirmation() -> 
     assert result.status is LookupStatus.REVIEW_REQUIRED
     assert confirmed.status is LookupStatus.FOUND
     assert confirmed.reviewed is True
+
+
+def test_duplicate_membership_ids_are_flagged_before_any_api_lookup() -> None:
+    class CountingApi(FakeApi):
+        def __init__(self):
+            super().__init__([member()], [average()])
+            self.search_count = 0
+
+        def search_members(self, name="", membership_id=""):
+            self.search_count += 1
+            return super().search_members(name, membership_id)
+
+    api = CountingApi()
+    bowlers = [
+        InputBowler("Alex Bowler", "1234-567890"),
+        InputBowler("Alex Bowler", "1234567890"),
+    ]
+
+    results = look_up_all(api, bowlers)
+
+    assert [result.status for result in results] == [
+        LookupStatus.DUPLICATE_ENTRY,
+        LookupStatus.DUPLICATE_ENTRY,
+    ]
+    assert api.search_count == 0
+    assert "#1, #2" in results[0].note
+
+
+def test_same_name_without_ids_requires_attention() -> None:
+    bowlers = [InputBowler("David Brown"), InputBowler("  david   brown  ")]
+
+    duplicate_notes = find_duplicate_inputs(bowlers)
+
+    assert set(duplicate_notes) == {0, 1}
+    assert "without membership IDs" in duplicate_notes[0]
+
+
+def test_same_name_with_different_ids_is_allowed() -> None:
+    bowlers = [
+        InputBowler("David Brown", "1111-111111"),
+        InputBowler("David Brown", "2222-222222"),
+    ]
+
+    assert find_duplicate_inputs(bowlers) == {}
+
+
+def test_duplicate_flags_follow_edits_and_removals() -> None:
+    bowlers = [
+        InputBowler("Alex Bowler", "1234-567890"),
+        InputBowler("Other Name", "1234-567890"),
+    ]
+    original = [
+        look_up_bowler(FakeApi([member()], [average()]), bowler)
+        for bowler in bowlers
+    ]
+
+    flagged = flag_duplicate_results(bowlers, original)
+
+    assert all(result.status is LookupStatus.DUPLICATE_ENTRY for result in flagged)
+    assert "multiple names" in flagged[0].note
+
+    remaining = flag_duplicate_results(bowlers[:1], flagged[:1])
+
+    assert remaining[0].status is LookupStatus.NOT_FOUND
+    assert remaining[0].note == "Duplicate conflict cleared. Retry this entry to continue."

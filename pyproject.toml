@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "usbc-average-lookup"
-version = "0.4.0rc4"
+version = "0.4.0rc5"
 description = "Windows GUI for manually reviewed BOWL.com average lookup"
 readme = "README.md"
 requires-python = ">=3.11"

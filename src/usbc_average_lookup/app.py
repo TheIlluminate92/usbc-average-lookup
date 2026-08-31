@@ -36,8 +36,10 @@ from usbc_average_lookup.services.input_parser import (
 )
 from usbc_average_lookup.services.lookup import (
     confirm_average,
+    duplicate_result_for_roster,
+    flag_duplicate_results,
     look_up_all,
-    look_up_bowler,
+    look_up_bowler_in_roster,
     resolve_selected_member,
 )
 from usbc_average_lookup.services.review_drafts import load_review_draft
@@ -783,11 +785,15 @@ class AverageLookupApp(tk.Tk):
             return
         self.selected_path = path
         self.bowlers = bowlers
-        self.results = restored_results or []
+        self.results = (
+            flag_duplicate_results(bowlers, restored_results)
+            if restored_results is not None
+            else []
+        )
         self.file_label.configure(text=path.name)
         if restored_results is not None:
-            reviewed = sum(result.reviewed for result in restored_results)
-            remaining = sum(result.needs_attention for result in restored_results)
+            reviewed = sum(result.reviewed for result in self.results)
+            remaining = sum(result.needs_attention for result in self.results)
             detail = (
                 f"Review draft restored — {reviewed} complete, "
                 f"{remaining} remaining"
@@ -845,7 +851,10 @@ class AverageLookupApp(tk.Tk):
 
     def _single_lookup_worker(self, bowler: InputBowler) -> None:
         assert self.api is not None
-        result = look_up_bowler(self.api, bowler)
+        roster = [*self.bowlers, bowler]
+        result = look_up_bowler_in_roster(
+            self.api, bowler, roster, len(roster) - 1
+        )
         self.after(0, self._single_lookup_finished, bowler, result)
 
     def _single_lookup_finished(
@@ -853,6 +862,7 @@ class AverageLookupApp(tk.Tk):
     ) -> None:
         self.bowlers.append(bowler)
         self.results.append(result)
+        self.results = flag_duplicate_results(self.bowlers, self.results)
         if self.selected_path is None:
             self.file_label.configure(text="Manual lookups")
             self.file_detail.configure(text=f"{len(self.bowlers)} bowlers added individually")
@@ -1013,6 +1023,7 @@ class AverageLookupApp(tk.Tk):
             on_member=lambda bowler, member, move_next: self._resolve_issue_member(
                 index, bowler, member, move_next
             ),
+            on_remove=lambda move_next: self._remove_issue(index, move_next),
         )
 
     def _retry_issue(
@@ -1049,11 +1060,14 @@ class AverageLookupApp(tk.Tk):
         move_next: bool,
     ) -> None:
         assert self.api is not None
-        result = (
-            resolve_selected_member(self.api, bowler, member)
-            if member is not None
-            else look_up_bowler(self.api, bowler)
-        )
+        roster = list(self.bowlers)
+        duplicate = duplicate_result_for_roster(bowler, roster, index)
+        if duplicate is not None:
+            result = duplicate
+        elif member is not None:
+            result = resolve_selected_member(self.api, bowler, member)
+        else:
+            result = look_up_bowler_in_roster(self.api, bowler, roster, index)
         self.after(0, self._fix_finished, index, bowler, result, move_next)
 
     def _fix_finished(
@@ -1065,12 +1079,25 @@ class AverageLookupApp(tk.Tk):
     ) -> None:
         self.bowlers[index] = bowler
         self.results[index] = result
+        self.results = flag_duplicate_results(self.bowlers, self.results)
         self._close_issue_dialogs()
         self._render_results()
         self.auth_status.configure(text="Result updated")
         self._update_action_states()
         if move_next:
             self.after(100, self._open_next_issue, index)
+
+    def _remove_issue(self, index: int, move_next: bool) -> None:
+        del self.bowlers[index]
+        del self.results[index]
+        self.results = flag_duplicate_results(self.bowlers, self.results)
+        self._close_issue_dialogs()
+        self._render_results()
+        self.file_detail.configure(text=f"{len(self.bowlers)} bowlers loaded")
+        self.auth_status.configure(text="Duplicate row removed")
+        self._update_action_states()
+        if move_next:
+            self.after(100, self._open_next_issue, index - 1)
 
     def _close_issue_dialogs(self) -> None:
         for child in self.winfo_children():
@@ -1708,11 +1735,13 @@ class IssueDialog(tk.Toplevel):
         result: LookupResult,
         on_retry: Callable[[InputBowler, bool], None],
         on_member: Callable[[InputBowler, Member, bool], None],
+        on_remove: Callable[[bool], None],
     ) -> None:
         super().__init__(parent)
         self.result = result
         self.on_retry = on_retry
         self.on_member = on_member
+        self.on_remove = on_remove
         self.title("Fix bowler")
         self.geometry("720x500")
         self.minsize(620, 430)
@@ -1806,6 +1835,12 @@ class IssueDialog(tk.Toplevel):
         buttons = ttk.Frame(content, style="App.TFrame")
         buttons.grid(row=6, column=0, columnspan=2, sticky="e")
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
+        if self.result.status is LookupStatus.DUPLICATE_ENTRY:
+            ttk.Button(
+                buttons,
+                text="Remove duplicate row",
+                command=lambda: self.on_remove(self.next_var.get()),
+            ).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(buttons, text="Retry search", command=self._retry).pack(
             side=tk.LEFT, padx=(8, 0)
         )

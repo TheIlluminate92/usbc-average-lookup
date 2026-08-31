@@ -39,6 +39,7 @@ Every input name receives exactly one visible result:
 
 - `Review required`
 - `Found`
+- `Duplicate entry`
 - `Not found`
 - `Multiple matches`
 - `No average`
@@ -49,6 +50,11 @@ Every input name receives exactly one visible result:
 Only explicitly confirmed `Found` rows belong in the clean ready-roster export.
 An average returned by BOWL.com remains `Review required` until the operator
 confirms it. All other rows are retained with an explanatory note.
+
+Duplicate membership IDs and repeated names without membership IDs are sent to
+**Fixes needed** before lookup. The operator can correct the row or remove an
+accidental duplicate. Matching names with different membership IDs remain valid
+because they may represent different people.
 
 ## Manual average review
 
