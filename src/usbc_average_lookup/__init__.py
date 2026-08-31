@@ -1,3 +1,3 @@
 """USBC Average Lookup application foundation."""
 
-__version__ = "0.4.0rc3"
+__version__ = "0.4.0rc4"

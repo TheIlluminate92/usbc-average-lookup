@@ -59,13 +59,24 @@ def test_filters_by_season_type_and_league() -> None:
         records,
         season="2024",
         condition="Sport",
-        league="Monday",
+        league="Monday Sport",
     )
 
     assert [item.key for item in filtered] == ["sport"]
 
     labeled = filter_average_options(records, league="Monday Sport — 2024")
     assert [item.key for item in labeled] == ["sport"]
+
+
+def test_league_filter_does_not_include_names_that_only_contain_the_selection() -> None:
+    records = [
+        option("winter", 166, games=87, league="Monday Misfits"),
+        option("summer", 171, games=24, league="Summer Monday Misfits"),
+    ]
+
+    filtered = filter_average_options(records, league="Monday Misfits — 2025")
+
+    assert [item.key for item in filtered] == ["winter"]
 
 
 def test_rerates_remain_visible_without_a_game_count() -> None:
