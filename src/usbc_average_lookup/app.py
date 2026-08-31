@@ -60,6 +60,60 @@ COLORS = {
 }
 
 
+class Tooltip:
+    """Small hover hint for controls that need a little extra explanation."""
+
+    def __init__(self, widget: tk.Widget, text: str) -> None:
+        self.widget = widget
+        self.text = text
+        self.window: tk.Toplevel | None = None
+        self.pending: str | None = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, _event=None) -> None:
+        self._cancel_pending()
+        self.pending = self.widget.after(450, self._show)
+
+    def _show(self) -> None:
+        self.pending = None
+        if self.window is not None or not self.widget.winfo_exists():
+            return
+        self.window = tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)
+        tk.Label(
+            self.window,
+            text=self.text,
+            justify=tk.LEFT,
+            wraplength=360,
+            background="#FFF4CC",
+            foreground="#211B10",
+            relief=tk.SOLID,
+            borderwidth=1,
+            padx=9,
+            pady=7,
+            font=("Segoe UI", 9),
+        ).pack()
+        self.window.update_idletasks()
+        x = self.widget.winfo_rootx() + self.widget.winfo_width() + 6
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        x = min(x, self.widget.winfo_screenwidth() - self.window.winfo_reqwidth() - 8)
+        y = min(y, self.widget.winfo_screenheight() - self.window.winfo_reqheight() - 8)
+        self.window.wm_geometry(f"+{max(8, x)}+{max(8, y)}")
+
+    def _cancel_pending(self) -> None:
+        if self.pending is not None:
+            self.widget.after_cancel(self.pending)
+            self.pending = None
+
+    def _hide(self, _event=None) -> None:
+        self._cancel_pending()
+        if self.window is not None:
+            self.window.destroy()
+            self.window = None
+
+
 class AverageLookupApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -140,6 +194,15 @@ class AverageLookupApp(tk.Tk):
             background=[("active", "#C98447"), ("disabled", COLORS["surface_raised"])],
             foreground=[("disabled", COLORS["muted"])],
         )
+        style.configure(
+            "Help.TButton",
+            background=COLORS["navy_soft"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["line"],
+            padding=(5, 2),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map("Help.TButton", background=[("active", COLORS["navy"])])
         style.configure(
             "TCombobox",
             fieldbackground=COLORS["surface_raised"],
@@ -403,13 +466,27 @@ class AverageLookupApp(tk.Tk):
         self.review_tab.columnconfigure(1, weight=3)
         self.review_tab.rowconfigure(1, weight=1)
 
+        review_header = ttk.Frame(self.review_tab, style="Surface.TFrame", padding=(12, 7))
+        review_header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        review_header.columnconfigure(0, weight=1)
         self.review_progress = ttk.Label(
-            self.review_tab,
+            review_header,
             text="No averages waiting for review",
             style="Surface.TLabel",
-            padding=(12, 10),
         )
-        self.review_progress.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self.review_progress.grid(row=0, column=0, sticky="w")
+        review_help = ttk.Button(
+            review_header,
+            text="?",
+            width=3,
+            style="Help.TButton",
+            command=self._show_review_help,
+        )
+        review_help.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        Tooltip(
+            review_help,
+            "How average review works — click for a quick explanation.",
+        )
 
         list_frame = ttk.Frame(self.review_tab, style="Surface.TFrame", padding=(8, 0, 4, 8))
         list_frame.grid(row=1, column=0, sticky="nsew")
@@ -602,6 +679,20 @@ class AverageLookupApp(tk.Tk):
             state=tk.DISABLED,
         )
         self.bulk_review_button.pack(side=tk.RIGHT, padx=(0, 8))
+
+    def _show_review_help(self) -> None:
+        messagebox.showinfo(
+            "How average review works",
+            "Every bowler's selected average must be confirmed before the roster is ready.\n\n"
+            "Bulk review: Shows one proposed average per bowler. Nothing is selected "
+            "automatically. Select only the rows you have checked, then confirm them.\n\n"
+            "Individual review: Any bowler not confirmed in bulk stays in the review list. "
+            "Choose the correct average and use 'Confirm selected and go to next.'\n\n"
+            "Filters: Minimum games, season, type, league, center, and the checkboxes only "
+            "control which choices are shown. They never approve an average by themselves.\n\n"
+            "Gold means review is still required. Green means the choice was confirmed.",
+            parent=self,
+        )
 
     def _start_sign_in(self) -> None:
         self.authenticator.sign_out()
