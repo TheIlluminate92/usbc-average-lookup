@@ -1,43 +1,21 @@
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
+from multiprocessing import Pipe, Process
+from multiprocessing.connection import Connection
 from os import environ
 from pathlib import Path
-from shutil import rmtree, which
-from threading import Event
+from shutil import rmtree
 from time import monotonic, sleep
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from playwright.sync_api import Request
+from typing import Any
 
 
 class AuthState(StrEnum):
     SIGNED_OUT = "Not signed in"
     SIGNED_IN = "Signed in"
     EXPIRED = "Session expired"
-
-
-class SignInBrowser(StrEnum):
-    EDGE = "Microsoft Edge"
-    CHROME = "Google Chrome"
-    BRAVE = "Brave"
-
-    @property
-    def channel(self) -> str | None:
-        if self is SignInBrowser.EDGE:
-            return "msedge"
-        if self is SignInBrowser.CHROME:
-            return "chrome"
-        return None
-
-    @property
-    def profile_name(self) -> str:
-        return {
-            SignInBrowser.EDGE: "browser-profile",
-            SignInBrowser.CHROME: "browser-profile-chrome",
-            SignInBrowser.BRAVE: "browser-profile-brave",
-        }[self]
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,196 +25,144 @@ class AuthSession:
     bearer_token: str = field(default="", repr=False)
 
 
-class BrowserAuthenticator:
-    """Open the genuine login page and capture an API session in memory.
+class WebViewAuthenticator:
+    """Sign in on BOWL.com's real page inside a private app-owned WebView.
 
-    Playwright drives the Microsoft Edge installation already present on normal
-    Windows 10/11 systems. Credentials are entered only into BOWL.com. The app
-    observes the bearer header that the signed-in site sends to its own API and
-    never persists or logs it.
+    The WebView runs in a child process because pywebview needs to own that
+    process's main GUI thread. Only the temporary bearer token crosses the
+    in-memory pipe. ``private_mode=True`` prevents cookies and browser storage
+    from being retained after the sign-in window closes.
     """
 
-    MEMBER_URL = "https://webapps.bowl.com/USBCFindA/Home/Member"
-    API_PREFIX = "https://apps1.bowl.com/Mobile/api/v1/"
-
-    def __init__(
-        self,
-        profile_path: Path,
-        browser: SignInBrowser = SignInBrowser.EDGE,
-        timeout_seconds: int = 300,
-    ) -> None:
-        self._profile_path = profile_path
-        self.browser = browser
+    def __init__(self, timeout_seconds: int = 300) -> None:
         self._timeout_seconds = timeout_seconds
-        self._context = None
+        self._process: Process | None = None
 
     def sign_in(self) -> AuthSession:
-        from playwright.sync_api import sync_playwright
-
-        token_ready = Event()
-        captured_token = ""
-
-        def observe_request(request: "Request") -> None:
-            nonlocal captured_token
-            if not request.url.startswith(self.API_PREFIX):
-                return
-            token = _bearer_token_from_headers(request.all_headers())
-            if token:
-                captured_token = token
-                token_ready.set()
-
-        self._profile_path.mkdir(parents=True, exist_ok=True)
-        with sync_playwright() as playwright:
-            # Check a remembered BOWL.com session without showing a browser first.
-            # This avoids the visible open-and-immediately-close flash when the
-            # saved session is still valid.
-            captured_token = self._existing_token(playwright)
-            if captured_token:
-                return AuthSession(AuthState.SIGNED_IN, bearer_token=captured_token)
-
-            context = self._launch_context(playwright, headless=False)
-            self._context = context
-            try:
-                context.on("request", observe_request)
-                page = _single_sign_in_page(context)
-                page.bring_to_front()
-                page.goto(self.MEMBER_URL, wait_until="domcontentloaded")
-                deadline = monotonic() + self._timeout_seconds
-                while not token_ready.is_set() and monotonic() < deadline:
-                    stored_token = _token_from_browser_storage(context)
-                    if stored_token:
-                        captured_token = stored_token
-                        token_ready.set()
-                        break
-                    page.wait_for_timeout(1000)
-                if not token_ready.is_set():
-                    raise TimeoutError("BOWL.com sign-in was not completed")
-                # Avoid a jarring open/close flash immediately after the final redirect.
-                sleep(0.75)
-            finally:
-                if self._context is context:
-                    context.close()
-                    self._context = None
-        return AuthSession(AuthState.SIGNED_IN, bearer_token=captured_token)
-
-    def _launch_context(self, playwright, *, headless: bool):
-        options = {
-            "headless": headless,
-            "reduced_motion": "reduce",
-            "no_viewport": True,
-        }
-        if self.browser.channel:
-            options["channel"] = self.browser.channel
-        else:
-            executable = _browser_executable_path(self.browser)
-            if executable is None:
-                raise RuntimeError(f"{self.browser.value} is not installed")
-            options["executable_path"] = str(executable)
-        return playwright.chromium.launch_persistent_context(
-            str(self._profile_path),
-            **options,
+        self.sign_out()
+        receive, send = Pipe(duplex=False)
+        process = Process(
+            target=_run_private_sign_in,
+            args=(send, self._timeout_seconds),
+            name="Average Assistant sign-in",
+            daemon=True,
         )
-
-    def _existing_token(self, playwright) -> str:
-        context = self._launch_context(playwright, headless=True)
-        captured_token = ""
-
-        def observe_request(request: "Request") -> None:
-            nonlocal captured_token
-            if request.url.startswith(self.API_PREFIX):
-                captured_token = _bearer_token_from_headers(request.all_headers())
-
+        self._process = process
+        process.start()
+        send.close()
         try:
-            context.on("request", observe_request)
-            page = _single_sign_in_page(context)
-            page.goto(self.MEMBER_URL, wait_until="domcontentloaded", timeout=30_000)
-            # OIDC redirects and the first authorized API request can take more
-            # than five seconds on a cold browser profile. Keep that work hidden
-            # rather than falling back to a briefly visible browser too early.
-            deadline = monotonic() + 15
-            while monotonic() < deadline:
-                token = captured_token or _token_from_browser_storage(context)
-                if token:
-                    return token
-                page.wait_for_timeout(250)
-            return ""
-        except Exception:
-            # A failed quiet check should not prevent a normal interactive sign-in.
-            return ""
+            if not receive.poll(self._timeout_seconds + 15):
+                raise TimeoutError("BOWL.com sign-in timed out")
+            try:
+                payload = receive.recv()
+            except EOFError as error:
+                raise RuntimeError("The private sign-in window closed unexpectedly") from error
+            return _session_from_payload(payload)
         finally:
-            context.close()
+            receive.close()
+            # Give WebView2 time to close cleanly and release its native resources.
+            process.join(timeout=5)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=5)
+            if self._process is process:
+                self._process = None
 
     def sign_out(self) -> None:
-        if self._context is not None:
-            self._context.close()
-            self._context = None
-
-    def forget_saved_login(self) -> None:
-        """Remove only this app's profile for the selected browser."""
-
-        self.sign_out()
-        if self._profile_path.exists():
-            rmtree(self._profile_path)
+        process = self._process
+        self._process = None
+        if process is None:
+            return
+        if process.is_alive():
+            process.terminate()
+        process.join(timeout=5)
 
 
-def available_sign_in_browsers() -> list[SignInBrowser]:
-    """Return installed supported browsers in the preferred display order."""
+def clear_legacy_sign_in_data(base_path: Path | None = None) -> None:
+    """Remove app-owned browser profiles left by versions before 0.3.0."""
 
-    return [browser for browser in SignInBrowser if _browser_is_installed(browser)]
+    root = base_path or Path(environ.get("LOCALAPPDATA", Path.home())) / "Average Assistant"
+    for profile_name in (
+        "browser-profile",
+        "browser-profile-chrome",
+        "browser-profile-brave",
+    ):
+        rmtree(root / profile_name, ignore_errors=True)
 
 
-def _browser_is_installed(browser: SignInBrowser) -> bool:
-    return _browser_executable_path(browser) is not None
+def _run_private_sign_in(send: Connection, timeout_seconds: int) -> None:
+    """Child-process entry point for the private WebView2 window."""
 
+    import webview
 
-def _browser_executable_path(browser: SignInBrowser) -> Path | None:
-    executable, relative = {
-        SignInBrowser.EDGE: (
-            "msedge.exe",
-            Path("Microsoft") / "Edge" / "Application" / "msedge.exe",
-        ),
-        SignInBrowser.CHROME: (
-            "chrome.exe",
-            Path("Google") / "Chrome" / "Application" / "chrome.exe",
-        ),
-        SignInBrowser.BRAVE: (
-            "brave.exe",
-            Path("BraveSoftware") / "Brave-Browser" / "Application" / "brave.exe",
-        ),
-    }[browser]
-    discovered = which(executable)
-    if discovered:
-        return Path(discovered)
-    roots = [
-        environ.get("PROGRAMFILES"),
-        environ.get("PROGRAMFILES(X86)"),
-        environ.get("LOCALAPPDATA"),
-    ]
-    return next(
-        (Path(root) / relative for root in roots if root and (Path(root) / relative).is_file()),
-        None,
+    sent = False
+    window = webview.create_window(
+        "Sign in to BOWL.com — Average Assistant",
+        "https://webapps.bowl.com/USBCFindA/Home/Member",
+        width=1000,
+        height=760,
+        min_size=(760, 560),
+        resizable=True,
+        background_color="#13191F",
+        text_select=True,
     )
 
+    def watch_for_session(target_window) -> None:
+        nonlocal sent
+        deadline = monotonic() + timeout_seconds
+        while monotonic() < deadline:
+            try:
+                values = target_window.evaluate_js(
+                    """(() => [
+                        ...Object.values(window.localStorage),
+                        ...Object.values(window.sessionStorage)
+                    ])()"""
+                )
+                token = _bearer_token_from_storage_values(values or [])
+            except Exception:
+                token = ""
+            if token:
+                _send_payload(send, {"token": token})
+                sent = True
+                target_window.destroy()
+                return
+            sleep(0.5)
+        _send_payload(send, {"error": "BOWL.com sign-in timed out"})
+        sent = True
+        target_window.destroy()
 
-def _single_sign_in_page(context):
-    """Keep one predictable page instead of restoring tabs plus about:blank."""
+    try:
+        webview.start(
+            watch_for_session,
+            args=(window,),
+            gui="edgechromium",
+            private_mode=True,
+        )
+        if not sent:
+            _send_payload(send, {"error": "The sign-in window was closed"})
+    except Exception as error:
+        _send_payload(send, {"error": f"Could not open the private sign-in window: {error}"})
+    finally:
+        send.close()
 
-    pages = list(context.pages)
-    if not pages:
-        return context.new_page()
-    page = next(
-        (candidate for candidate in reversed(pages) if candidate.url == "about:blank"),
-        pages[-1],
-    )
-    for extra in pages:
-        if extra is page:
-            continue
-        try:
-            extra.close()
-        except Exception:
-            # A restored tab may already be closing during browser startup.
-            pass
-    return page
+
+def _send_payload(send: Connection, payload: dict[str, str]) -> None:
+    try:
+        send.send(payload)
+    except (BrokenPipeError, EOFError, OSError):
+        pass
+
+
+def _session_from_payload(payload: Any) -> AuthSession:
+    if not isinstance(payload, dict):
+        raise RuntimeError("The sign-in window returned an invalid response")
+    token = payload.get("token")
+    if isinstance(token, str) and token.strip():
+        return AuthSession(AuthState.SIGNED_IN, bearer_token=token.strip())
+    message = payload.get("error")
+    if isinstance(message, str) and message.strip():
+        raise RuntimeError(message.strip())
+    raise RuntimeError("BOWL.com sign-in did not return a session")
 
 
 def _bearer_token_from_headers(headers: dict[str, str]) -> str:
@@ -247,36 +173,6 @@ def _bearer_token_from_headers(headers: dict[str, str]) -> str:
     if separator and scheme.casefold() == "bearer" and token.strip():
         return token.strip()
     return ""
-
-
-def _token_from_browser_storage(context) -> str:
-    """Find an OIDC access token in the app-owned browser profile.
-
-    BOWL.com currently stores its signed-in OIDC session in browser storage.
-    Reading that session lets the desktop app notice a completed sign-in without
-    requiring the user to run a member search. Values are inspected in memory
-    and are never logged or persisted by this application.
-    """
-
-    values: list[object] = []
-    try:
-        for origin in context.storage_state().get("origins", []):
-            values.extend(item.get("value", "") for item in origin.get("localStorage", []))
-    except Exception:
-        pass
-    for page in context.pages:
-        try:
-            values.extend(
-                page.evaluate(
-                    """() => [
-                        ...Object.values(localStorage),
-                        ...Object.values(sessionStorage)
-                    ]"""
-                )
-            )
-        except Exception:
-            continue
-    return _bearer_token_from_storage_values(values)
 
 
 def _bearer_token_from_storage_values(values: list[object]) -> str:

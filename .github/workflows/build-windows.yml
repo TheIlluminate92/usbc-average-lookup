@@ -30,7 +30,7 @@ jobs:
           --windowed
           --onedir
           --name USBC-Average-Lookup
-          --collect-all playwright
+          --collect-all webview
           src/usbc_average_lookup/__main__.py
       - uses: actions/upload-artifact@v4
         with:

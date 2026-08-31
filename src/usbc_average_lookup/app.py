@@ -3,7 +3,7 @@ from __future__ import annotations
 import tkinter as tk
 from collections import Counter
 from collections.abc import Callable
-from os import environ
+from multiprocessing import freeze_support
 from pathlib import Path
 from threading import Thread
 from tkinter import filedialog, messagebox, ttk
@@ -12,9 +12,8 @@ from usbc_average_lookup.models import InputBowler, LookupResult, LookupStatus, 
 from usbc_average_lookup.services.auth import (
     AuthSession,
     AuthState,
-    BrowserAuthenticator,
-    SignInBrowser,
-    available_sign_in_browsers,
+    WebViewAuthenticator,
+    clear_legacy_sign_in_data,
 )
 from usbc_average_lookup.services.bowl_api import HttpBowlApi
 from usbc_average_lookup.services.exports import ExportSubset, export_results, select_results
@@ -58,18 +57,14 @@ class AverageLookupApp(tk.Tk):
         self.bowlers: list[InputBowler] = []
         self.selected_path: Path | None = None
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)
-        self.local_data = Path(environ.get("LOCALAPPDATA", Path.home())) / "Average Assistant"
         self.signing_in = False
-        browsers = available_sign_in_browsers() or [SignInBrowser.EDGE]
-        self.browser_choices = browsers
-        self.authenticator = BrowserAuthenticator(
-            self.local_data / browsers[0].profile_name,
-            browsers[0],
-        )
+        clear_legacy_sign_in_data()
+        self.authenticator = WebViewAuthenticator()
         self.api: HttpBowlApi | None = None
         self._configure_style()
         self._build_ui()
         self._render_results()
+        self.protocol("WM_DELETE_WINDOW", self._close_app)
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
@@ -208,43 +203,23 @@ class AverageLookupApp(tk.Tk):
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.auth_status = ttk.Label(header, text="Not signed in", style="Status.TLabel")
         self.auth_status.grid(row=0, column=1, rowspan=2, padx=(18, 0), sticky="e")
-        browser_frame = ttk.Frame(header, style="Surface.TFrame")
-        browser_frame.grid(row=0, column=2, rowspan=2, padx=(10, 0), sticky="e")
-        ttk.Label(browser_frame, text="Browser", style="Subtitle.TLabel").pack(anchor="w")
-        self.browser_var = tk.StringVar(value=self.browser_choices[0].value)
-        self.browser_box = ttk.Combobox(
-            browser_frame,
-            textvariable=self.browser_var,
-            values=[browser.value for browser in self.browser_choices],
-            state="readonly",
-            width=17,
-        )
-        self.browser_box.pack(anchor="w", pady=(2, 0))
         self.sign_in_button = ttk.Button(
             header,
             text="Sign in to BOWL.com",
             command=self._start_sign_in,
             style="Primary.TButton",
         )
-        self.sign_in_button.grid(row=0, column=3, rowspan=2, padx=(10, 0), sticky="e")
-        account_buttons = ttk.Frame(header, style="Surface.TFrame")
-        account_buttons.grid(row=0, column=4, rowspan=2, padx=(8, 0), sticky="e")
+        self.sign_in_button.grid(row=0, column=2, rowspan=2, padx=(10, 0), sticky="e")
         self.sign_out_button = ttk.Button(
-            account_buttons,
+            header,
             text="Sign out",
             command=self._sign_out,
             state=tk.DISABLED,
         )
-        self.sign_out_button.pack(fill=tk.X)
-        self.forget_login_button = ttk.Button(
-            account_buttons,
-            text="Forget login",
-            command=self._forget_saved_login,
-        )
-        self.forget_login_button.pack(fill=tk.X, pady=(4, 0))
+        self.sign_out_button.grid(row=0, column=3, rowspan=2, padx=(8, 0), sticky="e")
 
         steps = ttk.Frame(header, style="Surface.TFrame")
-        steps.grid(row=2, column=0, columnspan=5, sticky="ew", pady=(18, 0))
+        steps.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(18, 0))
         for column, (number, title) in enumerate(
             (("1", "Sign in"), ("2", "Choose roster"), ("3", "Review"), ("4", "Save"))
         ):
@@ -369,18 +344,11 @@ class AverageLookupApp(tk.Tk):
         return table
 
     def _start_sign_in(self) -> None:
-        browser = SignInBrowser(self.browser_var.get())
         self.authenticator.sign_out()
-        self.authenticator = BrowserAuthenticator(
-            self.local_data / browser.profile_name,
-            browser,
-        )
         self.signing_in = True
         self.sign_in_button.configure(state=tk.DISABLED)
         self.sign_out_button.configure(state=tk.DISABLED)
-        self.forget_login_button.configure(state=tk.DISABLED)
-        self.browser_box.configure(state=tk.DISABLED)
-        self.auth_status.configure(text=f"Finish signing in in {browser.value}…")
+        self.auth_status.configure(text="Finish signing in…")
         Thread(target=self._sign_in_worker, daemon=True).start()
 
     def _sign_in_worker(self) -> None:
@@ -398,8 +366,6 @@ class AverageLookupApp(tk.Tk):
         self.auth_status.configure(text="Signed in — ready")
         self.sign_in_button.configure(text="Sign in again", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.NORMAL)
-        self.forget_login_button.configure(state=tk.NORMAL)
-        self.browser_box.configure(state="readonly")
         self._update_action_states()
 
     def _sign_in_failed(self, message: str) -> None:
@@ -407,8 +373,6 @@ class AverageLookupApp(tk.Tk):
         self.auth_status.configure(text="Sign-in not completed")
         self.sign_in_button.configure(state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.DISABLED)
-        self.forget_login_button.configure(state=tk.NORMAL)
-        self.browser_box.configure(state="readonly")
         messagebox.showerror("Could not sign in", message)
 
     def _sign_out(self) -> None:
@@ -418,39 +382,13 @@ class AverageLookupApp(tk.Tk):
         self.auth_status.configure(text="Not signed in")
         self.sign_in_button.configure(text="Sign in to BOWL.com", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.DISABLED)
-        self.forget_login_button.configure(state=tk.NORMAL)
-        self.browser_box.configure(state="readonly")
         self._update_action_states()
 
-    def _forget_saved_login(self) -> None:
-        browser = SignInBrowser(self.browser_var.get())
-        if not messagebox.askyesno(
-            "Forget saved login?",
-            f"This removes the BOWL.com login saved by Average Assistant for "
-            f"{browser.value}. Your normal browser profile will not be changed.",
-        ):
-            return
-        authenticator = BrowserAuthenticator(
-            self.local_data / browser.profile_name,
-            browser,
-        )
-        try:
-            self.authenticator.sign_out()
-            authenticator.forget_saved_login()
-        except OSError as error:
-            messagebox.showerror(
-                "Could not forget login",
-                f"Close the sign-in browser and try again.\n\n{error}",
-            )
-            return
-        self.authenticator = authenticator
+    def _close_app(self) -> None:
+        self.authenticator.sign_out()
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)
         self.api = None
-        self.auth_status.configure(text="Saved login removed")
-        self.sign_in_button.configure(text="Sign in to BOWL.com", state=tk.NORMAL)
-        self.sign_out_button.configure(state=tk.DISABLED)
-        self.browser_box.configure(state="readonly")
-        self._update_action_states()
+        self.destroy()
 
     def _choose_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -757,7 +695,6 @@ class AverageLookupApp(tk.Tk):
         )
 
     def _update_action_states(self) -> None:
-        self.browser_box.configure(state=tk.DISABLED if self.signing_in else "readonly")
         self.single_button.configure(
             state=tk.NORMAL if self.api is not None else tk.DISABLED
         )
@@ -1110,4 +1047,5 @@ class SheetPickerDialog(tk.Toplevel):
 
 
 def main() -> None:
+    freeze_support()
     AverageLookupApp().mainloop()

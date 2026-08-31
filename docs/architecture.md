@@ -6,7 +6,7 @@ through the GUI or export logic.
 ```text
 Tkinter Windows GUI
         |
-        +-- browser authentication boundary (only if required)
+        +-- private WebView2 authentication boundary (only if required)
         |
         +-- lookup coordinator
                 |
@@ -54,13 +54,12 @@ rate-limit failures map to `API error` with a safe user-facing note.
 
 ## Authentication model
 
-The app launches the selected Microsoft Edge, Google Chrome, or Brave
-installation through Playwright with a separate application-owned profile for
-each browser. It first checks a remembered session without showing a browser,
-avoiding a visible open-and-close flash when no interactive login is needed.
-The user signs in on BOWL.com's genuine page.
-The app observes the bearer session that page sends to the verified BOWL.com API
-and retains it only in memory for lookups. It does not inspect or store the
-password and never writes the bearer token to logs, exports, or source control.
-The user can remove the selected app-owned profile with **Forget login** without
-altering their everyday browser profile.
+The app opens BOWL.com's genuine page inside an application-owned WebView2
+window. That window runs in a separate process and uses private mode, so it does
+not share data with or open tabs in Microsoft Edge, Google Chrome, or Brave.
+The app reads the bearer session established by BOWL.com and sends only that
+temporary token through an in-memory pipe to the main window. It does not
+inspect or store the password and never writes the bearer token to logs,
+exports, configuration, or source control. The WebView process is ended after
+sign-in, on sign-out, and when the application closes, discarding its cookies
+and browser storage.
