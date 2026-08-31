@@ -55,7 +55,7 @@ rate-limit failures map to `API error` with a safe user-facing note.
 ## Authentication model
 
 The app opens BOWL.com's genuine page inside an application-owned WebView2
-window. That window runs in a separate process and uses private mode, so it does
+window. That window runs in a dedicated packaged helper process and uses private mode, so it does
 not share data with or open tabs in Microsoft Edge, Google Chrome, or Brave.
 The app reads the bearer session established by BOWL.com and sends only that
 temporary token through an in-memory pipe to the main window. It does not

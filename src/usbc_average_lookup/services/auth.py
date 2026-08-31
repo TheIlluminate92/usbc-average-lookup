@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from enum import StrEnum
-from multiprocessing import Pipe, Process
-from multiprocessing.connection import Connection
 from os import environ
 from pathlib import Path
 from shutil import rmtree
-from time import monotonic, sleep
 from typing import Any
+
+AUTH_MESSAGE_PREFIX = "AVERAGE_ASSISTANT_AUTH:"
 
 
 class AuthState(StrEnum):
@@ -28,43 +29,44 @@ class AuthSession:
 class WebViewAuthenticator:
     """Sign in on BOWL.com's real page inside a private app-owned WebView.
 
-    The WebView runs in a child process because pywebview needs to own that
-    process's main GUI thread. Only the temporary bearer token crosses the
-    in-memory pipe. ``private_mode=True`` prevents cookies and browser storage
-    from being retained after the sign-in window closes.
+    The WebView runs in a dedicated helper executable because pywebview needs to
+    own that process's main GUI thread. Only the temporary bearer token crosses
+    the helper's in-memory output pipe. ``private_mode=True`` prevents cookies
+    and browser storage from being retained after the sign-in window closes.
     """
 
     def __init__(self, timeout_seconds: int = 300) -> None:
         self._timeout_seconds = timeout_seconds
-        self._process: Process | None = None
+        self._process: subprocess.Popen[str] | None = None
 
     def sign_in(self) -> AuthSession:
         self.sign_out()
-        receive, send = Pipe(duplex=False)
-        process = Process(
-            target=_run_private_sign_in,
-            args=(send, self._timeout_seconds),
-            name="Average Assistant sign-in",
-            daemon=True,
+        process = subprocess.Popen(
+            _sign_in_helper_command(self._timeout_seconds),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         self._process = process
-        process.start()
-        send.close()
         try:
-            if not receive.poll(self._timeout_seconds + 15):
-                raise TimeoutError("BOWL.com sign-in timed out")
             try:
-                payload = receive.recv()
-            except EOFError as error:
-                raise RuntimeError("The private sign-in window closed unexpectedly") from error
+                output, error_output = process.communicate(timeout=self._timeout_seconds + 15)
+            except subprocess.TimeoutExpired as error:
+                _stop_process(process)
+                raise TimeoutError("BOWL.com sign-in timed out") from error
+            try:
+                payload = _payload_from_helper_output(output)
+            except RuntimeError:
+                detail = _safe_helper_error(error_output)
+                if detail:
+                    raise RuntimeError(f"The private sign-in window failed: {detail}") from None
+                raise
             return _session_from_payload(payload)
         finally:
-            receive.close()
-            # Give WebView2 time to close cleanly and release its native resources.
-            process.join(timeout=5)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
+            _stop_process(process)
             if self._process is process:
                 self._process = None
 
@@ -73,9 +75,7 @@ class WebViewAuthenticator:
         self._process = None
         if process is None:
             return
-        if process.is_alive():
-            process.terminate()
-        process.join(timeout=5)
+        _stop_process(process)
 
 
 def clear_legacy_sign_in_data(base_path: Path | None = None) -> None:
@@ -90,67 +90,45 @@ def clear_legacy_sign_in_data(base_path: Path | None = None) -> None:
         rmtree(root / profile_name, ignore_errors=True)
 
 
-def _run_private_sign_in(send: Connection, timeout_seconds: int) -> None:
-    """Child-process entry point for the private WebView2 window."""
+def _sign_in_helper_command(timeout_seconds: int) -> list[str]:
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        helper = Path(bundle_root) / "Average-Assistant-SignIn.exe"
+        if not helper.is_file():
+            raise RuntimeError("The private sign-in helper is missing from this installation")
+        return [str(helper), str(timeout_seconds)]
+    return [
+        sys.executable,
+        "-m",
+        "usbc_average_lookup.signin_helper",
+        str(timeout_seconds),
+    ]
 
-    import webview
 
-    sent = False
-    window = webview.create_window(
-        "Sign in to BOWL.com — Average Assistant",
-        "https://webapps.bowl.com/USBCFindA/Home/Member",
-        width=1000,
-        height=760,
-        min_size=(760, 560),
-        resizable=True,
-        background_color="#13191F",
-        text_select=True,
-    )
-
-    def watch_for_session(target_window) -> None:
-        nonlocal sent
-        deadline = monotonic() + timeout_seconds
-        while monotonic() < deadline:
+def _payload_from_helper_output(output: str) -> Any:
+    for line in reversed(output.splitlines()):
+        if line.startswith(AUTH_MESSAGE_PREFIX):
             try:
-                values = target_window.evaluate_js(
-                    """(() => [
-                        ...Object.values(window.localStorage),
-                        ...Object.values(window.sessionStorage)
-                    ])()"""
-                )
-                token = _bearer_token_from_storage_values(values or [])
-            except Exception:
-                token = ""
-            if token:
-                _send_payload(send, {"token": token})
-                sent = True
-                target_window.destroy()
-                return
-            sleep(0.5)
-        _send_payload(send, {"error": "BOWL.com sign-in timed out"})
-        sent = True
-        target_window.destroy()
+                return json.loads(line.removeprefix(AUTH_MESSAGE_PREFIX))
+            except json.JSONDecodeError as error:
+                raise RuntimeError("The sign-in helper returned an invalid response") from error
+    raise RuntimeError("The private sign-in window closed unexpectedly")
 
+
+def _safe_helper_error(error_output: str) -> str:
+    lines = [line.strip() for line in error_output.splitlines() if line.strip()]
+    return lines[-1][:300] if lines else ""
+
+
+def _stop_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
     try:
-        webview.start(
-            watch_for_session,
-            args=(window,),
-            gui="edgechromium",
-            private_mode=True,
-        )
-        if not sent:
-            _send_payload(send, {"error": "The sign-in window was closed"})
-    except Exception as error:
-        _send_payload(send, {"error": f"Could not open the private sign-in window: {error}"})
-    finally:
-        send.close()
-
-
-def _send_payload(send: Connection, payload: dict[str, str]) -> None:
-    try:
-        send.send(payload)
-    except (BrokenPipeError, EOFError, OSError):
-        pass
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
 
 def _session_from_payload(payload: Any) -> AuthSession:

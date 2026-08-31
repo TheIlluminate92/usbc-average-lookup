@@ -1,12 +1,17 @@
+import json
+
 import pytest
 
 from usbc_average_lookup.services import auth
 from usbc_average_lookup.services.auth import (
+    AUTH_MESSAGE_PREFIX,
     AuthState,
     WebViewAuthenticator,
     _bearer_token_from_headers,
     _bearer_token_from_storage_values,
+    _payload_from_helper_output,
     _session_from_payload,
+    _stop_process,
     clear_legacy_sign_in_data,
 )
 
@@ -52,79 +57,52 @@ def test_clears_only_legacy_app_owned_browser_profiles(tmp_path) -> None:
     assert unrelated.exists()
 
 
-def test_authenticator_closes_pipe_and_joins_finished_webview(monkeypatch) -> None:
-    class FakeReceive:
-        closed = False
-
-        def poll(self, _timeout: int) -> bool:
-            return True
-
-        def recv(self):
-            return {"token": "secret-value"}
-
-        def close(self) -> None:
-            self.closed = True
-
-    class FakeSend:
-        closed = False
-
-        def close(self) -> None:
-            self.closed = True
-
+def test_authenticator_reads_session_from_finished_helper(monkeypatch) -> None:
     class FakeProcess:
-        joined = False
         terminated = False
 
-        def __init__(self, **_kwargs) -> None:
+        def __init__(self, *_args, **_kwargs) -> None:
             pass
 
-        def start(self) -> None:
-            pass
+        def communicate(self, timeout: int):
+            assert timeout == 16
+            return (f'{AUTH_MESSAGE_PREFIX}{{"token":"secret-value"}}\n', "")
 
-        def is_alive(self) -> bool:
-            return False
-
-        def join(self, timeout: int) -> None:
-            assert timeout == 5
-            self.joined = True
+        def poll(self):
+            return 0
 
         def terminate(self) -> None:
             self.terminated = True
 
-    receive = FakeReceive()
-    send = FakeSend()
     processes: list[FakeProcess] = []
 
-    def make_process(**kwargs):
-        process = FakeProcess(**kwargs)
+    def make_process(*args, **kwargs):
+        process = FakeProcess(*args, **kwargs)
         processes.append(process)
         return process
 
-    monkeypatch.setattr(auth, "Pipe", lambda duplex: (receive, send))
-    monkeypatch.setattr(auth, "Process", make_process)
+    monkeypatch.setattr(auth.subprocess, "Popen", make_process)
 
     session = WebViewAuthenticator(timeout_seconds=1).sign_in()
 
     assert session.state is AuthState.SIGNED_IN
-    assert receive.closed and send.closed
-    assert processes[0].joined
     assert not processes[0].terminated
 
 
 def test_sign_out_terminates_and_joins_active_webview() -> None:
     class FakeProcess:
         terminated = False
-        joined = False
+        waited = False
 
-        def is_alive(self) -> bool:
-            return True
+        def poll(self):
+            return None
 
         def terminate(self) -> None:
             self.terminated = True
 
-        def join(self, timeout: int) -> None:
+        def wait(self, timeout: int) -> None:
             assert timeout == 5
-            self.joined = True
+            self.waited = True
 
     authenticator = WebViewAuthenticator()
     process = FakeProcess()
@@ -133,8 +111,44 @@ def test_sign_out_terminates_and_joins_active_webview() -> None:
     authenticator.sign_out()
 
     assert process.terminated
-    assert process.joined
+    assert process.waited
     assert authenticator._process is None
+
+
+def test_parses_only_prefixed_helper_payload() -> None:
+    output = f"diagnostic line\n{AUTH_MESSAGE_PREFIX}{json.dumps({'token': 'secret-value'})}\n"
+
+    assert _payload_from_helper_output(output) == {"token": "secret-value"}
+
+
+def test_force_kills_helper_that_does_not_stop() -> None:
+    class StuckProcess:
+        terminated = False
+        killed = False
+        waits = 0
+
+        def poll(self):
+            return None
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def wait(self, timeout: int) -> None:
+            assert timeout == 5
+            self.waits += 1
+            if self.waits == 1:
+                raise auth.subprocess.TimeoutExpired("helper", timeout)
+
+        def kill(self) -> None:
+            self.killed = True
+
+    process = StuckProcess()
+
+    _stop_process(process)
+
+    assert process.terminated
+    assert process.killed
+    assert process.waits == 2
 
 
 @pytest.mark.parametrize(

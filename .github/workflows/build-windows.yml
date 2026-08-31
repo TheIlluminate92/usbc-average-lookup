@@ -22,6 +22,17 @@ jobs:
           python-version: "3.11"
       - name: Install build tools
         run: python -m pip install -e ".[build]"
+      - name: Build private sign-in helper
+        run: >-
+          pyinstaller
+          --noconfirm
+          --clean
+          --console
+          --onefile
+          --name Average-Assistant-SignIn
+          --collect-all webview
+          --distpath helper-dist
+          src/usbc_average_lookup/signin_helper.py
       - name: Build application
         run: >-
           pyinstaller
@@ -30,8 +41,18 @@ jobs:
           --windowed
           --onedir
           --name USBC-Average-Lookup
-          --collect-all webview
+          --add-binary "helper-dist/Average-Assistant-SignIn.exe;."
           src/usbc_average_lookup/__main__.py
+      - name: Verify packaged sign-in helper starts
+        shell: pwsh
+        run: |
+          $helper = "dist/USBC-Average-Lookup/_internal/Average-Assistant-SignIn.exe"
+          $output = (& $helper 1 2>&1 | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw "Sign-in helper exited with code $LASTEXITCODE" }
+          if ($output -notmatch "AVERAGE_ASSISTANT_AUTH:") { throw "No helper response received" }
+          if ($output -match "Failed to resolve Python.Runtime.Loader.Initialize") {
+            throw "Python.NET failed to initialize in the packaged helper"
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: USBC-Average-Lookup-Windows
