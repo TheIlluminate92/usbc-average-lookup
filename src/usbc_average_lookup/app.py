@@ -9,7 +9,13 @@ from threading import Thread
 from tkinter import filedialog, messagebox, ttk
 
 from usbc_average_lookup.models import InputBowler, LookupResult, LookupStatus, Member
-from usbc_average_lookup.services.auth import AuthSession, AuthState, BrowserAuthenticator
+from usbc_average_lookup.services.auth import (
+    AuthSession,
+    AuthState,
+    BrowserAuthenticator,
+    SignInBrowser,
+    available_sign_in_browsers,
+)
 from usbc_average_lookup.services.bowl_api import HttpBowlApi
 from usbc_average_lookup.services.exports import ExportSubset, export_results, select_results
 from usbc_average_lookup.services.input_parser import (
@@ -52,8 +58,14 @@ class AverageLookupApp(tk.Tk):
         self.bowlers: list[InputBowler] = []
         self.selected_path: Path | None = None
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)
-        local_data = Path(environ.get("LOCALAPPDATA", Path.home())) / "Average Assistant"
-        self.authenticator = BrowserAuthenticator(local_data / "browser-profile")
+        self.local_data = Path(environ.get("LOCALAPPDATA", Path.home())) / "Average Assistant"
+        self.signing_in = False
+        browsers = available_sign_in_browsers() or [SignInBrowser.EDGE]
+        self.browser_choices = browsers
+        self.authenticator = BrowserAuthenticator(
+            self.local_data / browsers[0].profile_name,
+            browsers[0],
+        )
         self.api: HttpBowlApi | None = None
         self._configure_style()
         self._build_ui()
@@ -196,13 +208,25 @@ class AverageLookupApp(tk.Tk):
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.auth_status = ttk.Label(header, text="Not signed in", style="Status.TLabel")
         self.auth_status.grid(row=0, column=1, rowspan=2, padx=(18, 0), sticky="e")
+        browser_frame = ttk.Frame(header, style="Surface.TFrame")
+        browser_frame.grid(row=0, column=2, rowspan=2, padx=(10, 0), sticky="e")
+        ttk.Label(browser_frame, text="Browser", style="Subtitle.TLabel").pack(anchor="w")
+        self.browser_var = tk.StringVar(value=self.browser_choices[0].value)
+        self.browser_box = ttk.Combobox(
+            browser_frame,
+            textvariable=self.browser_var,
+            values=[browser.value for browser in self.browser_choices],
+            state="readonly",
+            width=17,
+        )
+        self.browser_box.pack(anchor="w", pady=(2, 0))
         self.sign_in_button = ttk.Button(
             header,
             text="Sign in to BOWL.com",
             command=self._start_sign_in,
             style="Primary.TButton",
         )
-        self.sign_in_button.grid(row=0, column=2, rowspan=2, padx=(10, 0), sticky="e")
+        self.sign_in_button.grid(row=0, column=3, rowspan=2, padx=(10, 0), sticky="e")
         self.sign_out_button = ttk.Button(
             header,
             text="Sign out",
@@ -210,11 +234,11 @@ class AverageLookupApp(tk.Tk):
             state=tk.DISABLED,
         )
         self.sign_out_button.grid(
-            row=0, column=3, rowspan=2, padx=(8, 0), sticky="e"
+            row=0, column=4, rowspan=2, padx=(8, 0), sticky="e"
         )
 
         steps = ttk.Frame(header, style="Surface.TFrame")
-        steps.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(18, 0))
+        steps.grid(row=2, column=0, columnspan=5, sticky="ew", pady=(18, 0))
         for column, (number, title) in enumerate(
             (("1", "Sign in"), ("2", "Choose roster"), ("3", "Review"), ("4", "Save"))
         ):
@@ -339,9 +363,17 @@ class AverageLookupApp(tk.Tk):
         return table
 
     def _start_sign_in(self) -> None:
+        browser = SignInBrowser(self.browser_var.get())
+        self.authenticator.sign_out()
+        self.authenticator = BrowserAuthenticator(
+            self.local_data / browser.profile_name,
+            browser,
+        )
+        self.signing_in = True
         self.sign_in_button.configure(state=tk.DISABLED)
         self.sign_out_button.configure(state=tk.DISABLED)
-        self.auth_status.configure(text="Finish signing in in Edge…")
+        self.browser_box.configure(state=tk.DISABLED)
+        self.auth_status.configure(text=f"Finish signing in in {browser.value}…")
         Thread(target=self._sign_in_worker, daemon=True).start()
 
     def _sign_in_worker(self) -> None:
@@ -353,17 +385,21 @@ class AverageLookupApp(tk.Tk):
         self.after(0, self._signed_in, session)
 
     def _signed_in(self, session: AuthSession) -> None:
+        self.signing_in = False
         self.auth_session = session
         self.api = HttpBowlApi(lambda: self.auth_session.bearer_token)
         self.auth_status.configure(text="Signed in — ready")
         self.sign_in_button.configure(text="Sign in again", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.NORMAL)
+        self.browser_box.configure(state="readonly")
         self._update_action_states()
 
     def _sign_in_failed(self, message: str) -> None:
+        self.signing_in = False
         self.auth_status.configure(text="Sign-in not completed")
         self.sign_in_button.configure(state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.DISABLED)
+        self.browser_box.configure(state="readonly")
         messagebox.showerror("Could not sign in", message)
 
     def _sign_out(self) -> None:
@@ -373,6 +409,7 @@ class AverageLookupApp(tk.Tk):
         self.auth_status.configure(text="Not signed in")
         self.sign_in_button.configure(text="Sign in to BOWL.com", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.DISABLED)
+        self.browser_box.configure(state="readonly")
         self._update_action_states()
 
     def _choose_file(self) -> None:
@@ -680,6 +717,7 @@ class AverageLookupApp(tk.Tk):
         )
 
     def _update_action_states(self) -> None:
+        self.browser_box.configure(state=tk.DISABLED if self.signing_in else "readonly")
         self.single_button.configure(
             state=tk.NORMAL if self.api is not None else tk.DISABLED
         )
@@ -733,7 +771,7 @@ class SingleLookupDialog(tk.Toplevel):
         )
         ttk.Label(
             content,
-            text="Example: 7824-376245",
+            text="Example: 1234-567890",
             style="Muted.TLabel",
         ).grid(row=4, column=1, sticky="w")
         buttons = ttk.Frame(content, style="App.TFrame")

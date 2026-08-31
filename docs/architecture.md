@@ -54,8 +54,9 @@ rate-limit failures map to `API error` with a safe user-facing note.
 
 ## Authentication model
 
-The app launches the installed Microsoft Edge through Playwright with an
-application-owned browser profile. The user signs in on BOWL.com's genuine page.
+The app launches the selected Microsoft Edge or Google Chrome installation
+through Playwright with a separate application-owned profile for each browser.
+The user signs in on BOWL.com's genuine page.
 The app observes the bearer session that page sends to the verified BOWL.com API
 and retains it only in memory for lookups. It does not inspect or store the
 password and never writes the bearer token to logs, exports, or source control.

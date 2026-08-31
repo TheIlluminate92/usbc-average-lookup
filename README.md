@@ -19,9 +19,9 @@ average data.
 4. Pick the right person only when the app finds more than one match.
 5. Click **Save Results** to create the JSON result file.
 
-The app never asks for or stores a BOWL.com password. Authentication will be
-implemented through a browser-based session that supports the site's normal
-login and MFA flow.
+The app never asks for or stores a BOWL.com password. Authentication uses a
+user-selected Microsoft Edge or Google Chrome session that supports the site's
+normal login and MFA flow. **Sign out** clears the session held by the app.
 
 ## Result states
 
@@ -103,9 +103,10 @@ python -m pip install -e ".[dev]"
 python -m usbc_average_lookup
 ```
 
-The sign-in flow opens Microsoft Edge and waits for the genuine BOWL.com site to
-establish an authenticated API session. The session token is held in memory and
-is never written to application logs or configuration.
+The sign-in flow opens the selected Microsoft Edge or Google Chrome browser and
+waits for the genuine BOWL.com site to establish an authenticated API session.
+The session token is held in memory and is never written to application logs or
+configuration.
 
 ## Run tests
 

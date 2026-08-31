@@ -123,9 +123,12 @@ called out as an open decision.
 
 ### Simplified sign-in
 
-- After the user completes the genuine BOWL.com sign-in in Edge, detect the
-  authenticated session without requiring the user to manually search for a
-  member.
+- Let the user choose Microsoft Edge or Google Chrome for the genuine BOWL.com
+  sign-in, showing only browsers detected on the computer.
+- Detect the authenticated session without requiring the user to manually
+  search for a member.
+- Keep one stable sign-in window open until authentication finishes and avoid
+  rapid extra-window opening or closing.
 - If direct session detection is not reliable, perform a harmless automatic
   verification request and return the user directly to the app.
 - Continue to keep passwords out of the app and authentication material out of

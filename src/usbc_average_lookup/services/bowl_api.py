@@ -74,13 +74,20 @@ class HttpBowlApi:
                 "Page": "1",
                 "Size": "10",
             },
-            allow_empty_failure=True,
+            allow_unsuccessful=True,
         )
         data = payload.get("data")
         records = data.get("results", []) if isinstance(data, dict) else []
         if not isinstance(records, list):
             raise BowlApiError("BOWL.com returned an unexpected member-search response")
-        return [_parse_member(record) for record in records]
+        members = [_parse_member(record) for record in records]
+        if members:
+            return members
+        if payload.get("isSuccess") is not True:
+            detail = _response_error(payload)
+            if detail:
+                raise BowlApiError(detail)
+        return []
 
     def get_composite_averages(
         self, prefix: str, suffix: str
@@ -105,7 +112,7 @@ class HttpBowlApi:
         path: str,
         parameters: dict[str, str],
         *,
-        allow_empty_failure: bool = False,
+        allow_unsuccessful: bool = False,
     ) -> dict:
         token = self._token_provider()
         if not token:
@@ -127,7 +134,7 @@ class HttpBowlApi:
             raise BowlApiError("BOWL.com returned an unexpected response")
         if payload.get("isSuccess") is not True:
             detail = _response_error(payload)
-            if allow_empty_failure and not detail:
+            if allow_unsuccessful:
                 return payload
             raise BowlApiError(detail or "BOWL.com did not complete the lookup")
         return payload

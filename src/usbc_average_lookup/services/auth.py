@@ -1,9 +1,11 @@
 import json
 from dataclasses import dataclass, field
 from enum import StrEnum
+from os import environ
 from pathlib import Path
+from shutil import which
 from threading import Event
-from time import monotonic
+from time import monotonic, sleep
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,6 +16,19 @@ class AuthState(StrEnum):
     SIGNED_OUT = "Not signed in"
     SIGNED_IN = "Signed in"
     EXPIRED = "Session expired"
+
+
+class SignInBrowser(StrEnum):
+    EDGE = "Microsoft Edge"
+    CHROME = "Google Chrome"
+
+    @property
+    def channel(self) -> str:
+        return "msedge" if self is SignInBrowser.EDGE else "chrome"
+
+    @property
+    def profile_name(self) -> str:
+        return "browser-profile" if self is SignInBrowser.EDGE else "browser-profile-chrome"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +50,14 @@ class BrowserAuthenticator:
     MEMBER_URL = "https://webapps.bowl.com/USBCFindA/Home/Member"
     API_PREFIX = "https://apps1.bowl.com/Mobile/api/v1/"
 
-    def __init__(self, profile_path: Path, timeout_seconds: int = 300) -> None:
+    def __init__(
+        self,
+        profile_path: Path,
+        browser: SignInBrowser = SignInBrowser.EDGE,
+        timeout_seconds: int = 300,
+    ) -> None:
         self._profile_path = profile_path
+        self.browser = browser
         self._timeout_seconds = timeout_seconds
         self._context = None
 
@@ -57,36 +78,64 @@ class BrowserAuthenticator:
 
         self._profile_path.mkdir(parents=True, exist_ok=True)
         with sync_playwright() as playwright:
-            self._context = playwright.chromium.launch_persistent_context(
+            context = playwright.chromium.launch_persistent_context(
                 str(self._profile_path),
-                channel="msedge",
+                channel=self.browser.channel,
                 headless=False,
                 reduced_motion="reduce",
-                args=["--disable-gpu"],
+                no_viewport=True,
             )
-            page = self._context.pages[0] if self._context.pages else self._context.new_page()
-            self._context.on("request", observe_request)
-            page.goto(self.MEMBER_URL)
-            deadline = monotonic() + self._timeout_seconds
-            while not token_ready.is_set() and monotonic() < deadline:
-                stored_token = _token_from_browser_storage(self._context)
-                if stored_token:
-                    captured_token = stored_token
-                    token_ready.set()
-                    break
-                page.wait_for_timeout(1000)
-            if not token_ready.is_set():
-                self._context.close()
-                self._context = None
-                raise TimeoutError("BOWL.com sign-in was not completed")
-            self._context.close()
-            self._context = None
+            self._context = context
+            try:
+                page = context.pages[0] if context.pages else context.new_page()
+                context.on("request", observe_request)
+                page.goto(self.MEMBER_URL, wait_until="domcontentloaded")
+                page.bring_to_front()
+                deadline = monotonic() + self._timeout_seconds
+                while not token_ready.is_set() and monotonic() < deadline:
+                    stored_token = _token_from_browser_storage(context)
+                    if stored_token:
+                        captured_token = stored_token
+                        token_ready.set()
+                        break
+                    page.wait_for_timeout(1000)
+                if not token_ready.is_set():
+                    raise TimeoutError("BOWL.com sign-in was not completed")
+                # Avoid a jarring open/close flash immediately after the final redirect.
+                sleep(0.75)
+            finally:
+                if self._context is context:
+                    context.close()
+                    self._context = None
         return AuthSession(AuthState.SIGNED_IN, bearer_token=captured_token)
 
     def sign_out(self) -> None:
         if self._context is not None:
             self._context.close()
             self._context = None
+
+
+def available_sign_in_browsers() -> list[SignInBrowser]:
+    """Return installed supported browsers in the preferred display order."""
+
+    return [browser for browser in SignInBrowser if _browser_is_installed(browser)]
+
+
+def _browser_is_installed(browser: SignInBrowser) -> bool:
+    executable = "msedge.exe" if browser is SignInBrowser.EDGE else "chrome.exe"
+    if which(executable):
+        return True
+    relative = (
+        Path("Microsoft") / "Edge" / "Application" / "msedge.exe"
+        if browser is SignInBrowser.EDGE
+        else Path("Google") / "Chrome" / "Application" / "chrome.exe"
+    )
+    roots = [
+        environ.get("PROGRAMFILES"),
+        environ.get("PROGRAMFILES(X86)"),
+        environ.get("LOCALAPPDATA"),
+    ]
+    return any((Path(root) / relative).is_file() for root in roots if root)
 
 
 def _bearer_token_from_headers(headers: dict[str, str]) -> str:

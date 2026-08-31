@@ -77,3 +77,45 @@ def test_member_search_preserves_service_validation_message(monkeypatch) -> None
 
     with pytest.raises(BowlApiError, match="Narrow the search"):
         HttpBowlApi(lambda: "token").search_members("Common Bowler")
+
+
+def test_member_search_uses_candidates_even_when_service_reports_an_error(
+    monkeypatch,
+) -> None:
+    response = io.BytesIO(
+        b'''{
+            "isSuccess": false,
+            "validationErrors": [],
+            "errors": ["Unexpected error occured, please contact the administrator."],
+            "data": {
+                "results": [
+                    {
+                        "id": "100",
+                        "prefix": "1234",
+                        "suffix": "567890",
+                        "first": "Alex",
+                        "last": "Bowler",
+                        "active": true,
+                        "assn": "Example USBC",
+                        "assnstate": "TX"
+                    },
+                    {
+                        "id": "101",
+                        "prefix": "1234",
+                        "suffix": "999999",
+                        "first": "Alex",
+                        "last": "Bowler",
+                        "active": true,
+                        "assn": "Another USBC",
+                        "assnstate": "OK"
+                    }
+                ]
+            }
+        }'''
+    )
+    monkeypatch.setattr(bowl_api, "urlopen", lambda request, timeout: response)
+
+    members = HttpBowlApi(lambda: "token").search_members("Alex Bowler")
+
+    assert len(members) == 2
+    assert [member.suffix for member in members] == ["567890", "999999"]
