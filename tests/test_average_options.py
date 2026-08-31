@@ -123,3 +123,26 @@ def test_bulk_review_leaves_filter_mismatches_for_individual_review() -> None:
 
     assert candidates == []
     assert excluded == 1
+
+
+def test_bulk_review_handles_150_bowlers_without_skips_or_duplicates() -> None:
+    results = []
+    for index in range(150):
+        choice = option(f"choice-{index}", 150 + index % 50, games=21 + index % 30)
+        results.append(
+            LookupResult(
+                f"Bowler {index + 1}",
+                LookupStatus.REVIEW_REQUIRED,
+                average=choice.average,
+                available_averages=(choice,),
+                selected_average_key=choice.key,
+            )
+        )
+
+    candidates, excluded = bulk_review_candidates(results)
+
+    assert excluded == 0
+    assert len(candidates) == 150
+    assert [candidate.result_index for candidate in candidates] == list(range(150))
+    assert len({candidate.option.key for candidate in candidates}) == 150
+    assert all(candidate.is_clean for candidate in candidates)

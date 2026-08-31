@@ -16,8 +16,8 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install build tools
@@ -53,7 +53,7 @@ jobs:
           if ($output -match "Failed to resolve Python.Runtime.Loader.Initialize") {
             throw "Python.NET failed to initialize in the packaged helper"
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ github.ref_name == 'main' && 'USBC-Average-Lookup-Windows' || 'USBC-Average-Lookup-Review-Test' }}
           path: dist/USBC-Average-Lookup

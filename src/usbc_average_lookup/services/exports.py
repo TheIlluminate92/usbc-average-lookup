@@ -12,7 +12,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from usbc_average_lookup.models import AverageOption, LookupResult, LookupStatus
+from usbc_average_lookup.models import AverageOption, LookupResult, LookupStatus, Member
 
 _HEADERS = (
     "Name",
@@ -130,7 +130,7 @@ def export_json(
     result_list = list(results)
     counts = Counter(result.status for result in result_list)
     document = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "generatedAt": datetime.now(UTC).isoformat(),
         "rosterType": subset.value,
         "summary": {
@@ -152,6 +152,11 @@ def export_json(
                 "associationState": (
                     result.member.association_state if result.member else None
                 ),
+                "confirmedInactive": result.confirmed_inactive,
+                "member": _member_document(result.member),
+                "candidates": [
+                    _member_document(candidate) for candidate in result.candidates
+                ],
                 "selectedAverage": _option_document(_selected_option(result)),
                 "availableAverages": [
                     _option_document(option) for option in result.available_averages
@@ -236,4 +241,19 @@ def _option_document(option: AverageOption | None) -> dict[str, object] | None:
         "adjustedBy": option.adjusted_by or None,
         "adjustedDate": option.adjusted_date or None,
         "hand": option.hand or None,
+    }
+
+
+def _member_document(member: Member | None) -> dict[str, object] | None:
+    if member is None:
+        return None
+    return {
+        "memberId": member.member_id,
+        "prefix": member.prefix,
+        "suffix": member.suffix,
+        "firstName": member.first_name,
+        "lastName": member.last_name,
+        "active": member.active,
+        "association": member.association or None,
+        "associationState": member.association_state or None,
     }

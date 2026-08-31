@@ -53,6 +53,9 @@ for normal users.
   bowler.
 - Confirm an unfinished full export is visibly identified as a draft and its
   JSON retains every choice for later audit.
+- Close the app with a partially reviewed roster, reopen its full JSON draft,
+  and verify confirmed rows, remaining reviews, filters, and match candidates
+  are restored without another lookup.
 
 ## Privacy and shutdown
 

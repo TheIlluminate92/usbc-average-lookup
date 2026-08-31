@@ -62,11 +62,15 @@ The app may preselect the newest Standard Composite Average to reduce clicking,
 but it never confirms that selection. Every bowler requires an explicit
 confirmation action. Individual review provides **Confirm selected and go to
 next**. Bulk review shows one proposed value per bowler but initially selects
-nothing; the operator may select one-choice rows, selected rows, or all visible
-rows before one explicit batch confirmation. Every unselected or filtered-out
-bowler remains in the individual queue. Ready-roster export is blocked until no
-review or identity issues remain; full unfinished drafts remain available with
-a warning.
+nothing. A visible **Use** checkbox column, three-step instructions, and selection
+buttons make the batch explicit before one final confirmation. Every unselected
+or filtered-out bowler remains in the individual queue. Ready-roster export is
+blocked until no review or identity issues remain.
+
+Saving the full roster as JSON creates a resumable review draft. Choosing that
+JSON file later restores confirmed averages, unreviewed choices, member details,
+and unresolved match candidates. CSV, TSV, text, and Excel remain presentation
+exports and do not contain enough structure to resume a review.
 
 ## Input formats
 
@@ -92,7 +96,7 @@ Every input row remains visible in the output, including failures:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 4,
   "generatedAt": "2026-08-30T12:00:00+00:00",
   "summary": {
     "processed": 2,
@@ -104,6 +108,7 @@ Every input row remains visible in the output, including failures:
       "name": "Alex Bowler",
       "membershipId": "1234-567890",
       "average": 187,
+      "reviewed": true,
       "status": "Found",
       "notes": null
     }
@@ -120,6 +125,7 @@ Every input row remains visible in the output, including failures:
 - Browser-based BOWL.com sign-in through the genuine site; passwords are never
   exposed to the application
 - JSON export containing every input row, status, average, and notes
+- Resumable schema-versioned JSON review drafts
 - Unit tests and a GitHub Actions workflow
 - Requirements, architecture, and API discovery notes under [`docs/`](docs/)
 

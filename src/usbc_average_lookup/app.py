@@ -40,6 +40,7 @@ from usbc_average_lookup.services.lookup import (
     look_up_bowler,
     resolve_selected_member,
 )
+from usbc_average_lookup.services.review_drafts import load_review_draft
 
 COLORS = {
     "navy": "#0C2744",
@@ -685,7 +686,8 @@ class AverageLookupApp(tk.Tk):
             "How average review works",
             "Every bowler's selected average must be confirmed before the roster is ready.\n\n"
             "Bulk review: Shows one proposed average per bowler. Nothing is selected "
-            "automatically. Select only the rows you have checked, then confirm them.\n\n"
+            "automatically. Click a box in the Use column, or use a selection button, "
+            "then confirm only the rows you have checked.\n\n"
             "Individual review: Any bowler not confirmed in bulk stays in the review list. "
             "Choose the correct average and use 'Confirm selected and go to next.'\n\n"
             "Filters: Minimum games, season, type, league, center, and the checkboxes only "
@@ -756,14 +758,24 @@ class AverageLookupApp(tk.Tk):
             return
         path = Path(selected)
         sheet_name = None
+        restored_results: list[LookupResult] | None = None
         try:
+            if path.suffix.casefold() == ".json":
+                restored_results = load_review_draft(path)
             if path.suffix.casefold() == ".xlsx":
                 sheets = workbook_sheet_names(path)
                 if len(sheets) > 1:
                     sheet_name = SheetPickerDialog(self, sheets).show()
                     if sheet_name is None:
                         return
-            bowlers = parse_input_file(path, sheet_name)
+            bowlers = (
+                [
+                    InputBowler(result.input_name, result.membership_id)
+                    for result in restored_results
+                ]
+                if restored_results is not None
+                else parse_input_file(path, sheet_name)
+            )
             if not bowlers:
                 raise ValueError("The selected file does not contain any bowlers")
         except (OSError, UnicodeError, ValueError) as error:
@@ -771,9 +783,17 @@ class AverageLookupApp(tk.Tk):
             return
         self.selected_path = path
         self.bowlers = bowlers
-        self.results = []
+        self.results = restored_results or []
         self.file_label.configure(text=path.name)
-        detail = f"{len(bowlers)} bowlers loaded"
+        if restored_results is not None:
+            reviewed = sum(result.reviewed for result in restored_results)
+            remaining = sum(result.needs_attention for result in restored_results)
+            detail = (
+                f"Review draft restored — {reviewed} complete, "
+                f"{remaining} remaining"
+            )
+        else:
+            detail = f"{len(bowlers)} bowlers loaded"
         if sheet_name:
             detail += f" from {sheet_name}"
         self.file_detail.configure(text=detail)
@@ -1430,10 +1450,12 @@ class BulkReviewDialog(tk.Toplevel):
         ttk.Label(
             content,
             text=(
-                "Review the proposed value in every selected row. Nothing is confirmed "
-                "until you press the final button."
+                "1. Click Use boxes or a selection button   →   "
+                "2. Verify the proposed averages   →   "
+                "3. Confirm selected bowlers"
             ),
             style="Muted.TLabel",
+            font=("Segoe UI", 10, "bold"),
         ).grid(row=1, column=0, sticky="w", pady=(3, 4))
         self.summary_label = ttk.Label(content, text="", style="Muted.TLabel")
         self.summary_label.grid(row=2, column=0, sticky="ew", pady=(5, 8))
@@ -1445,6 +1467,7 @@ class BulkReviewDialog(tk.Toplevel):
         self.table = ttk.Treeview(
             table_frame,
             columns=(
+                "use",
                 "bowler",
                 "average",
                 "games",
@@ -1458,6 +1481,7 @@ class BulkReviewDialog(tk.Toplevel):
             selectmode="extended",
         )
         for column, label, width in (
+            ("use", "Use", 48),
             ("bowler", "Bowler", 190),
             ("average", "Avg", 55),
             ("games", "Games", 60),
@@ -1468,7 +1492,12 @@ class BulkReviewDialog(tk.Toplevel):
             ("warnings", "Warnings", 230),
         ):
             self.table.heading(column, text=label)
-            self.table.column(column, width=width, minwidth=50, anchor="w")
+            self.table.column(
+                column,
+                width=width,
+                minwidth=45,
+                anchor="center" if column == "use" else "w",
+            )
         scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.table.yview)
         self.table.configure(yscrollcommand=scrollbar.set)
         self.table.grid(row=0, column=0, sticky="nsew")
@@ -1483,6 +1512,7 @@ class BulkReviewDialog(tk.Toplevel):
                 tk.END,
                 iid=str(position),
                 values=(
+                    "☐",
                     result.input_name,
                     option.average,
                     option.games if option.games is not None else "—",
@@ -1495,12 +1525,13 @@ class BulkReviewDialog(tk.Toplevel):
                 tags=("clean" if candidate.is_clean else "warning",),
             )
         self.table.bind("<<TreeviewSelect>>", lambda _event: self._update_selection())
+        self.table.bind("<Button-1>", self._toggle_use_column, add="+")
 
         controls = ttk.Frame(content, style="App.TFrame")
         controls.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         ttk.Button(
             controls,
-            text="Select one-choice rows",
+            text="Select rows with one matching average",
             command=self._select_clean,
         ).pack(side=tk.LEFT)
         ttk.Button(
@@ -1524,6 +1555,23 @@ class BulkReviewDialog(tk.Toplevel):
         self.confirm_button.pack(side=tk.RIGHT, padx=(0, 8))
         self._update_selection()
 
+    def _toggle_use_column(self, event) -> str | None:
+        if self.table.identify_region(event.x, event.y) != "cell":
+            return None
+        if self.table.identify_column(event.x) != "#1":
+            return None
+        item = self.table.identify_row(event.y)
+        if not item:
+            return "break"
+        selected = set(self.table.selection())
+        if item in selected:
+            selected.remove(item)
+        else:
+            selected.add(item)
+        self.table.selection_set(tuple(selected))
+        self._update_selection()
+        return "break"
+
     def _select_clean(self) -> None:
         clean = [
             str(index)
@@ -1534,11 +1582,22 @@ class BulkReviewDialog(tk.Toplevel):
         self._update_selection()
 
     def _update_selection(self) -> None:
-        selected_count = len(self.table.selection())
+        selected = set(self.table.selection())
+        for item in self.table.get_children():
+            values = list(self.table.item(item, "values"))
+            if values:
+                values[0] = "☑" if item in selected else "☐"
+                self.table.item(item, values=values)
+        selected_count = len(selected)
         remaining = len(self.candidates) + self.excluded - selected_count
         self.summary_label.configure(
             text=(
-                f"{selected_count} selected   •   {len(self.candidates)} displayed   •   "
+                (
+                    "Nothing selected yet   •   "
+                    if not selected_count
+                    else f"{selected_count} selected   •   "
+                )
+                + f"{len(self.candidates)} displayed   •   "
                 f"{remaining} will remain for individual review   •   "
                 f"minimum {self.minimum_games} games"
             )

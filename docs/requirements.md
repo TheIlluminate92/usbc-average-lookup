@@ -143,6 +143,9 @@ Every input row must end in one of these states:
   unresolved. Permit only clearly warned unfinished full-roster drafts.
 - Preserve selected-source details and all available choices in structured JSON
   output.
+- Reopening a full schema-versioned JSON draft must restore reviewed and
+  unreviewed choices, member details, and unresolved candidates without another
+  lookup.
 - Do not merge this experimental work into `main` until the operator approves
   the workflow and live league/rerate response fixtures have been verified.
 
