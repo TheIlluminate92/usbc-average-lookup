@@ -176,14 +176,16 @@ docs/                     Requirements, architecture, and discovery notes
 
 ## Next milestones
 
-1. Record sanitized request URLs, methods, and response shapes for member search
-   and composite averages.
-2. Test both endpoints while signed out.
-3. Confirm BOWL.com/USBC terms and acceptable request volume.
-4. Implement browser-based authentication only if anonymous access is not
-   available.
-5. Add a simple member-choice dialog and automatic retry for temporary failures.
-6. Package a signed or clearly identified portable Windows executable.
+1. Finish the manual-average review workflow and complete independent
+   break-testing before merging it to `main`.
+2. Confirm BOWL.com/USBC terms and acceptable request volume before broader use.
+3. Test signed-out, expired-session, rate-limit, and unexpected-response behavior
+   against the real endpoints.
+4. Complete the final release checklist on the packaged Windows build, especially
+   privacy, process cleanup, memory, and large-roster checks.
+5. Package a signed or clearly identified portable Windows executable.
+6. Define the acceptance and release criteria for promoting the experimental
+   review workflow to a normal release.
 
 See [`docs/requirements.md`](docs/requirements.md) for acceptance criteria and
 [`docs/api-notes.md`](docs/api-notes.md) for what is known versus still unknown.
