@@ -20,8 +20,10 @@ average data.
 5. Click **Save Results** to create the JSON result file.
 
 The app never asks for or stores a BOWL.com password. Authentication uses a
-user-selected Microsoft Edge or Google Chrome session that supports the site's
-normal login and MFA flow. **Sign out** clears the session held by the app.
+user-selected Microsoft Edge, Google Chrome, or Brave session that supports the
+site's normal login and MFA flow. **Sign out** clears the session held by the
+app. **Forget login** removes only the saved BOWL.com session for the selected
+app browser; it never changes the user's normal browser profile.
 
 ## Result states
 
@@ -103,10 +105,11 @@ python -m pip install -e ".[dev]"
 python -m usbc_average_lookup
 ```
 
-The sign-in flow opens the selected Microsoft Edge or Google Chrome browser and
-waits for the genuine BOWL.com site to establish an authenticated API session.
-The session token is held in memory and is never written to application logs or
-configuration.
+The sign-in flow quietly checks for a valid remembered session first. When a
+fresh login is needed, it opens the selected Microsoft Edge, Google Chrome, or
+Brave browser and waits for the genuine BOWL.com site to establish an
+authenticated API session. The session token is held in memory and is never
+written to application logs or configuration.
 
 ## Run tests
 

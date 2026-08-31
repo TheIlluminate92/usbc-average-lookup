@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from os import environ
 from pathlib import Path
-from shutil import which
+from shutil import rmtree, which
 from threading import Event
 from time import monotonic, sleep
 from typing import TYPE_CHECKING
@@ -21,14 +21,23 @@ class AuthState(StrEnum):
 class SignInBrowser(StrEnum):
     EDGE = "Microsoft Edge"
     CHROME = "Google Chrome"
+    BRAVE = "Brave"
 
     @property
-    def channel(self) -> str:
-        return "msedge" if self is SignInBrowser.EDGE else "chrome"
+    def channel(self) -> str | None:
+        if self is SignInBrowser.EDGE:
+            return "msedge"
+        if self is SignInBrowser.CHROME:
+            return "chrome"
+        return None
 
     @property
     def profile_name(self) -> str:
-        return "browser-profile" if self is SignInBrowser.EDGE else "browser-profile-chrome"
+        return {
+            SignInBrowser.EDGE: "browser-profile",
+            SignInBrowser.CHROME: "browser-profile-chrome",
+            SignInBrowser.BRAVE: "browser-profile-brave",
+        }[self]
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,13 +87,14 @@ class BrowserAuthenticator:
 
         self._profile_path.mkdir(parents=True, exist_ok=True)
         with sync_playwright() as playwright:
-            context = playwright.chromium.launch_persistent_context(
-                str(self._profile_path),
-                channel=self.browser.channel,
-                headless=False,
-                reduced_motion="reduce",
-                no_viewport=True,
-            )
+            # Check a remembered BOWL.com session without showing a browser first.
+            # This avoids the visible open-and-immediately-close flash when the
+            # saved session is still valid.
+            captured_token = self._existing_token(playwright)
+            if captured_token:
+                return AuthSession(AuthState.SIGNED_IN, bearer_token=captured_token)
+
+            context = self._launch_context(playwright, headless=False)
             self._context = context
             try:
                 page = context.pages[0] if context.pages else context.new_page()
@@ -109,10 +119,61 @@ class BrowserAuthenticator:
                     self._context = None
         return AuthSession(AuthState.SIGNED_IN, bearer_token=captured_token)
 
+    def _launch_context(self, playwright, *, headless: bool):
+        options = {
+            "headless": headless,
+            "reduced_motion": "reduce",
+            "no_viewport": True,
+        }
+        if self.browser.channel:
+            options["channel"] = self.browser.channel
+        else:
+            executable = _browser_executable_path(self.browser)
+            if executable is None:
+                raise RuntimeError(f"{self.browser.value} is not installed")
+            options["executable_path"] = str(executable)
+        return playwright.chromium.launch_persistent_context(
+            str(self._profile_path),
+            **options,
+        )
+
+    def _existing_token(self, playwright) -> str:
+        context = self._launch_context(playwright, headless=True)
+        captured_token = ""
+
+        def observe_request(request: "Request") -> None:
+            nonlocal captured_token
+            if request.url.startswith(self.API_PREFIX):
+                captured_token = _bearer_token_from_headers(request.all_headers())
+
+        try:
+            context.on("request", observe_request)
+            page = context.pages[0] if context.pages else context.new_page()
+            page.goto(self.MEMBER_URL, wait_until="domcontentloaded", timeout=30_000)
+            deadline = monotonic() + 5
+            while monotonic() < deadline:
+                token = captured_token or _token_from_browser_storage(context)
+                if token:
+                    return token
+                page.wait_for_timeout(250)
+            return ""
+        except Exception:
+            # A failed quiet check should not prevent a normal interactive sign-in.
+            return ""
+        finally:
+            context.close()
+
     def sign_out(self) -> None:
         if self._context is not None:
             self._context.close()
             self._context = None
+
+    def forget_saved_login(self) -> None:
+        """Remove only this app's profile for the selected browser."""
+
+        self.sign_out()
+        if self._profile_path.exists():
+            rmtree(self._profile_path)
 
 
 def available_sign_in_browsers() -> list[SignInBrowser]:
@@ -122,20 +183,36 @@ def available_sign_in_browsers() -> list[SignInBrowser]:
 
 
 def _browser_is_installed(browser: SignInBrowser) -> bool:
-    executable = "msedge.exe" if browser is SignInBrowser.EDGE else "chrome.exe"
-    if which(executable):
-        return True
-    relative = (
-        Path("Microsoft") / "Edge" / "Application" / "msedge.exe"
-        if browser is SignInBrowser.EDGE
-        else Path("Google") / "Chrome" / "Application" / "chrome.exe"
-    )
+    return _browser_executable_path(browser) is not None
+
+
+def _browser_executable_path(browser: SignInBrowser) -> Path | None:
+    executable, relative = {
+        SignInBrowser.EDGE: (
+            "msedge.exe",
+            Path("Microsoft") / "Edge" / "Application" / "msedge.exe",
+        ),
+        SignInBrowser.CHROME: (
+            "chrome.exe",
+            Path("Google") / "Chrome" / "Application" / "chrome.exe",
+        ),
+        SignInBrowser.BRAVE: (
+            "brave.exe",
+            Path("BraveSoftware") / "Brave-Browser" / "Application" / "brave.exe",
+        ),
+    }[browser]
+    discovered = which(executable)
+    if discovered:
+        return Path(discovered)
     roots = [
         environ.get("PROGRAMFILES"),
         environ.get("PROGRAMFILES(X86)"),
         environ.get("LOCALAPPDATA"),
     ]
-    return any((Path(root) / relative).is_file() for root in roots if root)
+    return next(
+        (Path(root) / relative for root in roots if root and (Path(root) / relative).is_file()),
+        None,
+    )
 
 
 def _bearer_token_from_headers(headers: dict[str, str]) -> str:

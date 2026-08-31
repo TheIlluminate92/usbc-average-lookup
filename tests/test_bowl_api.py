@@ -119,3 +119,29 @@ def test_member_search_uses_candidates_even_when_service_reports_an_error(
 
     assert len(members) == 2
     assert [member.suffix for member in members] == ["567890", "999999"]
+
+
+@pytest.mark.parametrize(
+    ("name", "membership_id", "expected_path"),
+    [
+        ("David Brown", "", "/Mobile/api/v1/members/?"),
+        ("", "7823-337415", "/Mobile/api/v1/members/id?"),
+    ],
+)
+def test_member_search_uses_the_correct_route(
+    monkeypatch, name: str, membership_id: str, expected_path: str
+) -> None:
+    requested_urls: list[str] = []
+
+    def fake_urlopen(request, timeout):
+        requested_urls.append(request.full_url)
+        return io.BytesIO(
+            b'{"isSuccess": true, "validationErrors": [], "errors": [], '
+            b'"data": {"results": []}}'
+        )
+
+    monkeypatch.setattr(bowl_api, "urlopen", fake_urlopen)
+
+    HttpBowlApi(lambda: "token").search_members(name, membership_id)
+
+    assert expected_path in requested_urls[0]

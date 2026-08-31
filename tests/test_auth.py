@@ -30,6 +30,8 @@ def test_supported_browser_channels_and_profile_names() -> None:
     assert SignInBrowser.EDGE.profile_name == "browser-profile"
     assert SignInBrowser.CHROME.channel == "chrome"
     assert SignInBrowser.CHROME.profile_name == "browser-profile-chrome"
+    assert SignInBrowser.BRAVE.channel is None
+    assert SignInBrowser.BRAVE.profile_name == "browser-profile-brave"
 
 
 def test_available_browsers_filters_missing_installations(monkeypatch) -> None:
@@ -40,3 +42,16 @@ def test_available_browsers_filters_missing_installations(monkeypatch) -> None:
     )
 
     assert available_sign_in_browsers() == [SignInBrowser.CHROME]
+
+
+def test_forget_saved_login_removes_only_selected_profile(tmp_path) -> None:
+    selected_profile = tmp_path / "browser-profile"
+    other_profile = tmp_path / "browser-profile-brave"
+    selected_profile.mkdir()
+    other_profile.mkdir()
+    (selected_profile / "saved-session").write_text("private", encoding="utf-8")
+
+    auth.BrowserAuthenticator(selected_profile).forget_saved_login()
+
+    assert not selected_profile.exists()
+    assert other_profile.exists()

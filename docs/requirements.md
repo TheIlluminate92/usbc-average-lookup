@@ -123,8 +123,8 @@ called out as an open decision.
 
 ### Simplified sign-in
 
-- Let the user choose Microsoft Edge or Google Chrome for the genuine BOWL.com
-  sign-in, showing only browsers detected on the computer.
+- Let the user choose Microsoft Edge, Google Chrome, or Brave for the genuine
+  BOWL.com sign-in, showing only browsers detected on the computer.
 - Detect the authenticated session without requiring the user to manually
   search for a member.
 - Keep one stable sign-in window open until authentication finishes and avoid
@@ -133,6 +133,8 @@ called out as an open decision.
   verification request and return the user directly to the app.
 - Continue to keep passwords out of the app and authentication material out of
   saved files and logs.
+- Provide a plain-language way to forget the app's saved BOWL.com login without
+  altering the user's normal browser profile.
 
 ### Import formats
 

@@ -6,10 +6,11 @@ or private member data in this repository.
 
 ## Observed member-search response
 
-The authenticated frontend sends a `GET` request to:
+The authenticated frontend uses separate `GET` routes for the two searches:
 
 ```text
-https://apps1.bowl.com/Mobile/api/v1/members/id
+Name:          https://apps1.bowl.com/Mobile/api/v1/members/
+Membership ID: https://apps1.bowl.com/Mobile/api/v1/members/id
 ```
 
 Observed query parameters:
@@ -18,11 +19,12 @@ Observed query parameters:
 First, Last, Prefix, Suffix, ANum, Zip, Radius, State, Page, Size
 ```
 
-An ID search splits `7824-376245` into `Prefix=7824` and `Suffix=376245`,
-with `Page=1`, `Size=10`, and the unused search fields empty. The request uses
-an in-memory bearer token supplied by the signed-in BOWL.com session. Tokens
-must never be copied into code, configuration, fixtures, documentation, logs,
-or screenshots.
+A name search fills `First` and `Last` on `members/`. An ID search fills
+`Prefix` and `Suffix` on `members/id`. Both use `Page=1`, `Size=10`, and leave
+unused search fields empty. Sending a name to `members/id` produces a generic
+service error instead of candidates. Requests use an in-memory bearer token
+supplied by the signed-in BOWL.com session. Tokens must never be copied into
+code, configuration, fixtures, documentation, logs, or screenshots.
 
 The Find a Member frontend returns JSON records containing fields similar to:
 

@@ -227,15 +227,21 @@ class AverageLookupApp(tk.Tk):
             style="Primary.TButton",
         )
         self.sign_in_button.grid(row=0, column=3, rowspan=2, padx=(10, 0), sticky="e")
+        account_buttons = ttk.Frame(header, style="Surface.TFrame")
+        account_buttons.grid(row=0, column=4, rowspan=2, padx=(8, 0), sticky="e")
         self.sign_out_button = ttk.Button(
-            header,
+            account_buttons,
             text="Sign out",
             command=self._sign_out,
             state=tk.DISABLED,
         )
-        self.sign_out_button.grid(
-            row=0, column=4, rowspan=2, padx=(8, 0), sticky="e"
+        self.sign_out_button.pack(fill=tk.X)
+        self.forget_login_button = ttk.Button(
+            account_buttons,
+            text="Forget login",
+            command=self._forget_saved_login,
         )
+        self.forget_login_button.pack(fill=tk.X, pady=(4, 0))
 
         steps = ttk.Frame(header, style="Surface.TFrame")
         steps.grid(row=2, column=0, columnspan=5, sticky="ew", pady=(18, 0))
@@ -372,6 +378,7 @@ class AverageLookupApp(tk.Tk):
         self.signing_in = True
         self.sign_in_button.configure(state=tk.DISABLED)
         self.sign_out_button.configure(state=tk.DISABLED)
+        self.forget_login_button.configure(state=tk.DISABLED)
         self.browser_box.configure(state=tk.DISABLED)
         self.auth_status.configure(text=f"Finish signing in in {browser.value}…")
         Thread(target=self._sign_in_worker, daemon=True).start()
@@ -391,6 +398,7 @@ class AverageLookupApp(tk.Tk):
         self.auth_status.configure(text="Signed in — ready")
         self.sign_in_button.configure(text="Sign in again", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.NORMAL)
+        self.forget_login_button.configure(state=tk.NORMAL)
         self.browser_box.configure(state="readonly")
         self._update_action_states()
 
@@ -399,6 +407,7 @@ class AverageLookupApp(tk.Tk):
         self.auth_status.configure(text="Sign-in not completed")
         self.sign_in_button.configure(state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.DISABLED)
+        self.forget_login_button.configure(state=tk.NORMAL)
         self.browser_box.configure(state="readonly")
         messagebox.showerror("Could not sign in", message)
 
@@ -407,6 +416,37 @@ class AverageLookupApp(tk.Tk):
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)
         self.api = None
         self.auth_status.configure(text="Not signed in")
+        self.sign_in_button.configure(text="Sign in to BOWL.com", state=tk.NORMAL)
+        self.sign_out_button.configure(state=tk.DISABLED)
+        self.forget_login_button.configure(state=tk.NORMAL)
+        self.browser_box.configure(state="readonly")
+        self._update_action_states()
+
+    def _forget_saved_login(self) -> None:
+        browser = SignInBrowser(self.browser_var.get())
+        if not messagebox.askyesno(
+            "Forget saved login?",
+            f"This removes the BOWL.com login saved by Average Assistant for "
+            f"{browser.value}. Your normal browser profile will not be changed.",
+        ):
+            return
+        authenticator = BrowserAuthenticator(
+            self.local_data / browser.profile_name,
+            browser,
+        )
+        try:
+            self.authenticator.sign_out()
+            authenticator.forget_saved_login()
+        except OSError as error:
+            messagebox.showerror(
+                "Could not forget login",
+                f"Close the sign-in browser and try again.\n\n{error}",
+            )
+            return
+        self.authenticator = authenticator
+        self.auth_session = AuthSession(AuthState.SIGNED_OUT)
+        self.api = None
+        self.auth_status.configure(text="Saved login removed")
         self.sign_in_button.configure(text="Sign in to BOWL.com", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.DISABLED)
         self.browser_box.configure(state="readonly")

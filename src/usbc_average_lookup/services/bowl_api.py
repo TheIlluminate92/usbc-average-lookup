@@ -60,8 +60,12 @@ class HttpBowlApi:
     ) -> Sequence[Member]:
         prefix, suffix = _split_membership_id(membership_id)
         first, last = _split_name(name) if not membership_id else ("", "")
+        # BOWL.com exposes name and membership-ID searches at different routes.
+        # Sending a name to members/id returns the site's generic administrator
+        # error instead of the candidate list shown by its own member-search page.
+        path = "members/id" if membership_id else "members/"
         payload = self._get_json(
-            "members/id",
+            path,
             {
                 "First": first,
                 "Last": last,
