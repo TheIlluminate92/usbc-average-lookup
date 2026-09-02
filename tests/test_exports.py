@@ -91,3 +91,42 @@ def test_exports_csv_tsv_and_excel_with_issue_sheet(tmp_path) -> None:
         assert workbook["Needs Attention"]["A2"].value == "Missing Bowler"
     finally:
         workbook.close()
+
+
+def test_spreadsheet_exports_neutralize_formula_like_text(tmp_path) -> None:
+    member = Member(
+        "2",
+        "1234",
+        "567890",
+        "Formula",
+        "Bowler",
+        True,
+        association="=WEBSERVICE(\"https://example.invalid\")",
+    )
+    result = LookupResult(
+        "=1+1",
+        LookupStatus.API_ERROR,
+        note="@SUM(1,1)",
+        member=member,
+    )
+    csv_path = tmp_path / "safe.csv"
+    excel_path = tmp_path / "safe.xlsx"
+
+    export_results(csv_path, [result])
+    export_results(excel_path, [result])
+
+    csv_row = read_rows(csv_path)[1]
+    assert csv_row[0] == "'=1+1"
+    assert csv_row[6] == "'@SUM(1,1)"
+    assert csv_row[8].startswith("'=WEBSERVICE")
+
+    workbook = load_workbook(excel_path, data_only=False)
+    try:
+        row = workbook["Results"][2]
+        assert row[0].value == "'=1+1"
+        assert row[0].data_type == "s"
+        assert row[6].value == "'@SUM(1,1)"
+        assert row[6].data_type == "s"
+        assert row[8].data_type == "s"
+    finally:
+        workbook.close()
