@@ -5,11 +5,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from usbc_average_lookup.models import CompositeAverage, Member
+from usbc_average_lookup.models import CompositeAverage, LeagueAverage, Member
 
 
 class BowlApi(Protocol):
-    """Contract for the two JSON-backed operations used by the app."""
+    """Contract for the JSON-backed operations used by the app."""
 
     def search_members(
         self, name: str = "", membership_id: str = ""
@@ -18,6 +18,10 @@ class BowlApi(Protocol):
     def get_composite_averages(
         self, prefix: str, suffix: str
     ) -> Sequence[CompositeAverage]: ...
+
+    def get_league_averages(
+        self, prefix: str, suffix: str
+    ) -> Sequence[LeagueAverage]: ...
 
 
 class UnconfiguredBowlApi:
@@ -32,6 +36,11 @@ class UnconfiguredBowlApi:
         self, prefix: str, suffix: str
     ) -> Sequence[CompositeAverage]:
         raise NotImplementedError("BOWL.com composite-average endpoint is not configured yet")
+
+    def get_league_averages(
+        self, prefix: str, suffix: str
+    ) -> Sequence[LeagueAverage]:
+        raise NotImplementedError("BOWL.com league-activities endpoint is not configured yet")
 
 
 class AuthenticationExpiredError(RuntimeError):
@@ -120,6 +129,30 @@ class HttpBowlApi:
             raise BowlApiError("BOWL.com returned an unexpected average response")
         return [_parse_composite_average(record) for record in records]
 
+    def get_league_averages(
+        self, prefix: str, suffix: str
+    ) -> Sequence[LeagueAverage]:
+        page = 1
+        averages: list[LeagueAverage] = []
+        while True:
+            payload = self._get_json(
+                "leagueactivities",
+                {
+                    "size": "1000",
+                    "page": str(page),
+                    "prefix": prefix,
+                    "suffix": suffix,
+                },
+            )
+            records, total_pages = _paginated_results(
+                payload,
+                "league-activities",
+            )
+            averages.extend(_parse_league_average(record) for record in records)
+            if total_pages == 0 or page >= total_pages:
+                return averages
+            page += 1
+
     def _get_json(
         self,
         path: str,
@@ -151,6 +184,28 @@ class HttpBowlApi:
                 return payload
             raise BowlApiError(detail or "BOWL.com did not complete the lookup")
         return payload
+
+
+def _paginated_results(
+    payload: dict,
+    response_name: str,
+) -> tuple[list[dict], int]:
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise BowlApiError(f"BOWL.com returned an unexpected {response_name} response")
+    records = data.get("results")
+    total_pages = data.get("totalPages")
+    if not isinstance(records, list):
+        raise BowlApiError(f"BOWL.com returned an unexpected {response_name} response")
+    if (
+        isinstance(total_pages, bool)
+        or not isinstance(total_pages, int)
+        or total_pages < 0
+    ):
+        raise BowlApiError(f"BOWL.com returned invalid {response_name} pagination")
+    if not all(isinstance(record, dict) for record in records):
+        raise BowlApiError(f"BOWL.com returned an invalid {response_name} record")
+    return records, total_pages
 
 
 def _response_error(payload: dict) -> str:
@@ -227,3 +282,30 @@ def _parse_composite_average(record: dict) -> CompositeAverage:
         )
     except (KeyError, TypeError, ValueError) as error:
         raise BowlApiError("BOWL.com returned an incomplete average record") from error
+
+
+def _parse_league_average(record: dict) -> LeagueAverage:
+    try:
+        return LeagueAverage(
+            league_id=str(record["lid"]),
+            league_name=str(record["lname"]),
+            season=str(record["season"]),
+            center_id=str(record["cid"]),
+            center_name=str(record["cname"]),
+            association_id=str(record["aid"]),
+            association_name=str(record["aname"]),
+            association_number=str(record["anum"]),
+            year=str(record["year"]),
+            average=int(record["avg"]),
+            games=int(record["games"]),
+            sport=_required_boolean(record, "sport"),
+            challenge=_required_boolean(record, "challenge"),
+            roll_and_grow=_required_boolean(record, "rollngrow"),
+            bumper=_required_boolean(record, "bumper"),
+            string_pin=_required_boolean(record, "stringpin"),
+            pattern=str(record.get("pattern", "")),
+            hand=str(record.get("hand", "")),
+            adjusted_average=int(record.get("adjavg", 0)),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise BowlApiError("BOWL.com returned an incomplete league-average record") from error
