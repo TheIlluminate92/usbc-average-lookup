@@ -1,8 +1,8 @@
 # USBC Average Lookup
 
-A small Windows desktop utility for turning a list of bowler names into
-`Name,Average` results using BOWL.com's JSON-backed member search and composite
-average data.
+A small Windows desktop manager for registering bowlers by league season or
+tournament, organizing season-specific teams, and turning bowler names into
+verified averages using BOWL.com's JSON-backed member search and average data.
 
 > [!IMPORTANT]
 > This is an early, unofficial foundation. It is not affiliated with or endorsed
@@ -12,12 +12,34 @@ average data.
 
 ## Intended workflow
 
-1. Open the app; it handles sign-in only if BOWL.com requires it.
+### Registration Desk
+
+1. Create a league season or tournament workspace.
+2. Add its teams as they are known; an unassigned option remains available.
+3. Enter one bowler at a time or paste a complete team roster.
+4. Keep registering while signed-in BOWL.com checks run through a two-worker
+   queue in the background.
+5. Review only ambiguous or unsuccessful matches. Registrations save
+   automatically after each change.
+
+The bowler is a reusable identity. The registration and team assignment belong
+to a specific league season or tournament, so the same person can move teams in
+a future season without changing historical rosters. Duplicate registrations
+within one competition are rejected.
+
+Registration data is stored locally in a versioned JSON file under
+`%LOCALAPPDATA%\Bowling Manager\registration-data.json`. Writes use a
+same-folder temporary file followed by an atomic replacement. An unreadable or
+unsupported file is left unchanged rather than silently replaced.
+
+### Average lookup
+
+1. Sign in only when a BOWL.com lookup is needed.
 2. Choose a roster file, or use **Single lookup** for one bowler by name or
    membership ID.
 3. Click **Look Up Averages**.
 4. Pick the right person only when the app finds more than one match.
-5. Click **Save Results** to create the JSON result file.
+5. Click **Save Results** to create the result file.
 
 The app never asks for or stores a BOWL.com password. Authentication opens the
 real BOWL.com page in a private sign-in window owned by Average Assistant. It
@@ -90,7 +112,12 @@ Every input row remains visible in the output, including failures:
 
 ## What is included
 
-- A runnable Tkinter Windows GUI shell
+- A runnable Tkinter Windows GUI with Registration Desk and Average Lookup tabs
+- Persistent league-season and tournament workspaces
+- Season-specific teams with quick entry, whole-team entry, reassignment, and
+  withdrawal/restore controls
+- Background registration checks capped at two concurrent BOWL.com requests
+- Registration counters for total, ready, and needs-attention entries
 - Domain models for members, composite averages, and lookup outcomes
 - Verified selection logic for the newest standard composite record
 - Browser-based BOWL.com sign-in through the genuine site; passwords are never
@@ -127,28 +154,34 @@ python -m pytest
 ```text
 src/usbc_average_lookup/
   app.py                 Windows GUI shell
+  registration_ui.py     Manual-first registration workflow
   models.py              Shared member, average, and result types
   services/
     auth.py              Private WebView2 sign-in boundary
     average_selector.py  Composite-average selection rule
     bowl_api.py          Member-search and average API boundary
     exports.py           Results and issues CSV output
+    registration.py      Versioned local registration store and domain rules
 tests/                    Unit tests
 docs/                     Requirements, architecture, and discovery notes
 ```
 
 ## Next milestones
 
-1. Finish the manual-average review workflow and complete independent
-   break-testing before merging it to `main`.
-2. Confirm BOWL.com/USBC terms and acceptable request volume before broader use.
-3. Test signed-out, expired-session, rate-limit, and unexpected-response behavior
+1. Test the Registration Desk with representative handwritten league and
+   tournament rosters, then refine the keyboard workflow and terminology.
+2. Add editing for saved bowler identity details and season-copy assistance.
+3. Confirm BOWL.com/USBC terms and acceptable request volume before broader use.
+4. Test signed-out, expired-session, rate-limit, and unexpected-response behavior
    against the real endpoints.
-4. Complete the final release checklist on the packaged Windows build, especially
+5. Complete the final release checklist on the packaged Windows build, especially
    privacy, process cleanup, memory, and large-roster checks.
-5. Package a signed or clearly identified portable Windows executable.
-6. Define the acceptance and release criteria for promoting the experimental
+6. Package a signed or clearly identified portable Windows executable.
+7. Define the acceptance and release criteria for promoting the experimental
    review workflow to a normal release.
+
+QR self-registration and bracket/side-pot money handling are deliberately
+deferred. They are not part of the current registration workflow.
 
 See [`docs/requirements.md`](docs/requirements.md) for acceptance criteria and
 [`docs/api-notes.md`](docs/api-notes.md) for what is known versus still unknown.

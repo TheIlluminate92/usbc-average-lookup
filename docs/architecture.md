@@ -3,6 +3,26 @@
 The application is intentionally split so BOWL.com-specific details do not leak
 through the GUI or export logic.
 
+## Registration domain
+
+Registration is intentionally separated into four records:
+
+- `BowlerProfile` is the reusable person identity and optional USBC member ID.
+- `Competition` is one league season or one tournament.
+- `Team` belongs to exactly one competition.
+- `Registration` connects a bowler to a competition and its current team while
+  retaining lookup state, selected average, and withdrawal state.
+
+This prevents annual team changes from rewriting earlier seasons. The first
+storage adapter is a local, schema-versioned JSON document written atomically.
+The UI talks to `RegistrationStore`, not directly to JSON, so a later SQLite or
+shared-service adapter does not need to change the registration screens.
+
+BOWL.com checks are optional. Manual entry works while signed out, and a
+two-worker background queue prevents a slow or ambiguous lookup from blocking
+the registration desk or creating an unbounded burst of requests. Ambiguous
+candidate lists remain a deliberate operator decision.
+
 ```text
 Tkinter Windows GUI
         |

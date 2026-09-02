@@ -9,6 +9,7 @@ from threading import Thread
 from tkinter import filedialog, messagebox, ttk
 
 from usbc_average_lookup.models import InputBowler, LookupResult, LookupStatus, Member
+from usbc_average_lookup.registration_ui import RegistrationDesk
 from usbc_average_lookup.services.auth import (
     AuthSession,
     AuthState,
@@ -25,6 +26,10 @@ from usbc_average_lookup.services.lookup import (
     look_up_all,
     look_up_bowler,
     resolve_selected_member,
+)
+from usbc_average_lookup.services.registration import (
+    RegistrationDataError,
+    RegistrationStore,
 )
 
 COLORS = {
@@ -49,7 +54,7 @@ COLORS = {
 class AverageLookupApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Average Assistant")
+        self.title("Bowling Manager")
         self.geometry("1080x720")
         self.minsize(820, 580)
         self.configure(background=COLORS["canvas"])
@@ -61,9 +66,23 @@ class AverageLookupApp(tk.Tk):
         clear_legacy_sign_in_data()
         self.authenticator = WebViewAuthenticator()
         self.api: HttpBowlApi | None = None
+        self.registration_data_error = ""
+        try:
+            self.registration_store: RegistrationStore | None = RegistrationStore()
+        except RegistrationDataError as error:
+            self.registration_store = None
+            self.registration_data_error = str(error)
         self._configure_style()
         self._build_ui()
         self._render_results()
+        if self.registration_data_error:
+            self.after(
+                0,
+                messagebox.showerror,
+                "Registration data needs attention",
+                self.registration_data_error
+                + "\n\nThe file was left unchanged. Registration is disabled until it is repaired.",
+            )
         self.protocol("WM_DELETE_WINDOW", self._close_app)
 
     def _configure_style(self) -> None:
@@ -193,12 +212,12 @@ class AverageLookupApp(tk.Tk):
         header = ttk.Frame(self, style="Surface.TFrame", padding=(28, 20, 28, 16))
         header.pack(fill=tk.X)
         header.columnconfigure(0, weight=1)
-        ttk.Label(header, text="Average Assistant", style="Title.TLabel").grid(
+        ttk.Label(header, text="Bowling Manager", style="Title.TLabel").grid(
             row=0, column=0, sticky="w"
         )
         ttk.Label(
             header,
-            text="USBC bowler averages, ready for your league.",
+            text="Leagues, tournaments, teams, and verified averages.",
             style="Subtitle.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.auth_status = ttk.Label(header, text="Not signed in", style="Status.TLabel")
@@ -218,21 +237,16 @@ class AverageLookupApp(tk.Tk):
         )
         self.sign_out_button.grid(row=0, column=3, rowspan=2, padx=(8, 0), sticky="e")
 
-        steps = ttk.Frame(header, style="Surface.TFrame")
-        steps.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(18, 0))
-        for column, (number, title) in enumerate(
-            (("1", "Sign in"), ("2", "Choose roster"), ("3", "Review"), ("4", "Save"))
-        ):
-            steps.columnconfigure(column, weight=1)
-            label = ttk.Label(
-                steps,
-                text=f"{number}   {title}",
-                style="Surface.TLabel",
-                anchor="w",
-            )
-            label.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 8, 0))
+        self.workspace = ttk.Notebook(self)
+        self.workspace.pack(fill=tk.BOTH, expand=True)
+        lookup_workspace = ttk.Frame(self.workspace, style="App.TFrame")
+        registration_workspace = ttk.Frame(self.workspace, style="App.TFrame")
+        self.workspace.add(registration_workspace, text="Registration Desk")
+        self.workspace.add(lookup_workspace, text="Average lookup")
 
-        main = ttk.Frame(self, style="App.TFrame", padding=(28, 20, 28, 24))
+        main = ttk.Frame(
+            lookup_workspace, style="App.TFrame", padding=(28, 20, 28, 24)
+        )
         main.pack(fill=tk.BOTH, expand=True)
         main.columnconfigure(0, weight=1)
         main.rowconfigure(2, weight=1)
@@ -315,6 +329,17 @@ class AverageLookupApp(tk.Tk):
         )
         self.fix_button.pack(side=tk.RIGHT, padx=(0, 8))
 
+        self.registration_desk = RegistrationDesk(
+            registration_workspace,
+            self.registration_store,
+            lambda: self.api,
+            self._set_status,
+        )
+        self.registration_desk.pack(fill=tk.BOTH, expand=True)
+
+    def _set_status(self, text: str) -> None:
+        self.auth_status.configure(text=text)
+
     def _make_result_table(self, parent: ttk.Frame) -> ttk.Treeview:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
@@ -367,6 +392,7 @@ class AverageLookupApp(tk.Tk):
         self.sign_in_button.configure(text="Sign in again", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.NORMAL)
         self._update_action_states()
+        self.registration_desk.refresh_auth_state()
 
     def _sign_in_failed(self, message: str) -> None:
         self.signing_in = False
@@ -383,8 +409,10 @@ class AverageLookupApp(tk.Tk):
         self.sign_in_button.configure(text="Sign in to BOWL.com", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.DISABLED)
         self._update_action_states()
+        self.registration_desk.refresh_auth_state()
 
     def _close_app(self) -> None:
+        self.registration_desk.close()
         self.authenticator.sign_out()
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)
         self.api = None
