@@ -36,14 +36,19 @@ two-worker background queue prevents a slow or ambiguous lookup from blocking
 the registration desk or creating an unbounded burst of requests. Ambiguous
 candidate lists remain a deliberate operator decision.
 
-The desktop workspace presents five domain-focused tabs. Registration is the
-fast operational screen. Player management edits the central identity and
-invalidates averages that may no longer belong to that identity. Team
-management always requires a selected league season or tournament and never
-mixes teams across competitions. It separates regulars, team-specific
-substitutes, and unassigned league-wide substitutes. League and tournament
-management owns names, season labels, type, player-pool links, and reversible
-archival.
+The desktop presents Registration as its own top-level operational workspace.
+League Manager contains four domain-focused tabs. Player management edits the
+central identity and invalidates averages that may no longer belong to that
+identity. Team management always requires a selected league season or
+tournament and never mixes teams across competitions. It separates regulars,
+team-specific substitutes, and unassigned league-wide substitutes. League and
+tournament management owns names, season labels, type, player-pool links, and
+reversible archival.
+
+Multi-league registration is committed as one store operation. Each target can
+reference an existing team, create a team as part of the same transaction, or
+remain unassigned. If any target fails, no partial team, registration, or player
+identity is saved.
 
 ## Scoring domain
 

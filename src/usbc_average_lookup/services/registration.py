@@ -119,6 +119,14 @@ class Registration:
 
 
 @dataclass(frozen=True, slots=True)
+class RegistrationTarget:
+    competition_id: str
+    team_id: str = ""
+    new_team_name: str = ""
+    roster_role: RosterRole = RosterRole.REGULAR
+
+
+@dataclass(frozen=True, slots=True)
 class RegistrationView:
     registration: Registration
     bowler: BowlerProfile
@@ -1286,6 +1294,72 @@ class RegistrationStore:
             team_id,
             roster_role,
         )
+
+    def register_bowler_many(
+        self,
+        name: str,
+        membership_id: str,
+        targets: list[RegistrationTarget],
+    ) -> list[Registration]:
+        if not targets:
+            raise RegistrationDataError("Choose at least one league or tournament")
+        competition_ids = [target.competition_id for target in targets]
+        if len(competition_ids) != len(set(competition_ids)):
+            raise RegistrationDataError("Choose each league or tournament only once")
+        snapshot = (
+            deepcopy(self.bowlers),
+            deepcopy(self.player_pool_entries),
+            deepcopy(self.teams),
+            deepcopy(self.registrations),
+        )
+        try:
+            registrations = []
+            for target in targets:
+                competition = self._competition(target.competition_id)
+                if competition.archived:
+                    raise RegistrationDataError(
+                        f"{competition.display_name} is archived"
+                    )
+                if target.team_id and target.new_team_name:
+                    raise RegistrationDataError(
+                        "Choose an existing team or create a new team, not both"
+                    )
+                team_id = target.team_id
+                if target.new_team_name:
+                    clean_team_name = _required(target.new_team_name, "Team name")
+                    existing = next(
+                        (
+                            team
+                            for team in self.list_teams(competition.id)
+                            if _key(team.name) == _key(clean_team_name)
+                        ),
+                        None,
+                    )
+                    if existing is not None:
+                        team_id = existing.id
+                    else:
+                        team = Team(_new_id(), competition.id, clean_team_name)
+                        self.teams.append(team)
+                        team_id = team.id
+                registrations.append(
+                    self._register_bowler(
+                        competition.id,
+                        name,
+                        membership_id,
+                        team_id,
+                        target.roster_role,
+                    )
+                )
+            self.save()
+            return registrations
+        except Exception:
+            (
+                self.bowlers,
+                self.player_pool_entries,
+                self.teams,
+                self.registrations,
+            ) = snapshot
+            raise
 
     def register_team(
         self,

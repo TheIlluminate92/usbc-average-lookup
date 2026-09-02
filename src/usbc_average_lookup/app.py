@@ -242,8 +242,10 @@ class AverageLookupApp(tk.Tk):
         self.workspace = ttk.Notebook(self)
         self.workspace.pack(fill=tk.BOTH, expand=True)
         lookup_workspace = ttk.Frame(self.workspace, style="App.TFrame")
+        league_workspace = ttk.Frame(self.workspace, style="App.TFrame")
         registration_workspace = ttk.Frame(self.workspace, style="App.TFrame")
-        self.workspace.add(registration_workspace, text="League Manager")
+        self.workspace.add(league_workspace, text="League Manager")
+        self.workspace.add(registration_workspace, text="Registration")
         self.workspace.add(lookup_workspace, text="Average lookup")
 
         main = ttk.Frame(
@@ -339,10 +341,11 @@ class AverageLookupApp(tk.Tk):
         self.fix_button.pack(side=tk.RIGHT, padx=(0, 8))
 
         self.registration_desk = RegistrationDesk(
-            registration_workspace,
+            league_workspace,
             self.registration_store,
             lambda: self.api,
             self._set_status,
+            registration_parent=registration_workspace,
         )
         self.registration_desk.pack(fill=tk.BOTH, expand=True)
 

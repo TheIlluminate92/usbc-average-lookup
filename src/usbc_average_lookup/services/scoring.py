@@ -365,7 +365,7 @@ class ScoringStore:
                     team_id=team.id,
                     player_name=bowler.name,
                     team_name=team.name,
-                    roster_role=RosterRole.SUBSTITUTE,
+                    roster_role=registration.roster_role,
                     entering_average=average,
                     handicap=handicap,
                     lineup_order=lineup_order,

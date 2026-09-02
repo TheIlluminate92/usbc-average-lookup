@@ -43,6 +43,24 @@ def test_selected_match_refreshes_player_and_team_management(tmp_path) -> None:
     assert statuses == ["Match confirmed"]
 
 
+def test_roster_change_refreshes_every_dependent_view() -> None:
+    desk = RegistrationDesk.__new__(RegistrationDesk)
+    refreshed: list[str] = []
+    desk._refresh_teams = lambda: refreshed.append("registration team choices")
+    desk._render_rows = lambda: refreshed.append("registration rows")
+    desk._refresh_management_views = lambda: refreshed.append(
+        "players teams leagues and scores"
+    )
+
+    desk._refresh_after_roster_change()
+
+    assert refreshed == [
+        "registration team choices",
+        "registration rows",
+        "players teams leagues and scores",
+    ]
+
+
 def test_starting_lookup_refreshes_team_roster_status(tmp_path) -> None:
     store = RegistrationStore(tmp_path / "registration.db")
     competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)

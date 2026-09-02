@@ -77,5 +77,5 @@ jobs:
             USBC-Average-Lookup-Windows.zip `
             --repo $env:GITHUB_REPOSITORY `
             --title "Bowling Manager $env:GITHUB_REF_NAME" `
-            --notes "Windows test build with permanent weekly score sheets, team-filtered history, correction logs, league scoring rules, and relationship navigation. Existing SQLite data is upgraded with a pre-upgrade backup. Extract the ZIP and run USBC-Average-Lookup.exe." `
+            --notes "Windows test build with a separate Registration workspace, multi-league registration with per-league team choices, double-click relationship navigation, complete roster refreshes, and an obvious score-row restore path. Existing SQLite data remains compatible. Extract the ZIP and run USBC-Average-Lookup.exe." `
             --prerelease

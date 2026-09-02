@@ -8,6 +8,7 @@ from usbc_average_lookup.services.registration import (
     CompetitionKind,
     RegistrationDataError,
     RegistrationStore,
+    RegistrationTarget,
     RosterRole,
     VerificationState,
 )
@@ -47,6 +48,52 @@ def test_same_bowler_can_join_multiple_seasons_with_different_teams(tmp_path) ->
     assert len(store.bowlers) == 1
     assert store.registration_views(old.id)[0].team.name == "Old Team"
     assert store.registration_views(new.id)[0].team.name == "New Team"
+
+
+def test_register_bowler_many_can_create_different_teams_per_league(tmp_path) -> None:
+    path = tmp_path / "registration.db"
+    store = RegistrationStore(path)
+    monday = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    tuesday = store.add_competition("Tuesday", "2026-27", CompetitionKind.LEAGUE)
+    tuesday_team = store.add_team(tuesday.id, "Tuesday Crew")
+
+    registrations = store.register_bowler_many(
+        "Shared Player",
+        "1234-567890",
+        [
+            RegistrationTarget(monday.id, new_team_name="Monday Crew"),
+            RegistrationTarget(tuesday.id, team_id=tuesday_team.id),
+        ],
+    )
+
+    assert len(registrations) == 2
+    assert len(store.bowlers) == 1
+    assert store.registration_views(monday.id)[0].team.name == "Monday Crew"
+    assert store.registration_views(tuesday.id)[0].team.name == "Tuesday Crew"
+    reopened = RegistrationStore(path)
+    assert len(reopened.bowlers) == 1
+    assert len(reopened.registrations) == 2
+
+
+def test_register_bowler_many_rolls_back_all_targets_on_error(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.db")
+    monday = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    tuesday = store.add_competition("Tuesday", "2026-27", CompetitionKind.LEAGUE)
+    store.register_bowler(monday.id, "Already Here", "1234-567890")
+
+    with pytest.raises(RegistrationDataError, match="already registered"):
+        store.register_bowler_many(
+            "Already Here",
+            "1234-567890",
+            [
+                RegistrationTarget(tuesday.id, new_team_name="Should Roll Back"),
+                RegistrationTarget(monday.id),
+            ],
+        )
+
+    assert len(store.registration_views(monday.id)) == 1
+    assert store.registration_views(tuesday.id) == []
+    assert not any(team.name == "Should Roll Back" for team in store.teams)
 
 
 def test_duplicate_registration_is_rejected(tmp_path) -> None:

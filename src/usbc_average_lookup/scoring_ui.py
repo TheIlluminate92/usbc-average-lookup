@@ -161,13 +161,13 @@ class ScoringDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.vacancy_button.grid(row=1, column=5, padx=(8, 0), pady=(8, 0))
-        self.substitute_button = ttk.Button(
+        self.add_player_button = ttk.Button(
             actions,
-            text="Add substitute",
-            command=self._add_substitute,
+            text="Add player back / substitute",
+            command=self._add_score_player,
             state=tk.DISABLED,
         )
-        self.substitute_button.grid(row=1, column=6, padx=(8, 0), pady=(8, 0))
+        self.add_player_button.grid(row=1, column=6, padx=(8, 0), pady=(8, 0))
 
         sheet_frame = ttk.Frame(self, style="Surface.TFrame")
         sheet_frame.grid(row=3, column=0, sticky="nsew")
@@ -444,7 +444,7 @@ class ScoringDesk(ttk.Frame):
         self.history_button.configure(
             state=tk.NORMAL if competition is not None else tk.DISABLED
         )
-        self.substitute_button.configure(state=tk.NORMAL if is_draft else tk.DISABLED)
+        self.add_player_button.configure(state=tk.NORMAL if is_draft else tk.DISABLED)
         self.vacancy_button.configure(state=tk.NORMAL if is_draft else tk.DISABLED)
         self.remove_button.configure(
             state=tk.NORMAL if is_draft and line is not None else tk.DISABLED
@@ -514,7 +514,7 @@ class ScoringDesk(ttk.Frame):
         self._render_sheet()
         self.status_callback(f"Saved scores for {view.line.player_name}")
 
-    def _add_substitute(self) -> None:
+    def _add_score_player(self) -> None:
         session = self._session()
         competition = self._competition()
         scoring = self.scoring_store
@@ -534,7 +534,7 @@ class ScoringDesk(ttk.Frame):
                 parent=self,
             )
             return
-        choice = SubstitutePickerDialog(
+        choice = ScorePlayerPickerDialog(
             self, available, list(self.team_by_name.values())
         ).show()
         if choice is None:
@@ -542,7 +542,7 @@ class ScoringDesk(ttk.Frame):
         try:
             scoring.add_registered_player(session.id, *choice)
         except RegistrationDataError as error:
-            messagebox.showerror("Could not add substitute", str(error), parent=self)
+            messagebox.showerror("Could not add player", str(error), parent=self)
             return
         self._render_sheet()
 
@@ -980,7 +980,7 @@ class LeagueScoringSettingsDialog(tk.Toplevel):
         return self.choice
 
 
-class SubstitutePickerDialog(tk.Toplevel):
+class ScorePlayerPickerDialog(tk.Toplevel):
     def __init__(
         self, parent: tk.Misc, players: list[RegistrationView], teams: list[Team]
     ) -> None:
@@ -998,7 +998,7 @@ class SubstitutePickerDialog(tk.Toplevel):
         content.rowconfigure(2, weight=1)
         ttk.Label(
             content,
-            text="Add a substitute or alternate",
+            text="Add a registered player to this week",
             style="Muted.TLabel",
             font=("Segoe UI", 17, "bold"),
         ).grid(row=0, column=0, columnspan=2, sticky="w")

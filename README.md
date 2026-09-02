@@ -14,23 +14,24 @@ verified averages using BOWL.com's JSON-backed member search and average data.
 
 ### Registration Desk
 
-The League Manager is divided into five focused tabs in setup-to-play order:
+The main window has separate **League Manager**, **Registration**, and
+**Average lookup** workspaces. League Manager is divided into four focused tabs:
 
 - **Leagues & Seasons** for creating, editing, archiving, restoring, and
   reviewing historical competition workspaces
 - **Players** for the permanent directory and year-by-year player pools
 - **Teams** for league/tournament-filtered regular and substitute rosters
-- **Registration** for fast individual and whole-team entry
 - **Scores** for permanent weekly league score sheets and automatic team totals
 
-League, team, and player management each expose a relationship browser. It can
+Double-clicking a league, team, or player opens its relationship browser. It can
 move from league to team to player—or back the other direction—with Back and
 Forward navigation. League and team screens also open score history directly;
 the same history is available from the Scores tab and can be filtered by team.
 
 1. Create a league season or tournament workspace.
 2. Add its teams as they are known; an unassigned option remains available.
-3. Enter one bowler at a time or paste a complete team roster.
+3. Enter one bowler at a time, register the same bowler into multiple leagues
+   with a separate team choice for each, or paste a complete team roster.
 4. Keep registering while signed-in BOWL.com checks run through a two-worker
    queue in the background.
 5. Review only ambiguous or unsuccessful matches. Registrations save
@@ -64,7 +65,8 @@ history even when the current season roster changes later.
 1. Open **Scores**, choose a league season, and set its average/handicap rules.
 2. Create the week's score sheet; the active regular rosters are copied into
    that permanent historical sheet.
-3. Add that week's substitutes or vacancies without changing the season roster.
+3. Add back a removed regular, or add that week's substitutes and vacancies,
+   without changing the season roster.
 4. Double-click each player to enter bowled, absent, blind, or vacancy results.
 5. Review automatic scratch/handicap team totals and finalize the week.
 
@@ -152,7 +154,8 @@ Every input row remains visible in the output, including failures:
 
 ## What is included
 
-- A runnable Tkinter Windows GUI with Registration Desk and Average Lookup tabs
+- A runnable Tkinter Windows GUI with League Manager, Registration, and Average
+  Lookup tabs
 - A local, schema-versioned SQLite database with transactional saves and
   automatic import of the former JSON store
 - Persistent league-season and tournament workspaces
@@ -161,6 +164,7 @@ Every input row remains visible in the output, including failures:
   substitute pool, reassignment, and withdrawal/restore controls
 - Player, team, and league/tournament management tabs, with teams explicitly
   filtered by competition
+- Multi-league bowler registration with existing or inline-created team choices
 - Permanent weekly score sheets with individual games, roster/rule snapshots,
   substitutes, blind/absent/vacancy handling, and derived team totals
 - Required correction reasons and an append-only score change log

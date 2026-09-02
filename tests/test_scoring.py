@@ -206,6 +206,23 @@ def test_removing_scored_player_requires_reason_and_is_logged(tmp_path) -> None:
     assert {change.new_status for change in changes} == {"Removed"}
 
 
+def test_removed_regular_can_be_added_back_with_original_role(tmp_path) -> None:
+    registrations, league, team, player, _substitute = league_with_roster(tmp_path)
+    scoring = ScoringStore(registrations)
+    session = scoring.create_session(league.id, 1)
+    regular_line = scoring.score_sheet(session.id)[0].line
+
+    scoring.remove_line(regular_line.id)
+    assert scoring.score_sheet(session.id) == []
+
+    scoring.add_registered_player(session.id, player.id, team.id)
+    restored = scoring.score_sheet(session.id)[0]
+
+    assert restored.line.registration_id == player.id
+    assert restored.line.roster_role is RosterRole.REGULAR
+    assert restored.line.team_id == team.id
+
+
 def test_final_score_sheet_requires_complete_games_and_reopen_reason(tmp_path) -> None:
     registrations, league, _team, _player, _substitute = league_with_roster(tmp_path)
     scoring = ScoringStore(registrations)
