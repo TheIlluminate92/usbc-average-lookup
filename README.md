@@ -39,10 +39,14 @@ substitute pool. Removing someone from a team does not remove their league
 registration or permanent player record. Duplicate registrations within one
 competition are rejected.
 
-Registration data is stored locally in a versioned JSON file under
-`%LOCALAPPDATA%\Bowling Manager\registration-data.json`. Writes use a
-same-folder temporary file followed by an atomic replacement. An unreadable or
-unsupported file is left unchanged rather than silently replaced.
+Registration data is stored locally in a versioned SQLite database at
+`%LOCALAPPDATA%\Bowling Manager\bowling-manager.db`. Each save is a database
+transaction, with foreign-key and uniqueness checks protecting linked records.
+On first launch after upgrading, the app can import the former
+`registration-data.json` file. The original remains unchanged and an additional
+`registration-data.pre-sqlite-backup.json` copy is created before the new
+database becomes active. An unreadable or unsupported database is left
+unchanged rather than silently replaced.
 
 ### Average lookup
 
@@ -125,6 +129,8 @@ Every input row remains visible in the output, including failures:
 ## What is included
 
 - A runnable Tkinter Windows GUI with Registration Desk and Average Lookup tabs
+- A local, schema-versioned SQLite database with transactional saves and
+  automatic import of the former JSON store
 - Persistent league-season and tournament workspaces
 - Copy-forward season player pools kept separate from the permanent directory
 - Season-specific teams with regular rosters, team substitutes, a league-wide

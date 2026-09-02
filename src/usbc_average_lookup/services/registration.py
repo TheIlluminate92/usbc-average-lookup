@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import sqlite3
+from contextlib import closing
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
 from usbc_average_lookup.models import InputBowler, LookupResult, LookupStatus
@@ -133,30 +135,374 @@ class RegistrationDataError(ValueError):
 def default_registration_path() -> Path:
     base = os.environ.get("LOCALAPPDATA")
     root = Path(base) if base else Path.home() / ".average-assistant"
-    return root / "Bowling Manager" / "registration-data.json"
+    return root / "Bowling Manager" / "bowling-manager.db"
+
+
+def default_legacy_registration_path() -> Path:
+    return default_registration_path().with_name("registration-data.json")
 
 
 class RegistrationStore:
-    SCHEMA_VERSION = 2
-    SUPPORTED_SCHEMA_VERSIONS = {1, 2}
+    DATABASE_SCHEMA_VERSION = 1
+    LEGACY_SCHEMA_VERSIONS = {1, 2}
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        legacy_json_path: Path | None = None,
+    ) -> None:
         self.path = path or default_registration_path()
+        self.legacy_json_path = (
+            legacy_json_path
+            if legacy_json_path is not None
+            else (default_legacy_registration_path() if path is None else None)
+        )
         self.competitions: list[Competition] = []
         self.bowlers: list[BowlerProfile] = []
         self.player_pools: list[PlayerPool] = []
         self.player_pool_entries: list[PlayerPoolEntry] = []
         self.teams: list[Team] = []
         self.registrations: list[Registration] = []
-        self.load()
+        if self.path.exists():
+            self.load()
+        elif self.legacy_json_path and self.legacy_json_path.exists():
+            self._migrate_legacy_json(self.legacy_json_path)
 
     def load(self) -> None:
         if not self.path.exists():
             return
         try:
-            document = json.loads(self.path.read_text(encoding="utf-8"))
-            if document.get("schemaVersion") not in self.SUPPORTED_SCHEMA_VERSIONS:
-                raise RegistrationDataError("Registration data uses an unsupported version")
+            with closing(self._connect()) as connection:
+                self._ensure_schema(connection)
+                self.player_pools = [
+                    PlayerPool(
+                        id=row["id"],
+                        label=row["label"],
+                        created_at=row["created_at"],
+                        archived=bool(row["archived"]),
+                    )
+                    for row in connection.execute(
+                        "SELECT id, label, created_at, archived FROM player_pools"
+                    )
+                ]
+                self.bowlers = [
+                    BowlerProfile(
+                        id=row["id"],
+                        name=row["name"],
+                        membership_id=row["membership_id"],
+                    )
+                    for row in connection.execute(
+                        "SELECT id, name, membership_id FROM bowlers"
+                    )
+                ]
+                self.competitions = [
+                    Competition(
+                        id=row["id"],
+                        name=row["name"],
+                        season=row["season"],
+                        kind=CompetitionKind(row["kind"]),
+                        created_at=row["created_at"],
+                        archived=bool(row["archived"]),
+                        player_pool_id=row["player_pool_id"] or "",
+                    )
+                    for row in connection.execute(
+                        """
+                        SELECT id, name, season, kind, created_at, archived,
+                               player_pool_id
+                        FROM competitions
+                        """
+                    )
+                ]
+                self.teams = [
+                    Team(
+                        id=row["id"],
+                        competition_id=row["competition_id"],
+                        name=row["name"],
+                    )
+                    for row in connection.execute(
+                        "SELECT id, competition_id, name FROM teams"
+                    )
+                ]
+                self.player_pool_entries = [
+                    PlayerPoolEntry(pool_id=row["pool_id"], bowler_id=row["bowler_id"])
+                    for row in connection.execute(
+                        "SELECT pool_id, bowler_id FROM player_pool_entries"
+                    )
+                ]
+                self.registrations = [
+                    Registration(
+                        id=row["id"],
+                        competition_id=row["competition_id"],
+                        bowler_id=row["bowler_id"],
+                        team_id=row["team_id"] or "",
+                        roster_role=RosterRole(row["roster_role"]),
+                        verification=VerificationState(
+                            VerificationState.NOT_CHECKED
+                            if row["verification"] == VerificationState.CHECKING
+                            else row["verification"]
+                        ),
+                        average=row["average"],
+                        average_year=row["average_year"],
+                        games=row["games"],
+                        note=row["note"],
+                        withdrawn=bool(row["withdrawn"]),
+                        created_at=row["created_at"],
+                    )
+                    for row in connection.execute(
+                        """
+                        SELECT id, competition_id, bowler_id, team_id, roster_role,
+                               verification, average, average_year, games, note,
+                               withdrawn, created_at
+                        FROM registrations
+                        """
+                    )
+                ]
+            self._validate_references()
+        except (sqlite3.DatabaseError, TypeError, ValueError) as error:
+            if isinstance(error, RegistrationDataError):
+                raise
+            raise RegistrationDataError(
+                f"Registration data could not be read: {error}"
+            ) from error
+
+    def save(self) -> None:
+        self._validate_references()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with closing(self._connect()) as connection:
+                self._ensure_schema(connection)
+                connection.execute("BEGIN IMMEDIATE")
+                for table in (
+                    "registrations",
+                    "player_pool_entries",
+                    "teams",
+                    "competitions",
+                    "player_pools",
+                    "bowlers",
+                ):
+                    connection.execute(f"DELETE FROM {table}")
+                connection.executemany(
+                    """
+                    INSERT INTO player_pools (id, label, created_at, archived)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    [
+                        (item.id, item.label, item.created_at, int(item.archived))
+                        for item in self.player_pools
+                    ],
+                )
+                connection.executemany(
+                    "INSERT INTO bowlers (id, name, membership_id) VALUES (?, ?, ?)",
+                    [
+                        (item.id, item.name, item.membership_id)
+                        for item in self.bowlers
+                    ],
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO competitions (
+                        id, name, season, kind, created_at, archived, player_pool_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            item.id,
+                            item.name,
+                            item.season,
+                            item.kind.value,
+                            item.created_at,
+                            int(item.archived),
+                            item.player_pool_id or None,
+                        )
+                        for item in self.competitions
+                    ],
+                )
+                connection.executemany(
+                    "INSERT INTO teams (id, competition_id, name) VALUES (?, ?, ?)",
+                    [(item.id, item.competition_id, item.name) for item in self.teams],
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO player_pool_entries (pool_id, bowler_id)
+                    VALUES (?, ?)
+                    """,
+                    [
+                        (item.pool_id, item.bowler_id)
+                        for item in self.player_pool_entries
+                    ],
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO registrations (
+                        id, competition_id, bowler_id, team_id, roster_role,
+                        verification, average, average_year, games, note,
+                        withdrawn, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            item.id,
+                            item.competition_id,
+                            item.bowler_id,
+                            item.team_id or None,
+                            item.roster_role.value,
+                            item.verification.value,
+                            item.average,
+                            item.average_year,
+                            item.games,
+                            item.note,
+                            int(item.withdrawn),
+                            item.created_at,
+                        )
+                        for item in self.registrations
+                    ],
+                )
+                connection.execute(
+                    "INSERT OR REPLACE INTO metadata (key, value) VALUES ('saved_at', ?)",
+                    (_now(),),
+                )
+                connection.commit()
+        except sqlite3.DatabaseError as error:
+            raise RegistrationDataError(
+                f"Registration data could not be saved: {error}"
+            ) from error
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=5)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 5000")
+        return connection
+
+    def _ensure_schema(self, connection: sqlite3.Connection) -> None:
+        version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        if version > self.DATABASE_SCHEMA_VERSION:
+            raise RegistrationDataError(
+                "Registration database was created by a newer app version"
+            )
+        if version == self.DATABASE_SCHEMA_VERSION:
+            return
+        if version != 0:
+            raise RegistrationDataError(
+                f"Registration database schema {version} is not supported"
+            )
+        connection.executescript(
+            """
+            CREATE TABLE metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            CREATE TABLE player_pools (
+                id TEXT PRIMARY KEY,
+                label TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                created_at TEXT NOT NULL,
+                archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))
+            );
+
+            CREATE TABLE bowlers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                membership_id TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE competitions (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL COLLATE NOCASE,
+                season TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
+                kind TEXT NOT NULL CHECK (kind IN ('League', 'Tournament')),
+                created_at TEXT NOT NULL,
+                archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+                player_pool_id TEXT REFERENCES player_pools(id),
+                UNIQUE (kind, name, season)
+            );
+
+            CREATE TABLE teams (
+                id TEXT PRIMARY KEY,
+                competition_id TEXT NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
+                name TEXT NOT NULL COLLATE NOCASE,
+                UNIQUE (competition_id, name)
+            );
+
+            CREATE TABLE player_pool_entries (
+                pool_id TEXT NOT NULL REFERENCES player_pools(id) ON DELETE CASCADE,
+                bowler_id TEXT NOT NULL REFERENCES bowlers(id) ON DELETE CASCADE,
+                PRIMARY KEY (pool_id, bowler_id)
+            );
+
+            CREATE TABLE registrations (
+                id TEXT PRIMARY KEY,
+                competition_id TEXT NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
+                bowler_id TEXT NOT NULL REFERENCES bowlers(id),
+                team_id TEXT REFERENCES teams(id),
+                roster_role TEXT NOT NULL DEFAULT 'Regular'
+                    CHECK (roster_role IN ('Regular', 'Substitute')),
+                verification TEXT NOT NULL DEFAULT 'Not checked'
+                    CHECK (verification IN (
+                        'Not checked', 'Checking', 'Verified', 'Needs review',
+                        'Not found', 'No average', 'Lookup error'
+                    )),
+                average INTEGER,
+                average_year TEXT NOT NULL DEFAULT '',
+                games INTEGER,
+                note TEXT NOT NULL DEFAULT '',
+                withdrawn INTEGER NOT NULL DEFAULT 0 CHECK (withdrawn IN (0, 1)),
+                created_at TEXT NOT NULL DEFAULT '',
+                UNIQUE (competition_id, bowler_id)
+            );
+
+            CREATE INDEX registrations_team_idx ON registrations(team_id);
+            CREATE INDEX registrations_competition_idx
+                ON registrations(competition_id, withdrawn, roster_role);
+            CREATE INDEX teams_competition_idx ON teams(competition_id);
+
+            PRAGMA user_version = 1;
+            """
+        )
+        connection.commit()
+
+    def _migrate_legacy_json(self, legacy_path: Path) -> None:
+        self._load_legacy_document(legacy_path)
+        self._validate_references()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        backup_path = legacy_path.with_name(
+            f"{legacy_path.stem}.pre-sqlite-backup{legacy_path.suffix}"
+        )
+        if not backup_path.exists():
+            shutil.copy2(legacy_path, backup_path)
+        temporary_path = self.path.with_name(f".{self.path.name}.migrating")
+        if temporary_path.exists():
+            temporary_path.unlink()
+        destination = self.path
+        self.path = temporary_path
+        try:
+            self.save()
+            with closing(self._connect()) as connection:
+                result = connection.execute("PRAGMA integrity_check").fetchone()[0]
+                if result != "ok":
+                    raise RegistrationDataError(
+                        f"Migrated registration database failed its integrity check: {result}"
+                    )
+                connection.execute(
+                    "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+                    ("migrated_from", str(legacy_path)),
+                )
+                connection.commit()
+            temporary_path.replace(destination)
+        except Exception:
+            if temporary_path.exists():
+                temporary_path.unlink()
+            raise
+        finally:
+            self.path = destination
+
+    def _load_legacy_document(self, legacy_path: Path) -> None:
+        try:
+            document = json.loads(legacy_path.read_text(encoding="utf-8"))
+            if document.get("schemaVersion") not in self.LEGACY_SCHEMA_VERSIONS:
+                raise RegistrationDataError(
+                    "Legacy registration data uses an unsupported version"
+                )
             self.competitions = [
                 Competition(
                     id=str(item["id"]),
@@ -169,7 +515,9 @@ class RegistrationStore:
                 )
                 for item in document.get("competitions", [])
             ]
-            self.bowlers = [BowlerProfile(**item) for item in document.get("bowlers", [])]
+            self.bowlers = [
+                BowlerProfile(**item) for item in document.get("bowlers", [])
+            ]
             self.player_pools = [
                 PlayerPool(**item) for item in document.get("playerPools", [])
             ]
@@ -194,7 +542,6 @@ class RegistrationStore:
                 )
                 for item in document.get("registrations", [])
             ]
-            self._validate_references()
         except (
             AttributeError,
             json.JSONDecodeError,
@@ -205,35 +552,8 @@ class RegistrationStore:
             if isinstance(error, RegistrationDataError):
                 raise
             raise RegistrationDataError(
-                f"Registration data could not be read: {error}"
+                f"Legacy registration data could not be read: {error}"
             ) from error
-
-    def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        document = {
-            "schemaVersion": self.SCHEMA_VERSION,
-            "savedAt": _now(),
-            "competitions": [_serialized(item) for item in self.competitions],
-            "bowlers": [_serialized(item) for item in self.bowlers],
-            "playerPools": [_serialized(item) for item in self.player_pools],
-            "playerPoolEntries": [
-                _serialized(item) for item in self.player_pool_entries
-            ],
-            "teams": [_serialized(item) for item in self.teams],
-            "registrations": [_serialized(item) for item in self.registrations],
-        }
-        with NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
-            dir=self.path.parent,
-            prefix=f".{self.path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temporary:
-            json.dump(document, temporary, indent=2)
-            temporary.write("\n")
-            temporary_path = Path(temporary.name)
-        temporary_path.replace(self.path)
 
     def add_competition(
         self, name: str, season: str, kind: CompetitionKind
@@ -804,10 +1124,6 @@ def _find(items: list, item_id: str, label: str):
     if item is None:
         raise RegistrationDataError(f"Unknown {label}")
     return item
-
-
-def _serialized(item: object) -> dict:
-    return asdict(item)
 
 
 def _required(value: str, label: str) -> str:

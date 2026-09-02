@@ -19,6 +19,12 @@ dist/
 .session/
 cookies.json
 storage-state.json
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+registration-data.json
+registration-data.pre-sqlite-backup.json
 
 # Editor and operating-system files.
 .idea/

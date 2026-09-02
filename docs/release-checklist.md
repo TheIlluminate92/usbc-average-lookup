@@ -43,6 +43,17 @@ for normal users.
 - Confirm only legacy app-owned login profiles are removed; normal browser
   profiles and data must remain untouched.
 
+## Registration database
+
+- Upgrade once with an existing `registration-data.json` file and confirm all
+  leagues, teams, players, season pools, roles, and lookup states are present.
+- Confirm the original JSON and `registration-data.pre-sqlite-backup.json`
+  remain readable after migration.
+- Restart the app after roster edits and confirm the same records return.
+- Run SQLite's integrity and foreign-key checks against `bowling-manager.db`;
+  both must report no errors.
+- Back up and restore the database file while the app is closed.
+
 ## Automated checks
 
 - Run the test suite and code-quality checks.

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 import pytest
 
@@ -13,7 +14,7 @@ from usbc_average_lookup.services.registration import (
 
 
 def test_registration_data_survives_restart(tmp_path) -> None:
-    path = tmp_path / "registration.json"
+    path = tmp_path / "registration.db"
     store = RegistrationStore(path)
     competition = store.add_competition(
         "Monday Misfits", "2026-27", CompetitionKind.LEAGUE
@@ -338,7 +339,7 @@ def test_linking_pool_includes_players_already_registered_for_season(tmp_path) -
 
 
 def test_invalid_file_is_not_silently_overwritten(tmp_path) -> None:
-    path = tmp_path / "registration.json"
+    path = tmp_path / "registration.db"
     path.write_text("not json", encoding="utf-8")
 
     with pytest.raises(RegistrationDataError, match="could not be read"):
@@ -347,35 +348,177 @@ def test_invalid_file_is_not_silently_overwritten(tmp_path) -> None:
     assert path.read_text(encoding="utf-8") == "not json"
 
 
-def test_json_uses_versioned_plain_data(tmp_path) -> None:
-    path = tmp_path / "registration.json"
+def test_player_pools_and_roster_roles_survive_database_restart(tmp_path) -> None:
+    path = tmp_path / "registration.db"
+    store = RegistrationStore(path)
+    pool = store.add_player_pool("2026-27")
+    competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    store.set_competition_player_pool(competition.id, pool.id)
+    team = store.add_team(competition.id, "Pin Pals")
+    regular = store.register_bowler(
+        competition.id, "Regular Player", "1111-111111", team.id
+    )
+    substitute = store.register_bowler(
+        competition.id,
+        "Sub Player",
+        "2222-222222",
+        roster_role=RosterRole.SUBSTITUTE,
+    )
+    store.set_withdrawn(regular.id, True)
+
+    reopened = RegistrationStore(path)
+    views = {
+        view.bowler.name: view for view in reopened.registration_views(competition.id)
+    }
+
+    assert reopened.competitions[0].player_pool_id == pool.id
+    assert {item.name for item in reopened.pool_bowlers(pool.id)} == {
+        "Regular Player",
+        "Sub Player",
+    }
+    assert views["Regular Player"].registration.withdrawn
+    assert views["Sub Player"].registration.id == substitute.id
+    assert views["Sub Player"].registration.roster_role is RosterRole.SUBSTITUTE
+    assert views["Sub Player"].team is None
+
+
+def test_database_round_trip_handles_200_bowlers(tmp_path) -> None:
+    path = tmp_path / "registration.db"
+    store = RegistrationStore(path)
+    competition = store.add_competition("Large League", "2026-27", CompetitionKind.LEAGUE)
+    bowlers = [
+        InputBowler(f"Player {number:03}", f"{1000 + number:04}-{200000 + number:06}")
+        for number in range(200)
+    ]
+
+    store.register_team(competition.id, "All Bowlers", bowlers)
+    reopened = RegistrationStore(path)
+
+    assert len(reopened.bowlers) == 200
+    assert len(reopened.registration_views(competition.id)) == 200
+
+
+def test_registration_database_is_versioned_sqlite(tmp_path) -> None:
+    path = tmp_path / "registration.db"
     store = RegistrationStore(path)
     store.add_competition("Open", "2027", CompetitionKind.TOURNAMENT)
 
-    document = json.loads(path.read_text(encoding="utf-8"))
+    assert path.read_bytes().startswith(b"SQLite format 3\x00")
+    with sqlite3.connect(path) as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        competition = connection.execute(
+            "SELECT name, season, kind FROM competitions"
+        ).fetchone()
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
 
-    assert document["schemaVersion"] == 2
-    assert document["competitions"][0]["kind"] == "Tournament"
+    assert version == 1
+    assert competition == ("Open", "2027", "Tournament")
+    assert integrity == "ok"
 
 
-def test_version_one_registration_data_migrates_on_next_save(tmp_path) -> None:
-    path = tmp_path / "registration.json"
-    store = RegistrationStore(path)
-    competition = store.add_competition("Monday", "2025-26", CompetitionKind.LEAGUE)
-    store.register_bowler(competition.id, "Player One")
-    document = json.loads(path.read_text(encoding="utf-8"))
-    document["schemaVersion"] = 1
-    document.pop("playerPools")
-    document.pop("playerPoolEntries")
-    for item in document["competitions"]:
-        item.pop("player_pool_id")
-    for item in document["registrations"]:
-        item.pop("roster_role")
-    path.write_text(json.dumps(document), encoding="utf-8")
+@pytest.mark.parametrize("schema_version", [1, 2])
+def test_legacy_json_migrates_to_sqlite_with_backup(
+    tmp_path, schema_version: int
+) -> None:
+    legacy_path = tmp_path / "registration-data.json"
+    database_path = tmp_path / "bowling-manager.db"
+    competition = {
+        "id": "competition-1",
+        "name": "Monday Misfits",
+        "season": "2025-26",
+        "kind": "League",
+        "created_at": "2025-08-01T00:00:00+00:00",
+        "archived": False,
+    }
+    registration = {
+        "id": "registration-1",
+        "competition_id": "competition-1",
+        "bowler_id": "bowler-1",
+        "team_id": "team-1",
+        "verification": "Not checked",
+        "average": None,
+        "average_year": "",
+        "games": None,
+        "note": "",
+        "withdrawn": False,
+        "created_at": "2025-08-01T00:00:00+00:00",
+    }
+    document = {
+        "schemaVersion": schema_version,
+        "competitions": [competition],
+        "bowlers": [
+            {"id": "bowler-1", "name": "Player One", "membership_id": "1234-567890"}
+        ],
+        "teams": [
+            {"id": "team-1", "competition_id": "competition-1", "name": "Pin Pals"}
+        ],
+        "registrations": [registration],
+    }
+    if schema_version == 2:
+        competition["player_pool_id"] = "pool-1"
+        registration["roster_role"] = "Substitute"
+        document["playerPools"] = [
+            {
+                "id": "pool-1",
+                "label": "2025-26",
+                "created_at": "2025-08-01T00:00:00+00:00",
+                "archived": False,
+            }
+        ]
+        document["playerPoolEntries"] = [
+            {"pool_id": "pool-1", "bowler_id": "bowler-1"}
+        ]
+    original_text = json.dumps(document, indent=2)
+    legacy_path.write_text(original_text, encoding="utf-8")
 
-    migrated = RegistrationStore(path)
-    migrated.save()
+    migrated = RegistrationStore(database_path, legacy_json_path=legacy_path)
 
-    saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["schemaVersion"] == 2
-    assert migrated.registrations[0].roster_role is RosterRole.REGULAR
+    backup_path = tmp_path / "registration-data.pre-sqlite-backup.json"
+    assert database_path.read_bytes().startswith(b"SQLite format 3\x00")
+    assert legacy_path.read_text(encoding="utf-8") == original_text
+    assert backup_path.read_text(encoding="utf-8") == original_text
+    assert migrated.registration_views("competition-1")[0].team.name == "Pin Pals"
+    if schema_version == 2:
+        assert migrated.registrations[0].roster_role is RosterRole.SUBSTITUTE
+        assert migrated.pool_bowlers("pool-1")[0].name == "Player One"
+    else:
+        assert migrated.registrations[0].roster_role is RosterRole.REGULAR
+
+
+def test_invalid_legacy_json_does_not_create_database_or_change_source(tmp_path) -> None:
+    legacy_path = tmp_path / "registration-data.json"
+    database_path = tmp_path / "bowling-manager.db"
+    legacy_path.write_text("not json", encoding="utf-8")
+
+    with pytest.raises(RegistrationDataError, match="could not be read"):
+        RegistrationStore(database_path, legacy_json_path=legacy_path)
+
+    assert legacy_path.read_text(encoding="utf-8") == "not json"
+    assert not database_path.exists()
+
+
+def test_default_store_discovers_and_migrates_legacy_json(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    data_folder = tmp_path / "Bowling Manager"
+    data_folder.mkdir()
+    legacy_path = data_folder / "registration-data.json"
+    legacy_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 2,
+                "competitions": [],
+                "bowlers": [],
+                "playerPools": [],
+                "playerPoolEntries": [],
+                "teams": [],
+                "registrations": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = RegistrationStore()
+
+    assert store.path == data_folder / "bowling-manager.db"
+    assert store.path.read_bytes().startswith(b"SQLite format 3\x00")
+    assert (data_folder / "registration-data.pre-sqlite-backup.json").exists()

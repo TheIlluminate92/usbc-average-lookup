@@ -20,10 +20,16 @@ This prevents annual team changes or player-pool edits from rewriting earlier
 seasons. A competition can link to a player pool; current and future
 registrations are then included in that pool. Removing a registration from a
 team clears only the team assignment, while withdrawal remains a separate
-operation. The first
-storage adapter is a local, schema-versioned JSON document written atomically.
-The UI talks to `RegistrationStore`, not directly to JSON, so a later SQLite or
-shared-service adapter does not need to change the registration screens.
+operation. The storage adapter is a local, schema-versioned SQLite database.
+Writes run in transactions and the schema enforces primary keys, foreign keys,
+unique registrations, and the allowed competition, roster, and verification
+states. The UI talks to `RegistrationStore`, not directly to SQL, so a later
+shared PostgreSQL service does not need to change the registration screens.
+
+On the first SQLite launch, the store can import schema-version 1 or 2 of the
+former JSON document. Migration is built in a temporary database, checked with
+SQLite's integrity checker, and moved into place only after success. The source
+JSON remains untouched and receives a separate pre-SQLite backup copy.
 
 BOWL.com checks are optional. Manual entry works while signed out, and a
 two-worker background queue prevents a slow or ambiguous lookup from blocking
