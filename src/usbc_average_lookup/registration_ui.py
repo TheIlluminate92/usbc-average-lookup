@@ -7,6 +7,12 @@ from threading import Thread
 from tkinter import messagebox, simpledialog, ttk
 
 from usbc_average_lookup.models import InputBowler, LookupResult, Member
+from usbc_average_lookup.relationships_ui import (
+    EntityKind,
+    EntityRef,
+    RelationshipBrowser,
+)
+from usbc_average_lookup.scoring_ui import ScoringDesk
 from usbc_average_lookup.services.bowl_api import BowlApi
 from usbc_average_lookup.services.input_parser import parse_input_text
 from usbc_average_lookup.services.lookup import look_up_bowler, resolve_selected_member
@@ -71,10 +77,14 @@ class RegistrationDesk(ttk.Frame):
         self.competitions_tab = ttk.Frame(
             self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
         )
-        self.section_tabs.add(registration_tab, text="Registration")
+        self.scores_tab = ttk.Frame(
+            self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
+        )
+        self.section_tabs.add(self.competitions_tab, text="Leagues & Seasons")
         self.section_tabs.add(self.players_tab, text="Players")
         self.section_tabs.add(self.teams_tab, text="Teams")
-        self.section_tabs.add(self.competitions_tab, text="Leagues & Tournaments")
+        self.section_tabs.add(registration_tab, text="Registration")
+        self.section_tabs.add(self.scores_tab, text="Scores")
 
         registration_tab.columnconfigure(0, weight=1)
         registration_tab.rowconfigure(3, weight=1)
@@ -230,6 +240,13 @@ class RegistrationDesk(ttk.Frame):
         self._build_players_tab()
         self._build_teams_tab()
         self._build_competitions_tab()
+        self.scoring_desk = ScoringDesk(
+            self.scores_tab, self.store, self.status_callback
+        )
+        self.scoring_desk.pack(fill=tk.BOTH, expand=True)
+        self.section_tabs.bind(
+            "<<NotebookTabChanged>>", lambda _event: self.scoring_desk.refresh()
+        )
 
     def _build_players_tab(self) -> None:
         tab = self.players_tab
@@ -256,6 +273,15 @@ class RegistrationDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.player_edit_button.grid(row=0, column=1, rowspan=2, sticky="e")
+        self.player_relationships_button = ttk.Button(
+            heading,
+            text="Relationships",
+            command=self._show_selected_player_relationships,
+            state=tk.DISABLED,
+        )
+        self.player_relationships_button.grid(
+            row=0, column=2, rowspan=2, sticky="e", padx=(8, 0)
+        )
 
         search = ttk.Frame(tab, style="Surface.TFrame", padding=14)
         search.grid(row=1, column=0, sticky="ew", pady=(18, 12))
@@ -368,6 +394,24 @@ class RegistrationDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.team_rename_button.grid(row=0, column=2, rowspan=2, sticky="e", padx=(8, 0))
+        self.team_score_history_button = ttk.Button(
+            heading,
+            text="Score history",
+            command=self._show_managed_team_score_history,
+            state=tk.DISABLED,
+        )
+        self.team_score_history_button.grid(
+            row=0, column=3, rowspan=2, sticky="e", padx=(8, 0)
+        )
+        self.team_relationships_button = ttk.Button(
+            heading,
+            text="Relationships",
+            command=self._show_selected_team_relationships,
+            state=tk.DISABLED,
+        )
+        self.team_relationships_button.grid(
+            row=0, column=4, rowspan=2, sticky="e", padx=(8, 0)
+        )
 
         selector = ttk.Frame(tab, style="Surface.TFrame", padding=14)
         selector.grid(row=1, column=0, sticky="ew", pady=(18, 12))
@@ -611,6 +655,20 @@ class RegistrationDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.competition_pool_button.pack(side=tk.RIGHT)
+        self.competition_score_history_button = ttk.Button(
+            actions,
+            text="Score history",
+            command=self._show_selected_competition_score_history,
+            state=tk.DISABLED,
+        )
+        self.competition_score_history_button.pack(side=tk.RIGHT, padx=(0, 8))
+        self.competition_relationships_button = ttk.Button(
+            actions,
+            text="Relationships",
+            command=self._show_selected_competition_relationships,
+            state=tk.DISABLED,
+        )
+        self.competition_relationships_button.pack(side=tk.RIGHT, padx=(0, 8))
         self.competition_add_player_button = ttk.Button(
             actions,
             text="Register new player",
@@ -670,6 +728,7 @@ class RegistrationDesk(ttk.Frame):
         self._render_players()
         self._refresh_team_management_competitions()
         self._render_competitions()
+        self.scoring_desk.refresh()
 
     def _refresh_player_pools(self) -> None:
         pools = (
@@ -752,6 +811,9 @@ class RegistrationDesk(ttk.Frame):
     def _update_player_actions(self) -> None:
         selected_pool = self._current_player_pool()
         self.player_edit_button.configure(
+            state=tk.NORMAL if self._selected_player_id() else tk.DISABLED
+        )
+        self.player_relationships_button.configure(
             state=tk.NORMAL if self._selected_player_id() else tk.DISABLED
         )
         pool_state = tk.NORMAL if selected_pool else tk.DISABLED
@@ -993,6 +1055,19 @@ class RegistrationDesk(ttk.Frame):
         )
         self.team_rename_button.configure(
             state=tk.NORMAL if self._selected_managed_team_id() else tk.DISABLED
+        )
+        self.team_relationships_button.configure(
+            state=tk.NORMAL if self._selected_managed_team_id() else tk.DISABLED
+        )
+        competition = self._team_management_competition()
+        self.team_score_history_button.configure(
+            state=(
+                tk.NORMAL
+                if competition is not None
+                and competition.kind is CompetitionKind.LEAGUE
+                and self._selected_managed_team_id()
+                else tk.DISABLED
+            )
         )
         self._render_team_rosters()
 
@@ -1289,10 +1364,61 @@ class RegistrationDesk(ttk.Frame):
         self.competition_pull_player_button.configure(state=active_state)
         self.competition_copy_team_button.configure(state=active_state)
         self.competition_pool_button.configure(state=active_state)
+        self.competition_relationships_button.configure(state=state)
+        self.competition_score_history_button.configure(
+            state=(
+                tk.NORMAL
+                if competition is not None and competition.kind is CompetitionKind.LEAGUE
+                else tk.DISABLED
+            )
+        )
         if competition:
             self.competition_archive_button.configure(
                 text="Restore selected" if competition.archived else "Archive selected"
             )
+
+    def _show_selected_competition_score_history(self) -> None:
+        competition = self._selected_managed_competition()
+        if competition is None or competition.kind is not CompetitionKind.LEAGUE:
+            return
+        self.section_tabs.select(self.scores_tab)
+        self.scoring_desk.select_competition(competition.id, show_history=True)
+
+    def _show_managed_team_score_history(self) -> None:
+        competition = self._team_management_competition()
+        team_id = self._selected_managed_team_id()
+        if (
+            competition is None
+            or competition.kind is not CompetitionKind.LEAGUE
+            or team_id is None
+        ):
+            return
+        self.section_tabs.select(self.scores_tab)
+        self.scoring_desk.select_competition(
+            competition.id, show_history=True, team_id=team_id
+        )
+
+    def _show_selected_competition_relationships(self) -> None:
+        competition = self._selected_managed_competition()
+        if self.store is None or competition is None:
+            return
+        RelationshipBrowser(
+            self, self.store, EntityRef(EntityKind.LEAGUE, competition.id)
+        )
+
+    def _show_selected_team_relationships(self) -> None:
+        team_id = self._selected_managed_team_id()
+        if self.store is None or team_id is None:
+            return
+        RelationshipBrowser(self, self.store, EntityRef(EntityKind.TEAM, team_id))
+
+    def _show_selected_player_relationships(self) -> None:
+        bowler_id = self._selected_player_id()
+        if self.store is None or bowler_id is None:
+            return
+        RelationshipBrowser(
+            self, self.store, EntityRef(EntityKind.PLAYER, bowler_id)
+        )
 
     def _add_team_to_managed_competition(self) -> None:
         if self.store is None:

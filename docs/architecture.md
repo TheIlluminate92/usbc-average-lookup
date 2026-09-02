@@ -36,7 +36,7 @@ two-worker background queue prevents a slow or ambiguous lookup from blocking
 the registration desk or creating an unbounded burst of requests. Ambiguous
 candidate lists remain a deliberate operator decision.
 
-The desktop workspace presents four domain-focused tabs. Registration is the
+The desktop workspace presents five domain-focused tabs. Registration is the
 fast operational screen. Player management edits the central identity and
 invalidates averages that may no longer belong to that identity. Team
 management always requires a selected league season or tournament and never
@@ -44,6 +44,24 @@ mixes teams across competitions. It separates regulars, team-specific
 substitutes, and unassigned league-wide substitutes. League and tournament
 management owns names, season labels, type, player-pool links, and reversible
 archival.
+
+## Scoring domain
+
+`LeagueSession` is one permanent weekly score sheet. `ScoreLine` snapshots the
+player, team, role, entering average, handicap, and lineup position used that
+week. `GameScore` stores each individual game and its bowled/absent/blind/
+vacancy state. Team totals are always derived by summing those player games.
+
+Score records intentionally retain display snapshots instead of depending on
+the current team or player name. This prevents a roster move or team rename
+from changing prior weeks. The current management records remain normalized,
+while the historical scoring side is immutable-by-default and correction-aware.
+
+Final score sheets must be reopened with a reason. Corrections to entered
+scores, removal of scored rows, and reopen events append before/after records to
+`score_change_log`; ordinary first-time entry is not treated as a correction.
+The score tables use row-level transactions and are not rewritten by normal
+registration saves.
 
 ```text
 Tkinter Windows GUI

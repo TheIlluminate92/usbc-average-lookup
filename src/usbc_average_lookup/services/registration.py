@@ -9,11 +9,20 @@ from contextlib import closing
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
 
 from usbc_average_lookup.models import InputBowler, LookupResult, LookupStatus
+from usbc_average_lookup.services.average_rules import (
+    AverageCandidate,
+    AverageRounding,
+    AverageRule,
+    AverageSource,
+    RuleSource,
+    evaluate_average_rule,
+)
 
 
 class CompetitionKind(StrEnum):
@@ -45,6 +54,16 @@ class Competition:
     created_at: str
     archived: bool = False
     player_pool_id: str = ""
+    games_per_session: int = 3
+    average_rule_name: str = "Standard composite"
+    average_minimum_games: int = 0
+    average_multiplier: Decimal = Decimal("1")
+    average_add_pins: int = 0
+    average_rounding: AverageRounding = AverageRounding.NEAREST
+    handicap_base: int = 0
+    handicap_percent: Decimal = Decimal("0")
+    blind_penalty: int = 10
+    vacancy_score: int = 120
 
     @property
     def display_name(self) -> str:
@@ -143,7 +162,7 @@ def default_legacy_registration_path() -> Path:
 
 
 class RegistrationStore:
-    DATABASE_SCHEMA_VERSION = 1
+    DATABASE_SCHEMA_VERSION = 3
     LEGACY_SCHEMA_VERSIONS = {1, 2}
 
     def __init__(
@@ -172,6 +191,7 @@ class RegistrationStore:
         if not self.path.exists():
             return
         try:
+            self._backup_before_schema_upgrade()
             with closing(self._connect()) as connection:
                 self._ensure_schema(connection)
                 self.player_pools = [
@@ -204,11 +224,24 @@ class RegistrationStore:
                         created_at=row["created_at"],
                         archived=bool(row["archived"]),
                         player_pool_id=row["player_pool_id"] or "",
+                        games_per_session=row["games_per_session"],
+                        average_rule_name=row["average_rule_name"],
+                        average_minimum_games=row["average_minimum_games"],
+                        average_multiplier=Decimal(row["average_multiplier"]),
+                        average_add_pins=row["average_add_pins"],
+                        average_rounding=AverageRounding(row["average_rounding"]),
+                        handicap_base=row["handicap_base"],
+                        handicap_percent=Decimal(row["handicap_percent"]),
+                        blind_penalty=row["blind_penalty"],
+                        vacancy_score=row["vacancy_score"],
                     )
                     for row in connection.execute(
                         """
                         SELECT id, name, season, kind, created_at, archived,
-                               player_pool_id
+                               player_pool_id, games_per_session, average_rule_name,
+                               average_minimum_games, average_multiplier,
+                               average_add_pins, average_rounding, handicap_base,
+                               handicap_percent, blind_penalty, vacancy_score
                         FROM competitions
                         """
                     )
@@ -269,6 +302,7 @@ class RegistrationStore:
         self._validate_references()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
+            self._backup_before_schema_upgrade()
             with closing(self._connect()) as connection:
                 self._ensure_schema(connection)
                 connection.execute("BEGIN IMMEDIATE")
@@ -301,8 +335,11 @@ class RegistrationStore:
                 connection.executemany(
                     """
                     INSERT INTO competitions (
-                        id, name, season, kind, created_at, archived, player_pool_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        id, name, season, kind, created_at, archived, player_pool_id,
+                        games_per_session, average_rule_name, average_minimum_games,
+                        average_multiplier, average_add_pins, average_rounding,
+                        handicap_base, handicap_percent, blind_penalty, vacancy_score
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
@@ -313,6 +350,16 @@ class RegistrationStore:
                             item.created_at,
                             int(item.archived),
                             item.player_pool_id or None,
+                            item.games_per_session,
+                            item.average_rule_name,
+                            item.average_minimum_games,
+                            str(item.average_multiplier),
+                            item.average_add_pins,
+                            item.average_rounding.value,
+                            item.handicap_base,
+                            str(item.handicap_percent),
+                            item.blind_penalty,
+                            item.vacancy_score,
                         )
                         for item in self.competitions
                     ],
@@ -374,6 +421,20 @@ class RegistrationStore:
         connection.execute("PRAGMA busy_timeout = 5000")
         return connection
 
+    def _backup_before_schema_upgrade(self) -> None:
+        if not self.path.exists():
+            return
+        with closing(sqlite3.connect(self.path)) as source:
+            version = int(source.execute("PRAGMA user_version").fetchone()[0])
+            if not 0 < version < self.DATABASE_SCHEMA_VERSION:
+                return
+            backup_path = self.path.with_name(
+                f"{self.path.stem}.schema-v{version}-backup{self.path.suffix}"
+            )
+            if not backup_path.exists():
+                with closing(sqlite3.connect(backup_path)) as destination:
+                    source.backup(destination)
+
     def _ensure_schema(self, connection: sqlite3.Connection) -> None:
         version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         if version > self.DATABASE_SCHEMA_VERSION:
@@ -382,12 +443,136 @@ class RegistrationStore:
             )
         if version == self.DATABASE_SCHEMA_VERSION:
             return
+        if version == 2:
+            columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(score_change_log)")
+            }
+            connection.execute("BEGIN IMMEDIATE")
+            if "team_id" not in columns:
+                connection.execute(
+                    """
+                    ALTER TABLE score_change_log
+                    ADD COLUMN team_id TEXT NOT NULL DEFAULT ''
+                    """
+                )
+            connection.execute("PRAGMA user_version = 3")
+            connection.commit()
+            return
+        if version == 1:
+            connection.executescript(
+                """
+                BEGIN IMMEDIATE;
+
+                ALTER TABLE competitions ADD COLUMN games_per_session INTEGER NOT NULL
+                    DEFAULT 3 CHECK (games_per_session BETWEEN 1 AND 12);
+                ALTER TABLE competitions ADD COLUMN average_rule_name TEXT NOT NULL
+                    DEFAULT 'Standard composite';
+                ALTER TABLE competitions ADD COLUMN average_minimum_games INTEGER NOT NULL
+                    DEFAULT 0 CHECK (average_minimum_games >= 0);
+                ALTER TABLE competitions ADD COLUMN average_multiplier TEXT NOT NULL
+                    DEFAULT '1';
+                ALTER TABLE competitions ADD COLUMN average_add_pins INTEGER NOT NULL
+                    DEFAULT 0;
+                ALTER TABLE competitions ADD COLUMN average_rounding TEXT NOT NULL
+                    DEFAULT 'Nearest whole pin';
+                ALTER TABLE competitions ADD COLUMN handicap_base INTEGER NOT NULL
+                    DEFAULT 0 CHECK (handicap_base >= 0);
+                ALTER TABLE competitions ADD COLUMN handicap_percent TEXT NOT NULL
+                    DEFAULT '0';
+                ALTER TABLE competitions ADD COLUMN blind_penalty INTEGER NOT NULL
+                    DEFAULT 10 CHECK (blind_penalty >= 0);
+                ALTER TABLE competitions ADD COLUMN vacancy_score INTEGER NOT NULL
+                    DEFAULT 120 CHECK (vacancy_score BETWEEN 0 AND 300);
+
+                CREATE TABLE league_sessions (
+                    id TEXT PRIMARY KEY,
+                    competition_id TEXT NOT NULL,
+                    week_number INTEGER NOT NULL CHECK (week_number > 0),
+                    bowled_on TEXT NOT NULL DEFAULT '',
+                    label TEXT NOT NULL DEFAULT '',
+                    games_per_player INTEGER NOT NULL CHECK (games_per_player BETWEEN 1 AND 12),
+                    status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'Final')),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (competition_id, week_number)
+                );
+
+                CREATE TABLE score_lines (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    registration_id TEXT NOT NULL DEFAULT '',
+                    bowler_id TEXT NOT NULL DEFAULT '',
+                    team_id TEXT NOT NULL,
+                    player_name TEXT NOT NULL,
+                    team_name TEXT NOT NULL,
+                    roster_role TEXT NOT NULL DEFAULT 'Regular',
+                    entering_average INTEGER NOT NULL DEFAULT 0,
+                    handicap INTEGER NOT NULL DEFAULT 0,
+                    lineup_order INTEGER NOT NULL DEFAULT 0,
+                    is_vacancy INTEGER NOT NULL DEFAULT 0 CHECK (is_vacancy IN (0, 1)),
+                    UNIQUE (session_id, team_id, lineup_order)
+                );
+
+                CREATE TABLE game_scores (
+                    id TEXT PRIMARY KEY,
+                    score_line_id TEXT NOT NULL,
+                    game_number INTEGER NOT NULL CHECK (game_number > 0),
+                    status TEXT NOT NULL DEFAULT 'Not entered' CHECK (status IN (
+                        'Not entered', 'Bowled', 'Absent', 'Blind', 'Vacancy'
+                    )),
+                    scratch_score INTEGER CHECK (scratch_score BETWEEN 0 AND 300),
+                    pins_counted INTEGER NOT NULL DEFAULT 0 CHECK (pins_counted >= 0),
+                    UNIQUE (score_line_id, game_number)
+                );
+
+                CREATE TABLE score_change_log (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    score_line_id TEXT NOT NULL DEFAULT '',
+                    game_number INTEGER NOT NULL DEFAULT 0,
+                    team_id TEXT NOT NULL DEFAULT '',
+                    player_name TEXT NOT NULL DEFAULT '',
+                    team_name TEXT NOT NULL DEFAULT '',
+                    old_status TEXT NOT NULL DEFAULT '',
+                    old_scratch_score INTEGER,
+                    old_pins_counted INTEGER NOT NULL DEFAULT 0,
+                    old_entering_average INTEGER NOT NULL DEFAULT 0,
+                    old_handicap INTEGER NOT NULL DEFAULT 0,
+                    new_status TEXT NOT NULL DEFAULT '',
+                    new_scratch_score INTEGER,
+                    new_pins_counted INTEGER NOT NULL DEFAULT 0,
+                    new_entering_average INTEGER NOT NULL DEFAULT 0,
+                    new_handicap INTEGER NOT NULL DEFAULT 0,
+                    reason TEXT NOT NULL,
+                    changed_at TEXT NOT NULL
+                );
+
+                CREATE INDEX league_sessions_competition_idx
+                    ON league_sessions(competition_id, week_number);
+                CREATE INDEX score_lines_session_idx ON score_lines(session_id, team_id);
+                CREATE UNIQUE INDEX score_lines_registration_idx
+                    ON score_lines(session_id, registration_id)
+                    WHERE registration_id <> '';
+                CREATE INDEX game_scores_line_idx ON game_scores(score_line_id, game_number);
+                CREATE INDEX score_change_log_session_idx
+                    ON score_change_log(session_id, changed_at);
+
+                PRAGMA user_version = 3;
+
+                COMMIT;
+                """
+            )
+            connection.commit()
+            return
         if version != 0:
             raise RegistrationDataError(
                 f"Registration database schema {version} is not supported"
             )
         connection.executescript(
             """
+            BEGIN IMMEDIATE;
+
             CREATE TABLE metadata (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -414,6 +599,19 @@ class RegistrationStore:
                 created_at TEXT NOT NULL,
                 archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
                 player_pool_id TEXT REFERENCES player_pools(id),
+                games_per_session INTEGER NOT NULL DEFAULT 3
+                    CHECK (games_per_session BETWEEN 1 AND 12),
+                average_rule_name TEXT NOT NULL DEFAULT 'Standard composite',
+                average_minimum_games INTEGER NOT NULL DEFAULT 0
+                    CHECK (average_minimum_games >= 0),
+                average_multiplier TEXT NOT NULL DEFAULT '1',
+                average_add_pins INTEGER NOT NULL DEFAULT 0,
+                average_rounding TEXT NOT NULL DEFAULT 'Nearest whole pin',
+                handicap_base INTEGER NOT NULL DEFAULT 0 CHECK (handicap_base >= 0),
+                handicap_percent TEXT NOT NULL DEFAULT '0',
+                blind_penalty INTEGER NOT NULL DEFAULT 10 CHECK (blind_penalty >= 0),
+                vacancy_score INTEGER NOT NULL DEFAULT 120
+                    CHECK (vacancy_score BETWEEN 0 AND 300),
                 UNIQUE (kind, name, season)
             );
 
@@ -456,7 +654,82 @@ class RegistrationStore:
                 ON registrations(competition_id, withdrawn, roster_role);
             CREATE INDEX teams_competition_idx ON teams(competition_id);
 
-            PRAGMA user_version = 1;
+            CREATE TABLE league_sessions (
+                id TEXT PRIMARY KEY,
+                competition_id TEXT NOT NULL,
+                week_number INTEGER NOT NULL CHECK (week_number > 0),
+                bowled_on TEXT NOT NULL DEFAULT '',
+                label TEXT NOT NULL DEFAULT '',
+                games_per_player INTEGER NOT NULL CHECK (games_per_player BETWEEN 1 AND 12),
+                status TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft', 'Final')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (competition_id, week_number)
+            );
+
+            CREATE TABLE score_lines (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                registration_id TEXT NOT NULL DEFAULT '',
+                bowler_id TEXT NOT NULL DEFAULT '',
+                team_id TEXT NOT NULL,
+                player_name TEXT NOT NULL,
+                team_name TEXT NOT NULL,
+                roster_role TEXT NOT NULL DEFAULT 'Regular',
+                entering_average INTEGER NOT NULL DEFAULT 0,
+                handicap INTEGER NOT NULL DEFAULT 0,
+                lineup_order INTEGER NOT NULL DEFAULT 0,
+                is_vacancy INTEGER NOT NULL DEFAULT 0 CHECK (is_vacancy IN (0, 1)),
+                UNIQUE (session_id, team_id, lineup_order)
+            );
+
+            CREATE TABLE game_scores (
+                id TEXT PRIMARY KEY,
+                score_line_id TEXT NOT NULL,
+                game_number INTEGER NOT NULL CHECK (game_number > 0),
+                status TEXT NOT NULL DEFAULT 'Not entered' CHECK (status IN (
+                    'Not entered', 'Bowled', 'Absent', 'Blind', 'Vacancy'
+                )),
+                scratch_score INTEGER CHECK (scratch_score BETWEEN 0 AND 300),
+                pins_counted INTEGER NOT NULL DEFAULT 0 CHECK (pins_counted >= 0),
+                UNIQUE (score_line_id, game_number)
+            );
+
+            CREATE TABLE score_change_log (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                score_line_id TEXT NOT NULL DEFAULT '',
+                game_number INTEGER NOT NULL DEFAULT 0,
+                team_id TEXT NOT NULL DEFAULT '',
+                player_name TEXT NOT NULL DEFAULT '',
+                team_name TEXT NOT NULL DEFAULT '',
+                old_status TEXT NOT NULL DEFAULT '',
+                old_scratch_score INTEGER,
+                old_pins_counted INTEGER NOT NULL DEFAULT 0,
+                old_entering_average INTEGER NOT NULL DEFAULT 0,
+                old_handicap INTEGER NOT NULL DEFAULT 0,
+                new_status TEXT NOT NULL DEFAULT '',
+                new_scratch_score INTEGER,
+                new_pins_counted INTEGER NOT NULL DEFAULT 0,
+                new_entering_average INTEGER NOT NULL DEFAULT 0,
+                new_handicap INTEGER NOT NULL DEFAULT 0,
+                reason TEXT NOT NULL,
+                changed_at TEXT NOT NULL
+            );
+
+            CREATE INDEX league_sessions_competition_idx
+                ON league_sessions(competition_id, week_number);
+            CREATE INDEX score_lines_session_idx ON score_lines(session_id, team_id);
+            CREATE UNIQUE INDEX score_lines_registration_idx
+                ON score_lines(session_id, registration_id)
+                WHERE registration_id <> '';
+            CREATE INDEX game_scores_line_idx ON game_scores(score_line_id, game_number);
+            CREATE INDEX score_change_log_session_idx
+                ON score_change_log(session_id, changed_at);
+
+            PRAGMA user_version = 3;
+
+            COMMIT;
             """
         )
         connection.commit()
@@ -689,6 +962,102 @@ class RegistrationStore:
         competition.season = clean_season
         competition.kind = kind
         self.save()
+
+    def update_competition_scoring_settings(
+        self,
+        competition_id: str,
+        *,
+        games_per_session: int,
+        average_rule_name: str,
+        average_minimum_games: int,
+        average_multiplier: Decimal,
+        average_add_pins: int,
+        average_rounding: AverageRounding,
+        handicap_base: int,
+        handicap_percent: Decimal,
+        blind_penalty: int,
+        vacancy_score: int,
+    ) -> None:
+        competition = self._competition(competition_id)
+        if not 1 <= games_per_session <= 12:
+            raise RegistrationDataError("Games per night must be between 1 and 12")
+        clean_rule_name = _required(average_rule_name, "Average rule name")
+        if average_minimum_games < 0:
+            raise RegistrationDataError("Minimum games cannot be negative")
+        if not average_multiplier.is_finite() or average_multiplier < 0:
+            raise RegistrationDataError("Average multiplier must be zero or greater")
+        if not -300 <= average_add_pins <= 300:
+            raise RegistrationDataError("Average adjustment must be between -300 and 300")
+        if not 0 <= handicap_base <= 300:
+            raise RegistrationDataError("Handicap base must be between 0 and 300")
+        if (
+            not handicap_percent.is_finite()
+            or handicap_percent < 0
+            or handicap_percent > 2
+        ):
+            raise RegistrationDataError("Handicap percentage must be between 0 and 200")
+        if not 0 <= blind_penalty <= 300:
+            raise RegistrationDataError("Blind penalty must be between 0 and 300")
+        if not 0 <= vacancy_score <= 300:
+            raise RegistrationDataError("Vacancy score must be between 0 and 300")
+
+        snapshot = deepcopy(competition)
+        try:
+            competition.games_per_session = games_per_session
+            competition.average_rule_name = clean_rule_name
+            competition.average_minimum_games = average_minimum_games
+            competition.average_multiplier = average_multiplier
+            competition.average_add_pins = average_add_pins
+            competition.average_rounding = average_rounding
+            competition.handicap_base = handicap_base
+            competition.handicap_percent = handicap_percent
+            competition.blind_penalty = blind_penalty
+            competition.vacancy_score = vacancy_score
+            self.save()
+        except Exception:
+            for field_name in Competition.__dataclass_fields__:
+                setattr(competition, field_name, getattr(snapshot, field_name))
+            raise
+
+    def competition_average(
+        self, competition: Competition, registration: Registration
+    ) -> int | None:
+        if registration.average is None:
+            return None
+        rule = AverageRule(
+            name=competition.average_rule_name,
+            sources=(
+                RuleSource(
+                    AverageSource.STANDARD_COMPOSITE,
+                    minimum_games=competition.average_minimum_games,
+                ),
+            ),
+            multiplier=competition.average_multiplier,
+            add_pins=competition.average_add_pins,
+            rounding=competition.average_rounding,
+        )
+        decision = evaluate_average_rule(
+            rule,
+            [
+                AverageCandidate(
+                    source=AverageSource.STANDARD_COMPOSITE,
+                    average=registration.average,
+                    games=registration.games,
+                    year=registration.average_year,
+                    label=registration.average_year or "Verified standard composite",
+                )
+            ],
+        )
+        return decision.average if decision is not None else None
+
+    @staticmethod
+    def competition_handicap(competition: Competition, average: int) -> int:
+        difference = max(competition.handicap_base - average, 0)
+        return int(
+            (Decimal(difference) * competition.handicap_percent).to_integral_value(
+                rounding=ROUND_FLOOR
+            )
+        )
 
     def set_competition_archived(self, competition_id: str, archived: bool) -> None:
         self._competition(competition_id).archived = archived

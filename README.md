@@ -14,13 +14,19 @@ verified averages using BOWL.com's JSON-backed member search and average data.
 
 ### Registration Desk
 
-The workspace is divided into four focused tabs:
+The League Manager is divided into five focused tabs in setup-to-play order:
 
-- **Registration** for fast individual and whole-team entry
+- **Leagues & Seasons** for creating, editing, archiving, restoring, and
+  reviewing historical competition workspaces
 - **Players** for the permanent directory and year-by-year player pools
 - **Teams** for league/tournament-filtered regular and substitute rosters
-- **Leagues & Tournaments** for creating, editing, archiving, and restoring
-  competition workspaces
+- **Registration** for fast individual and whole-team entry
+- **Scores** for permanent weekly league score sheets and automatic team totals
+
+League, team, and player management each expose a relationship browser. It can
+move from league to team to player—or back the other direction—with Back and
+Forward navigation. League and team screens also open score history directly;
+the same history is available from the Scores tab and can be filtered by team.
 
 1. Create a league season or tournament workspace.
 2. Add its teams as they are known; an unassigned option remains available.
@@ -47,6 +53,24 @@ On first launch after upgrading, the app can import the former
 `registration-data.pre-sqlite-backup.json` copy is created before the new
 database becomes active. An unreadable or unsupported database is left
 unchanged rather than silently replaced.
+
+The scoring schema upgrade also creates a one-time
+`bowling-manager.schema-v1-backup.db` copy. Weekly sheets preserve player/team
+names, entering averages, handicaps, individual game results, and correction
+history even when the current season roster changes later.
+
+### League scoring
+
+1. Open **Scores**, choose a league season, and set its average/handicap rules.
+2. Create the week's score sheet; the active regular rosters are copied into
+   that permanent historical sheet.
+3. Add that week's substitutes or vacancies without changing the season roster.
+4. Double-click each player to enter bowled, absent, blind, or vacancy results.
+5. Review automatic scratch/handicap team totals and finalize the week.
+
+Changing an entered result, removing a scored row, or reopening a final week
+requires a reason. The before/after values and reason remain available through
+the score sheet's **Change log**.
 
 ### Average lookup
 
@@ -137,6 +161,9 @@ Every input row remains visible in the output, including failures:
   substitute pool, reassignment, and withdrawal/restore controls
 - Player, team, and league/tournament management tabs, with teams explicitly
   filtered by competition
+- Permanent weekly score sheets with individual games, roster/rule snapshots,
+  substitutes, blind/absent/vacancy handling, and derived team totals
+- Required correction reasons and an append-only score change log
 - Background registration checks capped at two concurrent BOWL.com requests
 - Registration counters for total, ready, and needs-attention entries
 - Domain models for members, composite averages, and lookup outcomes
@@ -176,6 +203,7 @@ python -m pytest
 src/usbc_average_lookup/
   app.py                 Windows GUI shell
   registration_ui.py     Manual-first registration workflow
+  scoring_ui.py          Weekly score sheets and correction history
   models.py              Shared member, average, and result types
   services/
     auth.py              Private WebView2 sign-in boundary
@@ -183,6 +211,7 @@ src/usbc_average_lookup/
     bowl_api.py          Member-search and average API boundary
     exports.py           Results and issues CSV output
     registration.py      Versioned local registration store and domain rules
+    scoring.py           Persistent individual games and derived team totals
 tests/                    Unit tests
 docs/                     Requirements, architecture, and discovery notes
 ```
@@ -193,13 +222,17 @@ docs/                     Requirements, architecture, and discovery notes
    tournament rosters, then refine the keyboard workflow and terminology.
 2. Test season-pool copy-forward and regular/substitute roster changes with a
    real four-league weekly schedule.
-3. Confirm BOWL.com/USBC terms and acceptable request volume before broader use.
-4. Test signed-out, expired-session, rate-limit, and unexpected-response behavior
+3. Test weekly score entry, substitutes, blind/vacancy rules, corrections, and
+   finalization with a real league recap sheet.
+4. Add match schedules and configurable points, then derive standings from
+   finalized score sheets. See [`docs/scoring-plan.md`](docs/scoring-plan.md).
+5. Confirm BOWL.com/USBC terms and acceptable request volume before broader use.
+6. Test signed-out, expired-session, rate-limit, and unexpected-response behavior
    against the real endpoints.
-5. Complete the final release checklist on the packaged Windows build, especially
+7. Complete the final release checklist on the packaged Windows build, especially
    privacy, process cleanup, memory, and large-roster checks.
-6. Package a signed or clearly identified portable Windows executable.
-7. Define the acceptance and release criteria for promoting the experimental
+8. Package a signed or clearly identified portable Windows executable.
+9. Define the acceptance and release criteria for promoting the experimental
    review workflow to a normal release.
 
 QR self-registration and bracket/side-pot money handling are deliberately
