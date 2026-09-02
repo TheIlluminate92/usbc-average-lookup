@@ -83,6 +83,57 @@ Comparison against the rendered site showed that this record supplies the
 Standard Composite Average. The observed `year` value `2025` corresponded to a
 site label of 2024–2025.
 
+## Observed league-activity response
+
+The member detail page also requests authenticated individual league-average
+records from:
+
+```text
+https://apps1.bowl.com/Mobile/api/v1/leagueactivities
+```
+
+Observed query parameters are `size=1000`, `page=1`, and the selected
+member's `prefix` and `suffix`. The response uses the same paginated
+`data.results` envelope as the other member endpoints. Sanitized records
+contain fields similar to:
+
+```json
+{
+  "lid": "<league id>",
+  "lname": "Example League",
+  "season": "W",
+  "cid": "<center id>",
+  "cname": "Example Center",
+  "aid": "<association id>",
+  "aname": "Example Association",
+  "anum": "<association number>",
+  "avg": 148,
+  "games": 87,
+  "year": "2025",
+  "sport": false,
+  "challenge": false,
+  "rollngrow": false,
+  "bumper": false,
+  "stringpin": false,
+  "pattern": "1",
+  "hand": "",
+  "adjavg": 0
+}
+```
+
+Condition flags must be read from the response rather than inferred from the
+league name. In the observed data, league names ending in `SP` had
+`stringpin=true` while `sport=false`.
+
+The page also requests `reratedaverage` with the same pagination and member
+parameters. The observed member returned a successful empty collection, so
+rerated averages remain optional and their relationship to `adjavg` is not
+yet confirmed. A missing or non-list `results` field is a schema error; an
+empty `results` list with `totalPages=0` is valid.
+
+The meanings of the `season`, `pattern`, and `hand` codes remain open.
+Preserve those values without interpreting them until they are confirmed.
+
 ## Current selection rule
 
 ```text
