@@ -11,6 +11,7 @@ from usbc_average_lookup.models import CompositeAverage, LeagueAverage
 class AverageSource(StrEnum):
     STANDARD_COMPOSITE = "Standard composite"
     LEAGUE_ACTIVITY = "League average"
+    ADJUSTED_LEAGUE_ACTIVITY = "Adjusted league average"
     IMPORTED = "Imported average"
     MANUAL = "Manual average"
 
@@ -121,20 +122,34 @@ def candidates_from_composites(
 def candidates_from_league_averages(
     records: Iterable[LeagueAverage],
 ) -> list[AverageCandidate]:
-    return [
-        AverageCandidate(
-            source=AverageSource.LEAGUE_ACTIVITY,
-            average=record.adjusted_average or record.average,
-            games=record.games,
-            year=record.year,
-            label=f"{record.league_name} ({record.year})",
-            league_id=record.league_id,
-            sport=record.sport,
-            challenge=record.challenge,
-            string_pin=record.string_pin,
+    candidates: list[AverageCandidate] = []
+    for record in records:
+        common = {
+            "games": record.games,
+            "year": record.year,
+            "league_id": record.league_id,
+            "sport": record.sport,
+            "challenge": record.challenge,
+            "string_pin": record.string_pin,
+        }
+        candidates.append(
+            AverageCandidate(
+                source=AverageSource.LEAGUE_ACTIVITY,
+                average=record.average,
+                label=f"{record.league_name} ({record.year})",
+                **common,
+            )
         )
-        for record in records
-    ]
+        if record.adjusted_average > 0:
+            candidates.append(
+                AverageCandidate(
+                    source=AverageSource.ADJUSTED_LEAGUE_ACTIVITY,
+                    average=record.adjusted_average,
+                    label=f"{record.league_name} adjusted ({record.year})",
+                    **common,
+                )
+            )
+    return candidates
 
 
 def evaluate_average_rule(
@@ -223,10 +238,14 @@ def _explanation(
     if rule.multiplier == 1 and rule.add_pins == 0:
         calculation = str(candidate.average)
     else:
-        calculation = (
+        adjustment = (
             f"{candidate.average} × {rule.multiplier}"
-            f" {rule.add_pins:+d} = {unrounded}"
+            if rule.multiplier != 1
+            else str(candidate.average)
         )
+        if rule.add_pins:
+            adjustment += f" {rule.add_pins:+d}"
+        calculation = f"{adjustment} = {unrounded}"
     if Decimal(result) != unrounded:
         calculation += f" → {result}"
     return f"{label}: {calculation} ({rule.name})"
