@@ -1,75 +1,201 @@
-# Scoring and standings plan
+# Scoring, matchups, and standings plan
 
 ## Implemented scoring foundation
 
-Each league season can keep any number of permanent weekly score sheets. A
-score sheet freezes the league's game count and each line's player name, team
-name, role, entering average, and handicap. Later roster, identity, team-name,
-or average-rule edits therefore do not rewrite historical weeks.
+Each league season can store permanent weekly score sheets. A week has a unique
+week number inside the league, optional date and label, a frozen games-per-player
+count, and Draft or Final state.
 
-Each player game is stored independently with one of these states:
+Creating a week snapshots every active Regular registration that currently has
+a team. Each line freezes:
 
-- `Bowled` with a scratch score from 0 through 300
-- `Absent` with no counted pins
-- `Blind` using the frozen entering average minus the league blind penalty
-- `Vacancy` using the league vacancy score
-- `Not entered` while the score sheet remains incomplete
+- registration/player identity when applicable;
+- displayed player and team names;
+- roster role;
+- team and lineup order;
+- entering average;
+- handicap.
 
-Team scratch and handicap totals are derived from the player-game records. They
-are not separately editable values. A league-wide or team substitute can be
-placed on a team for one score sheet without changing the season roster.
+Current roster moves, renames, withdrawals, or rule changes do not rewrite
+prior weeks.
 
-History can be entered from the league, from one team, or from the Scores tab.
-League history can be narrowed to one team, while team history shows only weeks
-where that team has score rows. The relationship browser navigates league →
-team → player and player → team/league with Back and Forward controls.
+## Game states and calculations
 
-First-time score entry does not require a note. Changing an entered score or
-its average/handicap calculation requires a reason and writes the before/after
-values to an append-only change log. Removing a scored line and reopening a
-final week also require a reason. A final week cannot be edited until reopened.
+Every player game is stored independently:
 
-The SQLite schema upgrade creates a one-time pre-upgrade database copy before
-adding score tables. Score history is deliberately stored as snapshots and is
-not deleted or regenerated when the current registration directory is saved.
+| State | Scratch pins | Counted pins |
+| --- | --- | --- |
+| Bowled | Entered score from 0–300 | score + frozen/currently recalculated player handicap |
+| Blind | max(entering average − blind penalty, 0) | blind scratch + handicap |
+| Absent | no scratch score | 0 |
+| Vacancy | league vacancy score | vacancy score + vacancy handicap |
+| Not entered | no scratch score | 0; prevents finalization |
 
-## League settings
+Player handicap is:
 
-The first scoring rule connects the verified standard composite average to a
-league-specific minimum-games requirement, multiplier, pin adjustment, and
-rounding rule. Each league also owns its games-per-night, handicap base and
-percentage, blind penalty, and vacancy score.
+```text
+floor(max(handicap base - entering average, 0) × handicap percentage)
+```
 
-The average-rule engine already supports league-activity candidates, but the
-lookup workflow does not yet retain those raw rows. Selecting a named previous
-league average must therefore wait until raw league activities are persisted;
-the UI must not imply that source is active before it is actually available.
+Team scratch and counted totals are derived by game from all score lines
+assigned to that team. Team totals are not independently editable.
 
-## Next scoring layers
+## Weekly roster adjustments
 
-### Match schedule and points
+A draft week can add:
 
-- Define which two teams meet each week and their lane/pair assignment.
-- Configure the number of points available per game and series.
-- Allow scratch or handicap comparison, ties, forfeits, and position rounds.
-- Calculate match points from finalized score sheets only.
-- Keep manual point corrections in the same reasoned change-log model.
+- a league-wide substitute;
+- a team substitute;
+- another registered player acting as an alternate;
+- a previously removed regular;
+- a vacancy.
 
-### Standings and leaderboards
+The player is assigned to a team only for that score sheet; the season roster
+does not change. Re-adding a removed player preserves the registration's Regular
+or Substitute role.
 
-- Team wins, losses, ties, total points, and season rank.
-- Player high game, high series, scratch average, and handicap results.
-- Minimum-game eligibility and configurable tie breakers.
-- Recalculate projections from finalized weeks while retaining the source
-  scores and corrections that produced them.
+Removing an unentered row asks for confirmation. Removing a row with saved
+games requires a reason and logs one removal change per entered game.
 
-### Later decisions
+## Finalization and corrections
 
-- Whether absent and blind contributions are the same in each league.
-- Whether handicap is capped and whether it applies per player or per team.
-- Roster-size limits and how many scores count when extra bowlers participate.
-- Makeup games, pre-bowls, postponed weeks, and partial-team forfeits.
-- Export/import formats once representative recap sheets are available.
+A score sheet cannot be finalized when it is empty or contains Not entered
+games. A Final sheet is read-only.
 
-Brackets, side pots, payouts, and other money handling remain deliberately out
-of scope until scoring and standings are stable.
+Reopening Final → Draft requires a reason and adds a session-state change to the
+log. First-time game entry does not require a reason. Changing a previously
+entered status, score, counted value, entering average, or handicap requires a
+reason and stores before/after values.
+
+The change log retains:
+
+- session, score line, and game references where applicable;
+- player/team display snapshots;
+- old and new state;
+- old and new scratch/counted pins;
+- old and new entering average/handicap;
+- reason and timestamp.
+
+## History
+
+History is accessible from:
+
+- Scores → History;
+- Leagues & Seasons → Score history;
+- Teams → Score history.
+
+League history can filter to a team. Team history includes weeks with score rows
+for that team. Current rows use a fixed team/player order; clickable ascending
+and descending team sorting remains planned.
+
+## Current league settings
+
+Each league stores:
+
+- games per session;
+- average rule label;
+- Standard Composite minimum games;
+- multiplier;
+- signed pin adjustment;
+- nearest/up/down rounding;
+- handicap base and percentage;
+- blind penalty;
+- vacancy score.
+
+The rule engine supports source priority and raw/adjusted league activities,
+but only the verified Standard Composite value is currently saved on a
+registration and offered to scoring. Named previous-league average selection is
+therefore planned, not implemented.
+
+## Next scoring layer: matchups
+
+The next database/UI change should define an explicit match rather than infer it
+from the order of teams on a score sheet.
+
+Proposed records:
+
+- schedule/week reference;
+- left and right team;
+- lane or pair assignment;
+- scheduled date/time when useful;
+- matchup state such as Scheduled, In progress, Final, Postponed, or Forfeit;
+- optional position-round marker.
+
+Requirements:
+
+- A team appears in at most one normal matchup per league week.
+- A bye is explicit.
+- Makeup or postponed games keep their original league week while recording the
+  actual bowling date.
+- Matchups reference score-sheet teams but must preserve historical team names.
+- No standings points are awarded from a Draft week.
+
+## Configurable points
+
+Point rules belong to the league season. Open decisions include:
+
+- scratch or handicap comparison;
+- points per game;
+- points for total series;
+- tie handling and half-points;
+- forfeit and vacancy behavior;
+- whether a minimum legal lineup is required;
+- position-round exceptions.
+
+Points should be derived from finalized player/team totals. If a league permits
+manual point corrections, they should use the existing reasoned change-log
+pattern rather than overwrite the source silently.
+
+## Standings
+
+Planned team standings:
+
+- wins, losses, and ties where applicable;
+- game and series points;
+- total points and rank;
+- scratch and handicap pinfall;
+- configurable tie breakers;
+- week-by-week audit back to finalized score sheets and matchups.
+
+Planned player statistics:
+
+- games bowled;
+- scratch total and average;
+- high game and high series;
+- handicap high game/series when the league uses them;
+- minimum-game eligibility;
+- team and league filtering.
+
+Standings should be calculated projections, not independently editable master
+values. A correction to a finalized source week should recalculate affected
+results after the week is reopened, corrected, and finalized again.
+
+## Recap and score-file integration
+
+Import/export formats remain open until representative center or league files
+are available. Future design should:
+
+- keep an immutable copy or checksum of an imported source where practical;
+- preview player/team matching before committing;
+- preserve unknown columns for troubleshooting;
+- reject silent score truncation or duplicate weeks;
+- export a human-readable recap as well as any machine interchange format.
+
+The flexible average-lookup parser is not automatically a score-import parser.
+Game-score formats need their own explicit schema and validation.
+
+## Decisions still required
+
+- How many rostered scores count when extra bowlers participate.
+- Whether absent and blind contributions differ by league.
+- Handicap caps and team-vs-player handicap variants.
+- Legal-lineup rules, vacancies, and forfeits.
+- Pre-bowls, post-bowls, makeup dates, and partial series.
+- Substitution rules inside a series.
+- Tournament-specific squads, shifts, cuts, and stepladder formats.
+
+## Deliberately deferred
+
+Brackets, side pots, payouts, prize funds, and other money handling remain out
+of scope. They require substantially stronger auditing, permissions, and
+operator safeguards than ordinary score tracking.

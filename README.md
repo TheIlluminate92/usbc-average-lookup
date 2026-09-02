@@ -1,99 +1,157 @@
-# USBC Average Lookup
+# Bowling Manager
 
-A small Windows desktop manager for registering bowlers by league season or
-tournament, organizing season-specific teams, and turning bowler names into
-verified averages using BOWL.com's JSON-backed member search and average data.
+Bowling Manager is a local Windows desktop application for running small
+bowling leagues and tournaments. It combines reusable player records,
+season-specific teams and rosters, BOWL.com average lookup, customizable league
+average/handicap settings, and permanent weekly score sheets in one interface.
+
+The repository and executable still use the historical name
+`usbc-average-lookup` in several technical places.
 
 > [!IMPORTANT]
-> This is an early, unofficial foundation. It is not affiliated with or endorsed
-> by the United States Bowling Congress (USBC) or BOWL.com. Endpoint details,
-> authentication requirements, and permission to automate access must be
-> confirmed before real lookups are enabled.
+> This is an unofficial pre-alpha project. It is not affiliated with or
+> endorsed by USBC or BOWL.com. The BOWL.com endpoints used by the lookup are
+> not a supported public data-mining API, and acceptable use and request volume
+> still need confirmation. Use it only for records you are authorized to
+> manage.
 
-## Intended workflow
+## Download
 
-### Registration Desk
+The current portable Windows test build is
+[v0.5.0-alpha.2](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.5.0-alpha.2).
+Download `USBC-Average-Lookup-Windows.zip`, extract the entire folder, and run
+`USBC-Average-Lookup.exe`.
 
-The main window has separate **League Manager**, **Registration**, and
-**Average lookup** workspaces. League Manager is divided into four focused tabs:
+The executable is portable, but its working database is not stored beside the
+executable. Application data lives at:
 
-- **Leagues & Seasons** for creating, editing, archiving, restoring, and
-  reviewing historical competition workspaces
-- **Players** for the permanent directory and year-by-year player pools
-- **Teams** for league/tournament-filtered regular and substitute rosters
-- **Scores** for permanent weekly league score sheets and automatic team totals
+```text
+%LOCALAPPDATA%\Bowling Manager\bowling-manager.db
+```
 
-Double-clicking a league, team, or player opens its relationship browser. It can
-move from league to team to player—or back the other direction—with Back and
-Forward navigation. League and team screens also open score history directly;
-the same history is available from the Scores tab and can be filtered by team.
+Back up that database while the application is closed. Copying only the
+extracted program folder does not copy league data.
 
-1. Create a league season or tournament workspace.
-2. Add its teams as they are known; an unassigned option remains available.
-3. Enter one bowler at a time, register the same bowler into multiple leagues
-   with a separate team choice for each, or paste a complete team roster.
-4. Keep registering while signed-in BOWL.com checks run through a two-worker
-   queue in the background.
-5. Review only ambiguous or unsuccessful matches. Registrations save
-   automatically after each change.
+## Current application
 
-The bowler is a reusable identity. A season player pool is a separate reusable
-list that can be copied forward, then adjusted without changing the prior year.
-A league or tournament can link to one pool, while registrations and team
-assignments still belong only to that competition. Regulars and substitutes can
-be assigned to a team; an unassigned substitute remains in the league-wide
-substitute pool. Removing someone from a team does not remove their league
-registration or permanent player record. Duplicate registrations within one
-competition are rejected.
+The main window has three top-level workspaces:
 
-Registration data is stored locally in a versioned SQLite database at
-`%LOCALAPPDATA%\Bowling Manager\bowling-manager.db`. Each save is a database
-transaction, with foreign-key and uniqueness checks protecting linked records.
-On first launch after upgrading, the app can import the former
-`registration-data.json` file. The original remains unchanged and an additional
-`registration-data.pre-sqlite-backup.json` copy is created before the new
-database becomes active. An unreadable or unsupported database is left
-unchanged rather than silently replaced.
+- **League Manager**
+  - **Leagues & Seasons** creates and archives league-season or tournament
+    workspaces, links player pools, manages teams and players, and opens score
+    history.
+  - **Players** maintains one permanent player identity per person and optional
+    year/season player pools.
+  - **Teams** filters teams by league or tournament and manages regulars,
+    team-specific substitutes, and the league-wide substitute pool.
+  - **Scores** stores permanent weekly league score sheets, individual games,
+    calculated team totals, and correction history.
+- **Registration** supports fast single-player entry, whole-team entry, and
+  one-step registration into multiple leagues with a separate team assignment
+  for each.
+- **Average lookup** imports a roster or accepts one player, checks BOWL.com,
+  resolves ambiguous matches, exports results, and can add the result list to
+  the permanent player directory.
 
-The scoring schema upgrade also creates a one-time
-`bowling-manager.schema-v1-backup.db` copy. Weekly sheets preserve player/team
-names, entering averages, handicaps, individual game results, and correction
-history even when the current season roster changes later.
+Double-click a league, team, or player in its management table to open the
+relationship browser. Editing remains on the clearly labeled edit buttons.
 
-### League scoring
+## Typical workflow
 
-1. Open **Scores**, choose a league season, and set its average/handicap rules.
-2. Create the week's score sheet; the active regular rosters are copied into
-   that permanent historical sheet.
-3. Add back a removed regular, or add that week's substitutes and vacancies,
-   without changing the season roster.
-4. Double-click each player to enter bowled, absent, blind, or vacancy results.
-5. Review automatic scratch/handicap team totals and finalize the week.
+1. Create a league season such as `Monday Misfits — 2026-27`.
+2. Add or copy teams and build the season roster from the permanent player
+   directory.
+3. Register new bowlers manually. A bowler can join several leagues in one
+   operation and use a different team in each.
+4. Sign in to BOWL.com only when average verification is needed. Manual league
+   management and score entry work while signed out.
+5. Configure the league's average transformation, handicap, blind, vacancy,
+   and games-per-night settings.
+6. Create a weekly score sheet. Active regular rosters are snapshotted into
+   that week.
+7. Add substitutes, vacancies, or a previously removed player; enter games;
+   review team totals; and finalize the week.
+8. Reopen a final week only with a reason. Corrections remain in the permanent
+   change log.
 
-Changing an entered result, removing a scored row, or reopening a final week
-requires a reason. The before/after values and reason remain available through
-the score sheet's **Change log**.
+See the [user guide](docs/user-guide.md) for detailed operating instructions.
 
-### Average lookup
+## What is implemented
 
-1. Sign in only when a BOWL.com lookup is needed.
-2. Choose a roster file, or use **Single lookup** for one bowler by name or
-   membership ID.
-3. Click **Look Up Averages**.
-4. Pick the right person only when the app finds more than one match.
-5. Click **Save Results** to create the result file.
+- Local schema-versioned SQLite storage with transactional writes, foreign-key
+  checks, uniqueness checks, legacy JSON import, and pre-upgrade backups.
+- Permanent players shared across league seasons and tournaments.
+- Independently editable year/season player pools.
+- League-season and tournament workspaces with archive/restore.
+- Competition-specific teams, regular rosters, team substitutes, and a
+  league-wide substitute pool.
+- Copying a prior team and optionally its active roster into a new season.
+- Multi-league registration with existing or newly created teams; the entire
+  operation rolls back if any target fails.
+- Two-worker background average checks from Registration so an ambiguous name
+  does not block entry of the next bowler.
+- Private BOWL.com WebView2 sign-in and in-memory bearer-token handling.
+- Name or membership-ID lookup, explicit ambiguous-member selection, and the
+  newest eligible Standard Composite Average.
+- CSV, TSV, text, JSON, and `.xlsx` input.
+- JSON, CSV, TSV, text, and `.xlsx` result export with full, ready, inactive,
+  and needs-attention subsets.
+- Importing average-lookup results into the permanent player directory.
+- League-specific composite multiplier, pin adjustment, minimum games,
+  rounding, handicap base/percentage, blind penalty, vacancy score, and
+  games-per-session settings.
+- Permanent weekly individual scores with Bowled, Blind, Absent, Vacancy, and
+  Not entered states.
+- Derived team scratch and handicap totals, draft/final states, team-filtered
+  history, and reasoned correction logs.
+- Relationship navigation in both directions between leagues, teams, and
+  players.
 
-The app never asks for or stores a BOWL.com password. Authentication opens the
-real BOWL.com page in a private sign-in window owned by Average Assistant. It
-does not open tabs in Edge, Chrome, or Brave. **Sign out** and closing the app
-discard the in-memory session; the private window does not retain cookies or
-browser storage.
-Version 0.3.0 also removes the app-owned browser profiles left by older builds;
-it does not touch the user's normal browser data.
+## Important current limits
 
-## Result states
+- Average lookup uses the verified Standard Composite source. The rule engine
+  can model league-activity sources, but raw league activities are not yet
+  retained on registrations and cannot yet be selected in the league settings
+  screen.
+- Member name search follows the BOWL.com frontend's first page of ten results.
+  For very common names, a membership ID is the reliable search path.
+- Weekly score sheets do not yet define team matchups, lanes, points,
+  standings, schedules, leaderboards, or recap-sheet exports.
+- Score rows currently use a fixed team/name order. Clickable ascending and
+  descending team sorting is still planned.
+- There is no bracket, side-pot, payout, or other money-handling module.
+- There is no shared server, user login, cloud synchronization, or concurrent
+  multi-computer editing. The SQLite file is local to one Windows profile.
+- Input and output formats remain intentionally flexible until representative
+  league and tournament files are available.
+- The Windows test build is unsigned and is not an installer.
 
-Every input name receives exactly one visible result:
+## Input files
+
+The lookup parser accepts `.csv`, `.tsv`, `.txt`, `.json`, and `.xlsx`.
+Delimited files may use commas, tabs, pipes, or semicolons. It recognizes common
+name and membership-ID headings, combined names, separate first/last columns,
+and simple lines such as:
+
+```text
+Alex Bowler (1234-567890)
+Jamie Bowler
+```
+
+Example CSV:
+
+```csv
+Name,Membership ID
+Alex Bowler,1234-567890
+Jamie Bowler,
+```
+
+When an Excel workbook has more than one non-empty sheet, the application asks
+which sheet to use. Legacy `.xls` is not supported.
+
+## Lookup result states
+
+Every imported row remains visible and ends in one of these states:
 
 - `Found`
 - `Not found`
@@ -103,84 +161,35 @@ Every input name receives exactly one visible result:
 - `Login expired`
 - `API error`
 
-Only `Found` rows belong in the clean `Name,Average` export. All other rows are
-retained in the UI and issue export with an explanatory note.
+The **Fixes needed** tab contains unresolved rows. The operator can select a
+candidate, correct a name or member ID, retry one row, and move to the next
+issue without rerunning completed rows.
 
-## Input formats
+## Data, privacy, and backups
 
-The current parser accepts `.csv`, `.tsv`, `.txt`, `.json`, and `.xlsx`
-files. Delimited text may use commas, tabs, pipes, or semicolons, and a header is
-optional. These formats are a flexible starting point rather than a frozen
-interchange contract; support can evolve once representative league files are
-available:
+The database contains names, optional USBC membership IDs, league/team
+associations, averages, and scores in ordinary local SQLite tables. It is not
+encrypted by the application. Windows account and disk protections are the
+current access boundary.
 
-```csv
-Name,Membership ID
-Alex Bowler,1234-567890
-Jamie Bowler,
-```
+BOWL.com passwords never enter the application. Sign-in occurs on the genuine
+BOWL.com page in a private helper window. The resulting bearer token is kept in
+memory and discarded on sign-out or application close. See
+[SECURITY.md](SECURITY.md) for the complete security model.
 
-It also accepts one entry per line:
+Schema upgrades create a one-time backup beside the database, for example:
 
 ```text
-Alex Bowler (1234-567890)
-Jamie Bowler
+bowling-manager.schema-v1-backup.db
+bowling-manager.schema-v2-backup.db
 ```
 
-## JSON output
+Legacy `registration-data.json` import leaves the original file unchanged and
+creates `registration-data.pre-sqlite-backup.json`.
 
-Every input row remains visible in the output, including failures:
+## Development
 
-```json
-{
-  "schemaVersion": 2,
-  "generatedAt": "2026-08-30T12:00:00+00:00",
-  "summary": {
-    "processed": 2,
-    "found": 1,
-    "not_found": 1
-  },
-  "bowlers": [
-    {
-      "name": "Alex Bowler",
-      "membershipId": "1234-567890",
-      "average": 187,
-      "status": "Found",
-      "notes": null
-    }
-  ]
-}
-```
-
-## What is included
-
-- A runnable Tkinter Windows GUI with League Manager, Registration, and Average
-  Lookup tabs
-- A local, schema-versioned SQLite database with transactional saves and
-  automatic import of the former JSON store
-- Persistent league-season and tournament workspaces
-- Copy-forward season player pools kept separate from the permanent directory
-- Season-specific teams with regular rosters, team substitutes, a league-wide
-  substitute pool, reassignment, and withdrawal/restore controls
-- Player, team, and league/tournament management tabs, with teams explicitly
-  filtered by competition
-- Multi-league bowler registration with existing or inline-created team choices
-- Permanent weekly score sheets with individual games, roster/rule snapshots,
-  substitutes, blind/absent/vacancy handling, and derived team totals
-- Required correction reasons and an append-only score change log
-- Background registration checks capped at two concurrent BOWL.com requests
-- Registration counters for total, ready, and needs-attention entries
-- Domain models for members, composite averages, and lookup outcomes
-- Verified selection logic for the newest standard composite record
-- Browser-based BOWL.com sign-in through the genuine site; passwords are never
-  exposed to the application
-- JSON export containing every input row, status, average, and notes
-- Unit tests and a GitHub Actions workflow
-- Requirements, architecture, and API discovery notes under [`docs/`](docs/)
-
-## Run locally
-
-Python 3.11 or newer is recommended.
+Python 3.11 or newer is required.
 
 ```powershell
 python -m venv .venv
@@ -189,61 +198,70 @@ python -m pip install -e ".[dev]"
 python -m usbc_average_lookup
 ```
 
-The sign-in flow opens one private WebView2 window containing the genuine
-BOWL.com page and waits for the site to establish an authenticated API session.
-The temporary session token is held only in memory and is never written to
-application logs or configuration. The entire private WebView process is ended
-after sign-in, on sign-out, and when Average Assistant closes.
-
-## Run tests
+Run the automated checks:
 
 ```powershell
+python -m ruff check .
 python -m pytest
 ```
+
+Build dependencies are optional:
+
+```powershell
+python -m pip install -e ".[build]"
+```
+
+Tagged releases trigger the Windows packaging workflow. It creates the private
+sign-in helper, packages the application with PyInstaller, verifies that the
+helper starts, uploads a short-lived Actions artifact, and publishes a
+pre-release ZIP.
 
 ## Project layout
 
 ```text
 src/usbc_average_lookup/
-  app.py                 Windows GUI shell
-  registration_ui.py     Manual-first registration workflow
-  scoring_ui.py          Weekly score sheets and correction history
-  models.py              Shared member, average, and result types
+  app.py                 Main window and average-lookup workflow
+  registration_ui.py     League, player, team, and registration screens
+  relationships_ui.py    League/team/player relationship browser
+  scoring_ui.py          Weekly scoring and history screens
+  signin_helper.py       Private WebView2 sign-in process
+  models.py              Lookup data and result states
   services/
-    auth.py              Private WebView2 sign-in boundary
-    average_selector.py  Composite-average selection rule
-    bowl_api.py          Member-search and average API boundary
-    exports.py           Results and issues CSV output
-    registration.py      Versioned local registration store and domain rules
-    scoring.py           Persistent individual games and derived team totals
-tests/                    Unit tests
-docs/                     Requirements, architecture, and discovery notes
+    auth.py              Sign-in process boundary and in-memory session
+    average_rules.py     Configurable average-rule engine
+    average_selector.py  Standard composite selection
+    bowl_api.py          BOWL.com JSON client and response validation
+    exports.py           JSON, delimited, and Excel output
+    input_parser.py      Flexible roster input
+    registration.py      SQLite schema and registration domain
+    scoring.py           Weekly scores, totals, and audit history
+tests/                    Automated behavior and regression tests
+docs/                     User, architecture, requirements, API, and release docs
 ```
+
+## Documentation
+
+- [User guide](docs/user-guide.md)
+- [Current requirements and scope](docs/requirements.md)
+- [Architecture and data model](docs/architecture.md)
+- [Scoring and standings plan](docs/scoring-plan.md)
+- [BOWL.com API observations](docs/api-notes.md)
+- [Release checklist](docs/release-checklist.md)
+- [Security policy](SECURITY.md)
+- [Change log](CHANGELOG.md)
 
 ## Next milestones
 
-1. Test the Registration Desk with representative handwritten league and
-   tournament rosters, then refine the keyboard workflow and terminology.
-2. Test season-pool copy-forward and regular/substitute roster changes with a
-   real four-league weekly schedule.
-3. Test weekly score entry, substitutes, blind/vacancy rules, corrections, and
-   finalization with a real league recap sheet.
-4. Add match schedules and configurable points, then derive standings from
-   finalized score sheets. See [`docs/scoring-plan.md`](docs/scoring-plan.md).
-5. Confirm BOWL.com/USBC terms and acceptable request volume before broader use.
-6. Test signed-out, expired-session, rate-limit, and unexpected-response behavior
-   against the real endpoints.
-7. Complete the final release checklist on the packaged Windows build, especially
-   privacy, process cleanup, memory, and large-roster checks.
-8. Package a signed or clearly identified portable Windows executable.
-9. Define the acceptance and release criteria for promoting the experimental
-   review workflow to a normal release.
+1. Exercise registration, roster changes, and scoring with the real four-league
+   weekly schedule and occasional tournaments.
+2. Replace multi-selection gestures with clearer checkbox-style controls and
+   make score entry more keyboard-friendly.
+3. Add weekly matchups and configurable points, then derive standings only from
+   finalized score sheets.
+4. Retain raw league activities so a league can select prior-league or adjusted
+   averages instead of only Standard Composite.
+5. Define recap-sheet imports/exports after representative files are available.
+6. Complete packaged-build resource, privacy, and 200-bowler workload checks.
 
-QR self-registration and bracket/side-pot money handling are deliberately
-deferred. They are not part of the current registration workflow.
-
-See [`docs/requirements.md`](docs/requirements.md) for acceptance criteria and
-[`docs/api-notes.md`](docs/api-notes.md) for what is known versus still unknown.
-Before a build is considered ready, run the permanent
-[`final release checklist`](docs/release-checklist.md), including memory,
-process-cleanup, workload, and privacy checks.
+QR self-registration remains a parked future idea. Brackets and other money
+handling remain deliberately out of scope.

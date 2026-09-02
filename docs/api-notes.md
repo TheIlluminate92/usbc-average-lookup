@@ -1,16 +1,56 @@
-# BOWL.com API discovery notes
+# BOWL.com API observations
 
-These notes capture observed behavior from browser developer tools. They are not
-an official API contract. Do not include cookies, authorization headers, tokens,
-or private member data in this repository.
+These notes document behavior observed through BOWL.com's own authenticated web
+application and the current client implementation. They are not an official API
+contract or permission to automate access.
 
-## Observed member-search response
+Never add live cookies, authorization headers, bearer tokens, account details,
+or unredacted member records to this repository, an issue, a screenshot, or a
+fixture.
 
-The authenticated frontend uses separate `GET` routes for the two searches:
+## Implementation status
+
+| Operation | Client support | Used by normal workflow |
+| --- | --- | --- |
+| Member search by name | Yes | Yes |
+| Member search by membership ID | Yes | Yes |
+| Composite averages | Yes | Yes |
+| League activities with pagination | Yes | No; rows are not persisted yet |
+| Rerated average | No | No |
+
+All current requests require an in-memory bearer token obtained from the user's
+authenticated BOWL.com session. Signed-out behavior has not been accepted as a
+supported mode.
+
+## Base URL and authentication
+
+The current JSON base is:
 
 ```text
-Name:          https://apps1.bowl.com/Mobile/api/v1/members/
-Membership ID: https://apps1.bowl.com/Mobile/api/v1/members/id
+https://apps1.bowl.com/Mobile/api/v1
+```
+
+Requests send:
+
+```text
+Accept: application/json
+Authorization: Bearer <temporary session token>
+```
+
+The token is discovered inside the private sign-in helper and passed to the
+main process through an in-memory stdout pipe. It is never persisted.
+
+HTTP 401 and 403 are treated as an expired session. Other HTTP errors, network
+failures, timeouts, invalid JSON, unsuccessful service envelopes, and unexpected
+schemas are surfaced as safe API errors.
+
+## Member search
+
+The BOWL.com frontend uses different routes for name and ID search:
+
+```text
+Name:          GET /members/
+Membership ID: GET /members/id
 ```
 
 Observed query parameters:
@@ -19,18 +59,30 @@ Observed query parameters:
 First, Last, Prefix, Suffix, ANum, Zip, Radius, State, Page, Size
 ```
 
-A name search fills `First` and `Last` on `members/`. An ID search fills
-`Prefix` and `Suffix` on `members/id`. Both use `Page=1`, `Size=10`, and leave
-unused search fields empty. Sending a name to `members/id` produces a generic
-service error instead of candidates. Requests use an in-memory bearer token
-supplied by the signed-in BOWL.com session. Tokens must never be copied into
-code, configuration, fixtures, documentation, logs, or screenshots.
+The current client behavior is:
 
-The Find a Member frontend returns JSON records containing fields similar to:
+- membership ID present: split `prefix-suffix`, call `/members/id`, and leave
+  First/Last empty;
+- no membership ID: split the input name at the last word, call `/members/`,
+  and leave Prefix/Suffix empty;
+- set `Page=1`, `Size=10`, and `Radius=5`;
+- leave association, ZIP, and state filters empty.
+
+Sending a name to `/members/id` produced the site's generic service error rather
+than the candidates shown by its member-search page.
+
+### Known search limit
+
+The client currently retrieves only the first page of ten name candidates. It
+does not page a common name's full result set. If the correct person is not in
+those ten candidates, the operator must search by membership ID. Pagination or
+additional disambiguating filters are a future improvement.
+
+### Sanitized member shape
 
 ```json
 {
-  "id": "<internal member record id>",
+  "id": "<internal record id>",
   "prefix": "<member prefix>",
   "suffix": "<member suffix>",
   "first": "Example",
@@ -44,20 +96,25 @@ The Find a Member frontend returns JSON records containing fields similar to:
 }
 ```
 
-A single name can produce current and historical membership records. The UI
-must therefore support `Multiple matches` and `Inactive member` instead of
-assuming the first result is correct.
+A name may produce current and historical membership records. The application
+keeps Multiple matches and Inactive member as explicit operator decisions. It
+never assumes the first returned member is correct.
 
-## Observed composite-average response
+## Composite averages
 
-The member detail page sends an authenticated `GET` request to:
+The selected member's detail page requests:
 
 ```text
-https://apps1.bowl.com/Mobile/api/v1/compositeaverages
+GET /compositeaverages
 ```
 
-Observed query parameters are `size=1000`, `page=1`, and the selected member's
-`prefix` and `suffix`. A sanitized response shape is:
+Parameters:
+
+```text
+size=1000&page=1&prefix=<prefix>&suffix=<suffix>
+```
+
+Sanitized envelope and record:
 
 ```json
 {
@@ -79,23 +136,36 @@ Observed query parameters are `size=1000`, `page=1`, and the selected member's
 }
 ```
 
-Comparison against the rendered site showed that this record supplies the
-Standard Composite Average. The observed `year` value `2025` corresponded to a
-site label of 2024–2025.
+Comparison with the rendered member page showed that this record supplies the
+displayed Standard Composite Average. In observed records, `year=2025` appears
+under the 2024–2025 heading.
 
-## Observed league-activity response
-
-The member detail page also requests authenticated individual league-average
-records from:
+Current selection:
 
 ```text
-https://apps1.bowl.com/Mobile/api/v1/leagueactivities
+keep sport == false
+keep challenge == false
+keep games > 0
+choose greatest numeric year
+return avg, year, and games
 ```
 
-Observed query parameters are `size=1000`, `page=1`, and the selected
-member's `prefix` and `suffix`. The response uses the same paginated
-`data.results` envelope as the other member endpoints. Sanitized records
-contain fields similar to:
+The current selection is implemented in `services/average_selector.py` and
+covered by tests. It does not choose the highest individual league average.
+
+## League activities
+
+The member page also requests:
+
+```text
+GET /leagueactivities
+```
+
+Parameters are `size=1000`, page number, prefix, and suffix. The client follows
+`totalPages` until all pages are collected and validates every pagination value
+and record.
+
+Sanitized record:
 
 ```json
 {
@@ -121,50 +191,61 @@ contain fields similar to:
 }
 ```
 
-Condition flags must be read from the response rather than inferred from the
-league name. In the observed data, league names ending in `SP` had
-`stringpin=true` while `sport=false`.
+Condition flags must come from the response and not league-name guesses. In an
+observed account, leagues with names ending in `SP` had `stringpin=true` while
+`sport=false`.
 
-The page also requests `reratedaverage` with the same pagination and member
-parameters. The observed member returned a successful empty collection, so
-rerated averages remain optional and their relationship to `adjavg` is not
-yet confirmed. A missing or non-list `results` field is a schema error; an
-empty `results` list with `totalPages=0` is valid.
+The rule engine can create raw and adjusted candidates from these records, but
+the registration database does not yet retain them. The League scoring settings
+screen therefore correctly exposes only Standard Composite as its source.
 
-The meanings of the `season`, `pattern`, and `hand` codes remain open.
-Preserve those values without interpreting them until they are confirmed.
+## Rerated average
 
-## Current selection rule
+The member page was observed requesting `reratedaverage` with the same member
+and pagination parameters. One observed response was a successful empty
+collection. The app does not call this operation, and the relationship between
+rerated data and league-activity `adjavg` is not confirmed.
 
-```text
-filter sport == false
-filter challenge == false
-filter games > 0
-choose greatest numeric year
-return avg
-```
+An empty `results` list with `totalPages=0` is a valid empty page. A missing or
+non-list `results` value is a schema error.
 
-This rule is implemented in `services/average_selector.py` and covered by unit
-tests. It remains subject to the league operator confirming that Standard
-Composite Average is the desired number.
+## Response validation
 
-## Unknowns to resolve
+The current client requires:
 
-- Whether either endpoint works in a signed-out browser session.
-- Session mechanism and whether an embedded browser can safely share it with an
-  HTTP client.
-- Response codes/shapes for expired sessions, validation failures, server
-  errors, and rate limiting.
-- Acceptable automation under BOWL.com/USBC terms and a safe request rate.
-- Whether prefix/suffix should ever be retained outside the current lookup.
+- a JSON object at the top level;
+- `isSuccess == true` for normal operations;
+- a `data` object;
+- a list in `data.results`;
+- typed member/average fields needed by the domain model;
+- a nonnegative integer `totalPages` for paged league activities;
+- dictionary records on every page.
 
-## Safe discovery checklist
+Service messages are collected recursively from `validationErrors` and
+`errors`, deduplicated, and returned without including request credentials.
+
+## Remaining unknowns
+
+- BOWL.com/USBC acceptable-use terms for this automation and an approved safe
+  request rate.
+- Rate-limit status codes, headers, and recommended backoff.
+- Complete name-search pagination behavior and practical disambiguating
+  filters.
+- Exact expired-session and account-policy behavior across all endpoints.
+- Meanings of all `season`, `pattern`, and `hand` codes.
+- Rerated-average response shape and relationship to `adjavg`.
+- Whether prefix/suffix may be retained long term beyond the ordinary member ID.
+- Stability and change-notification expectations for these undocumented
+  operations.
+
+## Safe discovery process
 
 1. Use an account and member record you are authorized to inspect.
-2. Capture URL, method, query/body, status code, and response JSON.
-3. Remove `Cookie`, `Authorization`, bearer tokens, account identifiers, and
-   unrelated personal data before creating a fixture.
-4. Repeat the request while completely signed out.
-5. Record error responses without trying to bypass authentication or access
-   controls.
-6. Add sanitized fixtures under `tests/fixtures/` only after review.
+2. Capture only URL, method, parameter names, status, and response shape needed
+   for the question.
+3. Remove authorization, cookies, tokens, account identifiers, and unrelated
+   personal data before saving notes or fixtures.
+4. Do not bypass authentication, access controls, throttling, or site behavior.
+5. Record failures and schema changes; do not make the parser silently accept
+   guessed data.
+6. Add only sanitized, minimal fixtures under `tests/fixtures/` after review.

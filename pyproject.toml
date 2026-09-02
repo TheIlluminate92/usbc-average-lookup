@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "usbc-average-lookup"
 version = "0.5.0"
-description = "Windows GUI for BOWL.com composite-average lookup"
+description = "Local Windows bowling league manager with BOWL.com average lookup"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "USBC Average Lookup contributors" }]

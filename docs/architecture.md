@@ -1,130 +1,280 @@
-# Architecture
+# Architecture and data model
 
-The application is intentionally split so BOWL.com-specific details do not leak
-through the GUI or export logic.
+## Overview
 
-## Registration domain
-
-Registration is intentionally separated into six records:
-
-- `BowlerProfile` is the reusable person identity and optional USBC member ID.
-- `PlayerPool` is an independently editable season/year list.
-- `PlayerPoolEntry` connects a reusable bowler identity to a season pool.
-- `Competition` is one league season or one tournament.
-- `Team` belongs to exactly one competition.
-- `Registration` connects a bowler to a competition and its current team while
-  retaining regular/substitute role, lookup state, selected average, and
-  withdrawal state.
-
-This prevents annual team changes or player-pool edits from rewriting earlier
-seasons. A competition can link to a player pool; current and future
-registrations are then included in that pool. Removing a registration from a
-team clears only the team assignment, while withdrawal remains a separate
-operation. The storage adapter is a local, schema-versioned SQLite database.
-Writes run in transactions and the schema enforces primary keys, foreign keys,
-unique registrations, and the allowed competition, roster, and verification
-states. The UI talks to `RegistrationStore`, not directly to SQL, so a later
-shared PostgreSQL service does not need to change the registration screens.
-
-On the first SQLite launch, the store can import schema-version 1 or 2 of the
-former JSON document. Migration is built in a temporary database, checked with
-SQLite's integrity checker, and moved into place only after success. The source
-JSON remains untouched and receives a separate pre-SQLite backup copy.
-
-BOWL.com checks are optional. Manual entry works while signed out, and a
-two-worker background queue prevents a slow or ambiguous lookup from blocking
-the registration desk or creating an unbounded burst of requests. Ambiguous
-candidate lists remain a deliberate operator decision.
-
-The desktop presents Registration as its own top-level operational workspace.
-League Manager contains four domain-focused tabs. Player management edits the
-central identity and invalidates averages that may no longer belong to that
-identity. Team management always requires a selected league season or
-tournament and never mixes teams across competitions. It separates regulars,
-team-specific substitutes, and unassigned league-wide substitutes. League and
-tournament management owns names, season labels, type, player-pool links, and
-reversible archival.
-
-Multi-league registration is committed as one store operation. Each target can
-reference an existing team, create a team as part of the same transaction, or
-remain unassigned. If any target fails, no partial team, registration, or player
-identity is saved.
-
-## Scoring domain
-
-`LeagueSession` is one permanent weekly score sheet. `ScoreLine` snapshots the
-player, team, role, entering average, handicap, and lineup position used that
-week. `GameScore` stores each individual game and its bowled/absent/blind/
-vacancy state. Team totals are always derived by summing those player games.
-
-Score records intentionally retain display snapshots instead of depending on
-the current team or player name. This prevents a roster move or team rename
-from changing prior weeks. The current management records remain normalized,
-while the historical scoring side is immutable-by-default and correction-aware.
-
-Final score sheets must be reopened with a reason. Corrections to entered
-scores, removal of scored rows, and reopen events append before/after records to
-`score_change_log`; ordinary first-time entry is not treated as a correction.
-The score tables use row-level transactions and are not rewritten by normal
-registration saves.
+Bowling Manager is a single-user Windows desktop application. Tkinter owns the
+main UI, a short-lived WebView2 helper owns BOWL.com sign-in, an HTTP client
+performs authenticated JSON requests, and SQLite stores local league data and
+score history.
 
 ```text
-Tkinter Windows GUI
-        |
-        +-- private WebView2 authentication boundary (only if required)
-        |
-        +-- lookup coordinator
-                |
-                +-- member-search client
-                +-- explicit match resolution
-                +-- composite-average client
-                +-- standard-average selector
-                +-- result/status mapping
-        |
-        +-- clean results CSV / issues CSV / clipboard
+Tkinter application
+  |
+  +-- League Manager
+  |     +-- leagues / seasons / tournaments
+  |     +-- permanent players and season pools
+  |     +-- competition teams and rosters
+  |     +-- weekly score sheets and history
+  |
+  +-- Registration
+  |     +-- single, whole-team, and multi-league entry
+  |     +-- two-worker background verification queue
+  |
+  +-- Average lookup
+  |     +-- flexible file parser
+  |     +-- member matching and issue review
+  |     +-- result subsets and exports
+  |
+  +-- private sign-in helper process
+  |     +-- genuine BOWL.com page in private WebView2
+  |     +-- temporary bearer token through stdout pipe
+  |
+  +-- HttpBowlApi
+  |     +-- member search
+  |     +-- composite averages
+  |     +-- league activities (client support only)
+  |
+  +-- RegistrationStore / ScoringStore
+        +-- SQLite schema version 3
 ```
 
-## Design decisions
+## UI composition
 
-- **Desktop first:** version 1 is for one Windows user, so Docker and a shared
-  server add administration without improving the workflow.
-- **Python foundation:** the app can remain small and later be packaged as a
-  portable executable. A move to .NET remains possible if WebView2 session
-  integration proves substantially safer or simpler.
-- **No guessed endpoints:** the current client is an unconfigured boundary until
-  sanitized request details are captured.
-- **No silent matching:** ambiguity is a normal domain outcome, not an exception.
-- **Separate exports:** a clean import file must not hide missing or failed rows.
-- **Pure selection logic:** choosing the composite average is independent of the
-  network and GUI, making the business rule easy to test.
-- **Appliance-like UI:** technical complexity stays behind a four-step flow:
-  enter names, look up, resolve any highlighted name, save results.
+`AverageLookupApp` is the application shell. It owns authentication state and
+the three top-level notebooks:
 
-## Proposed integration flow
+- League Manager
+- Registration
+- Average lookup
+
+`RegistrationDesk` controls the separate Registration workspace and the four
+League Manager tabs. Sharing the controller keeps all roster and competition
+views synchronized after one domain write.
+
+`ScoringDesk` is mounted inside League Manager. `RelationshipBrowser` opens as
+a separate navigation window and holds its own Back/Forward history.
+
+UI classes call domain stores rather than SQL. The stores validate rules, save
+data, and return view models. Message boxes translate expected validation
+errors into operator-facing language.
+
+## Registration data model
+
+The current normalized management records are:
+
+| Record | Purpose |
+| --- | --- |
+| `BowlerProfile` | Reusable person identity and optional USBC member ID |
+| `PlayerPool` | Independently editable year/season list |
+| `PlayerPoolEntry` | Many-to-many link from pool to player |
+| `Competition` | One league season or one tournament plus its scoring rules |
+| `Team` | Team belonging to exactly one competition |
+| `Registration` | Player's participation, team, role, lookup state, average, and withdrawal state in one competition |
+
+Key invariants:
+
+- A player identity can have many registrations but only one registration in a
+  specific competition.
+- A team belongs to one competition and team names are unique inside that
+  competition.
+- A registration's team, when present, must belong to the same competition.
+- Removing a team assignment does not delete the registration or player.
+- Withdrawal is separate from team assignment.
+- A linked player pool is reusable and does not own teams or registrations.
+
+`RegistrationTarget` is an in-memory command object for multi-league
+registration. Each target names a competition and either an existing team, a
+pending new team name, or no team. `register_bowler_many` snapshots all affected
+collections, applies every target, writes once, and restores the snapshot if
+any target fails.
+
+## Scoring data model
+
+Historical scoring uses deliberate snapshots:
+
+| Record | Purpose |
+| --- | --- |
+| `LeagueSession` | One league/week score sheet, date, label, frozen game count, and Draft/Final state |
+| `ScoreLine` | Frozen player/team/role/average/handicap/lineup identity for one week |
+| `GameScore` | One game state, scratch score, and counted pins |
+| `ScoreChange` | Append-only before/after correction or session-state change |
+
+Current registrations remain normalized. Score lines duplicate display names
+and calculations so later player edits, team renames, roster moves, or rule
+changes cannot rewrite a prior week.
+
+Active regulars with teams are snapshotted when a session is created. A
+registered player can be added to any team in the same league for that week
+without changing the season roster. Vacancy rows have no player or registration
+foreign key.
+
+Team totals are projections over game records:
 
 ```text
-input name
-  -> member search
-  -> zero matches: Not found
-  -> multiple plausible matches: Multiple matches
-  -> inactive-only match: Inactive member
-  -> selected active member (prefix + suffix)
-  -> composite averages
-  -> no qualifying record: No average
-  -> newest standard record: Found
+team scratch game N = sum(player scratch game N or 0)
+team counted game N = sum(player counted pins game N)
 ```
 
-Authentication failures map to `Login expired`; transport, server, schema, and
-rate-limit failures map to `API error` with a safe user-facing note.
+They are never separately persisted as editable totals.
 
-## Authentication model
+## Average and handicap model
 
-The app opens BOWL.com's genuine page inside an application-owned WebView2
-window. That window runs in a dedicated packaged helper process and uses private mode, so it does
-not share data with or open tabs in Microsoft Edge, Google Chrome, or Brave.
-The app reads the bearer session established by BOWL.com and sends only that
-temporary token through an in-memory pipe to the main window. It does not
-inspect or store the password and never writes the bearer token to logs,
-exports, configuration, or source control. The WebView process is ended after
-sign-in, on sign-out, and when the application closes, discarding its cookies
-and browser storage.
+Lookup selection and league calculation are separate:
+
+1. `average_selector.py` chooses the newest qualifying BOWL.com Standard
+   Composite record.
+2. The selected raw average, year, and games are saved on the registration.
+3. The competition rule applies minimum games, multiplier, pin adjustment, and
+   rounding.
+4. Handicap is calculated from the resulting entering average.
+5. The entering average and handicap are snapshotted on the score line.
+
+The general `average_rules.py` engine can model Standard Composite, raw league
+activity, and adjusted league activity candidates with source priority and
+filters. The current registration store constructs only a Standard Composite
+candidate because raw league activities are not yet persisted.
+
+## SQLite storage
+
+`RegistrationStore` owns the database at:
+
+```text
+%LOCALAPPDATA%\Bowling Manager\bowling-manager.db
+```
+
+Schema version 3 contains:
+
+- `metadata`
+- `player_pools`
+- `bowlers`
+- `competitions`
+- `teams`
+- `player_pool_entries`
+- `registrations`
+- `league_sessions`
+- `score_lines`
+- `game_scores`
+- `score_change_log`
+
+SQLite foreign keys are enabled on every connection. Tables use primary keys,
+uniqueness constraints, and state `CHECK` constraints. The store validates
+in-memory references before rewriting management tables.
+
+Management saves run in one `BEGIN IMMEDIATE` transaction and rewrite only the
+normalized management tables. Scoring methods use focused row-level
+transactions against scoring tables. Normal management saves therefore do not
+delete or regenerate weekly history.
+
+### Schema upgrades
+
+Before upgrading an existing SQLite database, `_backup_before_schema_upgrade`
+uses SQLite's backup API to create one adjacent copy named for the old version,
+such as `bowling-manager.schema-v2-backup.db`. Existing copies are retained and
+not overwritten.
+
+If the database version is newer than the application supports, opening fails
+without changing the file.
+
+### Legacy JSON migration
+
+When no SQLite database exists but `registration-data.json` does, the store can
+import JSON schema version 1 or 2. It:
+
+1. loads and validates the legacy document;
+2. preserves the source;
+3. creates `registration-data.pre-sqlite-backup.json` if absent;
+4. builds a temporary SQLite database;
+5. runs integrity and foreign-key checks;
+6. atomically moves the verified database into place.
+
+## Authentication boundary
+
+`WebViewAuthenticator` starts `Average-Assistant-SignIn.exe` in packaged builds
+or the `signin_helper` module in development. The helper owns pywebview on its
+main GUI thread and opens the genuine BOWL.com page with Edge Chromium and
+`private_mode=True`.
+
+The helper inspects its own page's local/session storage for a bearer token. It
+prints one prefixed JSON response to the parent process. The main app parses the
+response, keeps the token in an `AuthSession` field excluded from repr output,
+and always terminates the helper.
+
+No password is exposed to application code. The token is not written to SQLite,
+files, logs, configuration, or exports. Closing, timing out, signing out, and
+application shutdown terminate the helper. Versions 0.3 and later also remove
+only known legacy app-owned browser-profile directories.
+
+This is a pragmatic local-process boundary, not a hardened credential vault.
+The local Windows account remains trusted.
+
+## Lookup integration
+
+`HttpBowlApi` sends authenticated `GET` requests with a 20-second timeout. It
+uses separate member name and member-ID routes, then requests composite averages
+for a chosen member. League-activity pagination is implemented in the client but
+not yet part of normal registration storage.
+
+Response parsing is defensive:
+
+- top-level responses must be dictionaries;
+- required `data.results` members must be lists;
+- known records validate required value types;
+- league pagination validates nonnegative integer `totalPages`;
+- HTTP 401/403 maps to expired authentication;
+- transport, decode, schema, and service errors map to safe lookup outcomes.
+
+Name search currently follows the observed frontend request of Page 1 and Size
+10. It does not page the entire member directory.
+
+## Lookup coordination and concurrency
+
+The Average lookup roster worker runs off the UI thread but calls
+`look_up_all` sequentially. A monotonically increasing `lookup_generation`
+prevents late work from replacing a newer roster or corrected result.
+
+Registration has a fixed queue with two daemon worker threads. Each job keeps
+the API object captured at queue time, updates the stored verification state,
+and posts completion back to Tkinter with `after`. A set tracks outstanding
+bulk checks for the group counter.
+
+The application does not currently implement retry/backoff scheduling or
+adaptive request concurrency.
+
+## Import and export boundaries
+
+`input_parser.py` normalizes CSV, TSV, delimited text, JSON, and `.xlsx` into
+`InputBowler` records. Parsing is independent from network lookup.
+
+`exports.py` projects `LookupResult` records into selected subsets and JSON,
+Excel, CSV, TSV, or text. Spreadsheet-oriented output protects cells beginning
+with formula prefixes. JSON schema version 2 includes the selected roster type,
+status counts, and all selected bowler records.
+
+League registration/scoring import and recap-sheet export are not yet defined;
+the lookup file formats must not be mistaken for a final league interchange
+contract.
+
+## Packaging and CI
+
+Windows CI runs Ruff and pytest on Python 3.11. Tagged builds:
+
+1. install the build dependencies;
+2. package the sign-in helper as a one-file console executable;
+3. package the main app as a windowed one-directory executable;
+4. verify that the packaged helper starts and returns a prefixed response;
+5. upload the directory as a 14-day Actions artifact;
+6. compress the directory and publish a GitHub pre-release ZIP.
+
+The build is currently unsigned and has no installer or auto-update system.
+
+## Design principles
+
+- **Local first:** one operator and one Windows profile do not need a server.
+- **Manual first:** local management remains available when BOWL.com is not.
+- **Historical stability:** mutable current rosters and immutable-by-default
+  score snapshots are different models.
+- **No silent identity matching:** ambiguity is an operator decision.
+- **Derived totals:** source player games are authoritative.
+- **Reasoned corrections:** historical changes must be explainable.
+- **Flexible edges:** import/export contracts remain adaptable until real files
+  establish the required shapes.

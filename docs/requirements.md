@@ -1,207 +1,275 @@
-# Product requirements
+# Product requirements and scope
 
-## Goal
+## Product goal
 
-Give a league operator a small Windows application that converts a roster of
-bowler names into reliable `Name,Average` output without requiring manual
-BOWL.com lookups or exposing account credentials to the application.
+Provide one nontechnical league operator with a local Windows application that
+can manage roughly four weekly leagues, changing seasonal rosters, occasional
+weekend tournaments, verified bowler averages, and permanent game-by-game
+scores. The normal upper bound is approximately 200 distinct bowlers.
 
-## Version 1 scope
+The application should feel substantially friendlier than traditional bowling
+tournament software while keeping historical records stable and auditable.
 
-### Input
+## Current release stage
 
-- Choose a CSV or delimited text file containing a name and optional membership
-  ID. Supported delimiters are comma, tab, pipe, and semicolon.
-- Also accept simple lines in the form `Name (7824-376245)`.
-- Trim blank lines while retaining the original display name.
-- Show duplicate input names rather than silently discarding them.
+The current line is v0.5 pre-alpha. It is suitable for controlled testing with
+small real leagues, not broad public distribution. The product is manual-first:
+league management and scoring work offline, while BOWL.com sign-in is optional
+and used only for average verification.
+
+The release is a portable, unsigned Windows folder. Data is local to the
+Windows user profile in a schema-versioned SQLite database.
+
+## Core domain requirements
+
+### Player identity
+
+- Store one permanent player identity with name and optional USBC member ID.
+- Reuse that identity across any number of league seasons and tournaments.
+- Keep different people with the same name separate when member IDs differ.
+- Do not silently merge ambiguous same-name players.
+- Propagate a reviewed member ID to every screen using the shared player
+  identity.
+- Invalidate verified averages when a player identity materially changes.
+
+### Player pools
+
+- Keep optional year/season player pools separate from the permanent directory.
+- Allow a pool to be copied forward and edited without changing prior years.
+- Allow a league or tournament to link to one pool.
+- Add new registrations to the linked pool without duplicating entries.
+
+### League seasons and tournaments
+
+- Treat each league season as an independent competition, even when the league
+  name repeats next year.
+- Store name, season/year, and League or Tournament type.
+- Archive and restore old workspaces without deleting history.
+- Keep teams, registrations, rules, and scores scoped to their competition.
+- Prevent a team from being assigned across competitions.
+
+### Teams and rosters
+
+- Allow competition-specific team creation and rename.
+- Copy a team from a prior competition with an optional active-roster copy.
+- Support Regular and Substitute roster roles.
+- Support team-specific substitutes and an unassigned league-wide substitute
+  pool.
+- Move players between teams without deleting the league registration or
+  permanent identity.
+- Filter Team management by league or tournament.
+- Refresh registration, player, team, league, and scoring views after any
+  assignment change.
+
+### Registration
+
+- Register one bowler manually with optional member ID and team.
+- Create a team before registration or as part of multi-league registration.
+- Register one bowler into several leagues/tournaments in one operation with a
+  separate team assignment for each.
+- Make multi-league registration atomic: no partial players, teams, pool
+  entries, or registrations if any target fails.
+- Register a pasted team roster atomically.
+- Reject a duplicate player registration within the same competition.
+- Allow withdrawal/restore separately from team removal.
+- Show a visible group counter for total, ready, and needs-attention entries.
+
+### Relationship navigation
+
+- Double-clicking a league, team, or player opens related records.
+- Navigate league → teams → players and player → teams/leagues.
+- Provide Back and Forward history.
+- Keep editing on explicit labeled actions rather than overloading double-click.
+
+## BOWL.com lookup requirements
 
 ### Authentication
 
-- First test whether the required JSON endpoints work anonymously.
-- If sign-in is required, open the genuine BOWL.com login flow in a browser or
-  embedded browser control.
-- Never collect, log, transmit elsewhere, or store a BOWL.com password.
-- Support the site's normal MFA and password-manager behavior.
-- Distinguish signed out, signed in, and expired-session states.
-- Sign-out must clear application-held session material.
+- Open the genuine BOWL.com page in a private application-owned WebView2
+  helper.
+- Never present an application-owned password field.
+- Never write passwords, bearer tokens, cookies, or browser storage to the
+  database, exports, configuration, diagnostics, or source control.
+- Keep the temporary bearer token in memory only.
+- Sign out, closing the app, cancellation, and timeout must terminate the helper
+  and return the main window to a usable state.
+- Distinguish signed out, signed in, and expired session.
 
-### Lookup and matching
+### Search and matching
 
-- Search by bowler name through the observed JSON member-search operation.
-- Do not silently choose among multiple plausible members.
-- Surface enough non-sensitive match context to choose the correct person,
-  including active state, association, state, and membership period when
-  available.
-- Use the selected member's `prefix` and `suffix` for the composite-average
-  request.
-- Prefer an active record only when it is uniquely resolvable; otherwise ask the
-  user.
+- Search by name or member ID using the observed BOWL.com JSON operations.
+- Use membership ID instead of name when supplied.
+- Never silently choose among multiple active candidates.
+- Show candidate name, member ID, active state, association/state, and
+  membership period when available.
+- Allow fixing one row without rerunning completed rows.
+- Allow Next issue navigation through unresolved results.
+- Surface safe, actionable states for not found, inactive, no average, expired
+  session, and API/schema/network errors.
+- Treat the current first-page/ten-candidate name search as a known limitation;
+  common names should use member ID until pagination is implemented.
 
 ### Average selection
 
-- Choose the newest record where `sport == false`, `challenge == false`, and
-  `games > 0`.
-- Treat the returned value as the Standard Composite Average.
-- Preserve year and games as explanatory metadata.
-- The observed `year` maps to the ending year shown by BOWL.com (for example,
-  `2025` corresponds to the displayed 2024–2025 season). Verify this with more
-  records before relying on it in user-facing labels.
-- The business owner must still confirm that Standard Composite Average—not the
-  highest individual league average—is the desired league input rule.
+- Select the newest composite-average record where `sport == false`,
+  `challenge == false`, and `games > 0`.
+- Preserve the returned average, ending year, and games.
+- Describe it as Standard Composite Average.
+- Do not imply that raw prior-league averages are selectable until those rows
+  are retained on the registration.
 
-### Required outcomes
+### Request behavior
 
-Every input row must end in one of these states:
+- Keep network work off the Tkinter UI thread.
+- Registration uses a fixed two-worker queue so one ambiguous result does not
+  stop data entry and request bursts remain bounded.
+- Full roster lookup may run in a background thread but currently processes
+  rows sequentially.
+- Detect invalid response envelopes, invalid records, invalid pagination, and
+  HTTP authentication failures rather than producing guessed results.
 
-| Status | Meaning | Next action |
-| --- | --- | --- |
-| Found | One member and a qualifying average were resolved | Exportable |
-| Not found | Search returned no plausible member | Correct name or handle manually |
-| Multiple matches | More than one plausible member remains | User selects a member |
-| No average | Member exists but has no qualifying composite | Handle manually |
-| Inactive member | Only an inactive record was found | Confirm or search again |
-| Login expired | Authentication is no longer valid | Sign in, then retry |
-| API error | Network, server, schema, or rate-limit failure | Retry failed rows |
+## Import and export requirements
 
-### Output
+### Input
 
-- Results table columns: Bowler, Average, Status, Notes.
-- Summary counts for processed rows and each result status.
-- One JSON document containing every bowler, optional membership ID, average,
-  status, and plain-language notes.
-- Retry temporary failures automatically without asking the user to understand
-  request or API errors.
+- Accept CSV, TSV, delimited text, JSON, and `.xlsx`.
+- Recognize comma, tab, pipe, and semicolon delimiters.
+- Recognize common combined-name, separate first/last-name, and membership-ID
+  headings.
+- Accept `Name (1234-567890)` and one-name-per-line text.
+- Preserve membership IDs as text, including hyphens and leading zeroes, when
+  the source stores them as text. A spreadsheet that has already converted an
+  ID to a number may already have discarded its leading zeroes.
+- Ignore empty rows and reject files with no usable bowlers.
+- Ask which worksheet to use when an Excel file has several non-empty sheets.
+- Do not support legacy `.xls` unless representative files justify it.
+- Keep formats extensible because final league/tournament file shapes remain
+  unknown.
 
-### User experience
+### Lookup output
 
-- The normal workflow is only: open, enter names, look up, save.
-- Do not expose endpoint settings, authentication tokens, request details,
-  technical logs, or configuration fields.
-- If sign-in is required, present one plain **Sign in to BOWL.com** action and
-  return directly to the lookup after it succeeds.
-- Use one **Save Results** action that writes the complete JSON document.
-- Describe failures as an action the user can take, such as “Sign in again” or
-  “Check this spelling,” while retaining technical detail only in redacted logs.
+- Export JSON, Excel, CSV, TSV, or plain text.
+- Offer Full, Active/ready, Inactive, and Needs-attention subsets.
+- Default to Full so unresolved players are not silently omitted.
+- Show how many rows will be written.
+- Confirm before saving a full roster with unresolved rows.
+- Preserve name, member ID, average, year, games, status, notes, active state,
+  and association where the format allows.
+- Give Excel a Results sheet and a Needs Attention sheet when applicable.
+- Prevent imported or remote text from becoming a spreadsheet formula.
+- Allow current lookup results to be merged into the permanent player list.
 
-## Quality and safety requirements
+## League average and handicap requirements
 
-- Keep credentials, cookies, tokens, and member response data out of logs and
-  source control.
-- Redact sensitive headers from diagnostics.
-- Use conservative request concurrency and documented backoff.
-- Detect unexpected response schemas instead of silently producing bad data.
-- Avoid recording full member histories unless the user explicitly exports a
-  result.
-- Package for Windows as a portable executable after integration is verified.
+- Store rules per league season, not globally.
+- Current selectable source is the verified Standard Composite value on the
+  registration.
+- Apply optional minimum-games qualification, decimal multiplier, signed pin
+  adjustment, and nearest/up/down rounding.
+- Store games per session, handicap base, handicap percentage, blind penalty,
+  and vacancy score per league.
+- Calculate player handicap as
+  `floor(max(base - average, 0) × percentage)`.
+- Freeze the entering average and handicap on each weekly score line.
 
-## Acceptance criteria for enabling live lookups
+## Weekly scoring requirements
 
-- Sanitized endpoint details and response fixtures are documented.
-- Anonymous-versus-authenticated behavior is confirmed.
-- Terms/permission and an acceptable request rate are reviewed.
-- Member matching and average selection have fixture-based tests.
-- All required status paths have tests.
-- A 40–150-name test roster completes without skipped or duplicated rows.
-- Exports open correctly in Excel and preserve every input outcome.
+- Create one permanent session per league/week number with optional date and
+  label.
+- Copy active Regular registrations with team assignments into the new sheet.
+- Snapshot player name, team name, roster role, entering average, handicap,
+  lineup order, and games per player.
+- Add a registered player to a team for one week without changing the season
+  roster.
+- Restore a removed regular through the same Add player workflow while
+  preserving the original roster role.
+- Add vacancy rows.
+- Store each game independently as Bowled, Blind, Absent, Vacancy, or Not
+  entered.
+- Validate bowled scores from 0 through 300.
+- Derive team scratch and handicap totals from player games; never store an
+  independently editable team total.
+- Present score rows in a deterministic team/player order.
+- Keep score history accessible from Scores, League management, and Team
+  management.
 
-## Out of scope for version 1
+### Finalization and audit
 
-- Docker or a shared web service.
-- Storing BOWL.com usernames or passwords.
-- Automatically choosing an ambiguous person.
-- Calculating a composite from individual league rows when BOWL.com already
-  provides the Standard Composite Average.
-- Publishing the repository or distributing an executable before the live
-  integration and usage terms are reviewed.
+- Do not finalize an empty sheet or a sheet with Not entered games.
+- Prevent edits to a final sheet until it is reopened.
+- Require a reason to reopen a final sheet.
+- First-time entry does not require a reason.
+- Require a reason when changing a previously entered score, calculated value,
+  or entering average.
+- Require a reason before removing a row that contains entered games.
+- Append before/after values, identity snapshots, reason, and timestamp to the
+  change log.
+- Preserve prior history when current players, teams, rosters, or rules change.
 
-## Version 2 working scope
+## Storage and reliability requirements
 
-This milestone turns the verified working model into an appliance-like tool for
-nontechnical league operators. The items below are accepted requirements unless
-called out as an open decision.
+- Use a local SQLite database at
+  `%LOCALAPPDATA%\Bowling Manager\bowling-manager.db`.
+- Use transactions for every logical write.
+- Enforce primary keys, foreign keys, uniqueness, and enumerated state checks.
+- Leave unreadable or newer unsupported databases unchanged.
+- Import legacy schema-version 1 or 2 JSON through a temporary verified
+  database, preserving the source and a separate backup.
+- Before a SQLite schema upgrade, create one backup per old schema version using
+  SQLite's backup API.
+- Keep score transactions independent from full registration-store rewrites so
+  normal roster saves do not regenerate score history.
+- Document that the database is local and unencrypted by the application.
 
-### Simplified sign-in
+## User experience requirements
 
-- Open the genuine BOWL.com sign-in inside one private Average Assistant
-  window, without opening tabs in Microsoft Edge, Google Chrome, or Brave.
-- Detect the authenticated session without requiring the user to manually
-  search for a member.
-- Keep one stable sign-in window open until authentication finishes and avoid
-  rapid extra-window opening or closing.
-- If direct session detection is not reliable, perform a harmless automatic
-  verification request and return the user directly to the app.
-- Continue to keep passwords out of the app and authentication material out of
-  saved files and logs.
-- Discard the private window's cookies and storage after sign-in, on sign-out,
-  and when the application closes; retain only the temporary token in memory.
+- Use plain bowling language and avoid exposing endpoints, tokens, SQL, or
+  request settings.
+- Keep normal actions available while signed out except BOWL.com lookup.
+- Prefer explicit buttons for destructive or editing actions.
+- Preserve selected league/team where practical during refresh.
+- Support keyboard-first score entry and checkbox-style multi-selection in a
+  future UI pass; current behavior is functional but not yet the target level
+  of friendliness.
+- Add clickable ascending/descending team sorting to score sheets and history
+  in a future UI pass.
+- Remember useful filters and last-selected context in a future UI pass.
 
-### Import formats
+## Current non-goals
 
-- Accept CSV (`.csv`), tab-separated (`.tsv`), delimited text (`.txt`), JSON
-  (`.json`), and modern Excel (`.xlsx`).
-- Automatically recognize common headings such as `Name`, `Bowler`, `Member
-  ID`, `USBC ID`, and `Membership Number`.
-- Accept combined names or separate first-name and last-name columns.
-- Preserve membership IDs as text, including hyphens and leading zeroes.
-- Ignore empty rows and report rows that cannot be understood.
-- Use the first meaningful Excel sheet automatically; ask the user only when
-  multiple meaningful sheets require a choice.
-- Defer legacy Excel (`.xls`) unless real input files demonstrate a need.
+- Shared web service, cloud sync, multi-user login, or simultaneous editing.
+- Mobile or QR self-registration in the current milestone.
+- Brackets, side pots, payouts, prize accounting, or other money handling.
+- Automatically choosing an ambiguous member.
+- Scraping rendered BOWL.com HTML.
+- Recalculating BOWL.com's Standard Composite from league rows.
+- Matchups, lane assignments, points, standings, and leaderboards until the
+  scoring foundation is validated.
 
-### Main navigation and result views
+## Planned next layer
 
-- Use a clean, Arr-inspired Windows interface with a restrained navy,
-  wood/amber, and status-color palette.
-- Present the workflow as Sign in, Choose roster, Review, and Save.
-- Provide tabs for at least:
-  - **All results** — every imported bowler and current outcome.
-  - **Fixes needed** — only unresolved or failed rows requiring attention.
-- Show the number of affected rows in the **Fixes needed** tab.
-- Provide **Clear results**. It clears the current in-app results without
-  changing or deleting the original roster file.
+1. Real-world workflow testing with four weekly leagues, weekend tournaments,
+   and up to 200 bowlers.
+2. Checkbox-style multi-league registration, remembered filters, and a more
+   keyboard-friendly scoring grid.
+3. Match schedule, lane/pair assignments, configurable game/series points,
+   ties, forfeits, and position rounds.
+4. Standings and player/team leaderboards derived from finalized score sheets.
+5. Persisted raw league activities and league-selectable prior-average sources.
+6. Recap-sheet import/export after representative files are available.
 
-### In-app corrections
+## Acceptance criteria for the current test release
 
-- Preserve candidate member records for ambiguous searches instead of reducing
-  them to a status message.
-- Let the user resolve **Multiple matches** inside the app by selecting a member
-  using name, membership ID, association/state, membership period when
-  available, and active/inactive status.
-- After selection, retrieve the selected member's average and update only that
-  result row.
-- Let the user correct a name or enter/replace a membership ID for **Not found**
-  and incorrect-ID outcomes, then retry only that row.
-- Allow confirmation of an inactive member when appropriate.
-- Provide **Next issue** so several problem rows can be resolved in sequence.
-- Do not require the entire roster lookup to be rerun after a correction.
-- Permit saving with unresolved rows, but show a clear count and confirmation
-  before doing so.
-
-### Output formats and roster subsets
-
-- Provide one **Save results** workflow with JSON, CSV, TSV/text, and Excel
-  (`.xlsx`) choices.
-- Keep exports understandable with common fields: name, membership ID, average,
-  year, games, status, and notes.
-- JSON may include additional structured details needed by another program.
-- Excel should include a complete-results sheet and a needs-attention sheet when
-  applicable.
-- Let the user save useful subsets without rerunning the lookup:
-  - **Full roster** — every imported bowler and every status.
-  - **Active/ready roster** — successfully resolved active bowlers.
-  - **Inactive roster** — confirmed or detected inactive members.
-  - **Needs-attention roster** — unresolved matches, not found, no average,
-    login failures, and API errors.
-- Default to **Full roster** so no bowler is silently omitted.
-- Show the number of records that will be written before saving.
-
-### Version 2 acceptance checks
-
-- All supported input types produce the same normalized internal roster.
-- Membership IDs survive every import/export round trip unchanged.
-- Multiple ambiguous rows can be fixed consecutively inside the app.
-- Correcting one row does not discard or rerun completed rows.
-- Tab counts and save-subset counts remain accurate after every correction.
-- Every output format preserves all selected rows and their statuses.
-- Clearing results leaves the source roster file untouched.
+- All automated tests and code-quality checks pass on Windows CI.
+- A packaged sign-in helper starts and returns a structured response.
+- Existing SQLite data opens without loss and schema backups are created when
+  required.
+- Moving a player between teams refreshes all dependent screens.
+- Reviewed member IDs appear in permanent player and team views.
+- Multi-league registration either saves every target or saves none.
+- A removed regular can be added back to a draft score sheet as a Regular.
+- Score corrections and final-week reopening require and retain reasons.
+- Input and export round trips preserve member IDs as text.
+- The packaged application completes the manual checks in
+  [release-checklist.md](release-checklist.md), including the 200-bowler normal
+  workload and 1,000-row parser/UI stress test.
