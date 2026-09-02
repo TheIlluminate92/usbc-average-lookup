@@ -81,7 +81,7 @@ def export_delimited(path: Path, results: Iterable[LookupResult], delimiter: str
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.writer(handle, delimiter=delimiter)
         writer.writerow(_HEADERS)
-        writer.writerows(_row(result) for result in results)
+        writer.writerows(_spreadsheet_row(result) for result in results)
 
 
 def export_excel(path: Path, results: Iterable[LookupResult]) -> None:
@@ -101,7 +101,7 @@ def export_found(path: Path, results: Iterable[LookupResult]) -> None:
         writer = csv.writer(handle)
         writer.writerow(["Name", "Average"])
         writer.writerows(
-            (result.input_name, result.average)
+            (_safe_spreadsheet_value(result.input_name), result.average)
             for result in results
             if result.status is LookupStatus.FOUND
         )
@@ -112,7 +112,10 @@ def export_issues(path: Path, results: Iterable[LookupResult]) -> None:
         writer = csv.writer(handle)
         writer.writerow(["Name", "Status", "Notes"])
         writer.writerows(
-            (result.input_name, result.status.value, result.note)
+            tuple(
+                _safe_spreadsheet_value(value)
+                for value in (result.input_name, result.status.value, result.note)
+            )
             for result in results
             if result.status is not LookupStatus.FOUND
         )
@@ -171,13 +174,28 @@ def _row(result: LookupResult) -> tuple[object, ...]:
     )
 
 
+_SPREADSHEET_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+
+def _safe_spreadsheet_value(value: object) -> object:
+    """Keep imported or remote text from becoming a spreadsheet formula."""
+
+    if isinstance(value, str) and value.startswith(_SPREADSHEET_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
+def _spreadsheet_row(result: LookupResult) -> tuple[object, ...]:
+    return tuple(_safe_spreadsheet_value(value) for value in _row(result))
+
+
 def _write_sheet(sheet, results: list[LookupResult]) -> None:
     sheet.append(_HEADERS)
     for cell in sheet[1]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="153252")
     for result in results:
-        sheet.append(_row(result))
+        sheet.append(_spreadsheet_row(result))
         status_cell = sheet.cell(sheet.max_row, 6)
         if result.status is LookupStatus.FOUND:
             status_cell.fill = PatternFill("solid", fgColor="E4F3EA")
