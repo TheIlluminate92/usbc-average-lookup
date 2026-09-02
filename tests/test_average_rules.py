@@ -160,16 +160,23 @@ def test_can_exclude_string_pin_league_averages() -> None:
     assert decision.candidate.league_id == "conventional"
 
 
-def test_uses_adjusted_average_when_supplied() -> None:
+def test_keeps_raw_and_adjusted_league_averages_distinct() -> None:
     candidates = candidates_from_league_averages(
         [league_average("rerated", 160, 30, adjusted_average=172)]
     )
-    rule = AverageRule(
-        "Adjusted league average",
+    raw_rule = AverageRule(
+        "Raw league average",
         sources=(RuleSource(AverageSource.LEAGUE_ACTIVITY),),
     )
+    adjusted_rule = AverageRule(
+        "Adjusted league average",
+        sources=(RuleSource(AverageSource.ADJUSTED_LEAGUE_ACTIVITY),),
+    )
 
-    decision = evaluate_average_rule(rule, candidates)
+    raw_decision = evaluate_average_rule(raw_rule, candidates)
+    adjusted_decision = evaluate_average_rule(adjusted_rule, candidates)
 
-    assert decision is not None
-    assert decision.average == 172
+    assert raw_decision is not None
+    assert adjusted_decision is not None
+    assert raw_decision.average == 160
+    assert adjusted_decision.average == 172
