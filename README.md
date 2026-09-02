@@ -14,6 +14,14 @@ verified averages using BOWL.com's JSON-backed member search and average data.
 
 ### Registration Desk
 
+The workspace is divided into four focused tabs:
+
+- **Registration** for fast individual and whole-team entry
+- **Players** for searching and correcting the shared player directory
+- **Teams** for league/tournament-filtered team lists and rosters
+- **Leagues & Tournaments** for creating, editing, archiving, and restoring
+  competition workspaces
+
 1. Create a league season or tournament workspace.
 2. Add its teams as they are known; an unassigned option remains available.
 3. Enter one bowler at a time or paste a complete team roster.
@@ -116,6 +124,8 @@ Every input row remains visible in the output, including failures:
 - Persistent league-season and tournament workspaces
 - Season-specific teams with quick entry, whole-team entry, reassignment, and
   withdrawal/restore controls
+- Player, team, and league/tournament management tabs, with teams explicitly
+  filtered by competition
 - Background registration checks capped at two concurrent BOWL.com requests
 - Registration counters for total, ready, and needs-attention entries
 - Domain models for members, composite averages, and lookup outcomes

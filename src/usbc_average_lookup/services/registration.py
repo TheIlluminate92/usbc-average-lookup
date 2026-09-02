@@ -36,10 +36,15 @@ class Competition:
     season: str
     kind: CompetitionKind
     created_at: str
+    archived: bool = False
 
     @property
     def display_name(self) -> str:
         return f"{self.season}  •  {self.name}" if self.season else self.name
+
+    @property
+    def selection_label(self) -> str:
+        return f"{self.display_name}  [{self.kind.value}]"
 
 
 @dataclass(slots=True)
@@ -135,6 +140,7 @@ class RegistrationStore:
                     season=str(item.get("season", "")),
                     kind=CompetitionKind(item["kind"]),
                     created_at=str(item.get("created_at", "")),
+                    archived=bool(item.get("archived", False)),
                 )
                 for item in document.get("competitions", [])
             ]
@@ -231,11 +237,84 @@ class RegistrationStore:
         self.save()
         return team
 
+    def update_competition(
+        self,
+        competition_id: str,
+        name: str,
+        season: str,
+        kind: CompetitionKind,
+    ) -> None:
+        competition = self._competition(competition_id)
+        clean_name = _required(name, "League or tournament name")
+        clean_season = season.strip()
+        if any(
+            item.id != competition_id
+            and item.kind is kind
+            and _key(item.name) == _key(clean_name)
+            and _key(item.season) == _key(clean_season)
+            for item in self.competitions
+        ):
+            raise RegistrationDataError(
+                f"{clean_season + ' • ' if clean_season else ''}{clean_name} already exists"
+            )
+        competition.name = clean_name
+        competition.season = clean_season
+        competition.kind = kind
+        self.save()
+
+    def set_competition_archived(self, competition_id: str, archived: bool) -> None:
+        self._competition(competition_id).archived = archived
+        self.save()
+
     def list_teams(self, competition_id: str) -> list[Team]:
         return sorted(
             (team for team in self.teams if team.competition_id == competition_id),
             key=lambda item: _key(item.name),
         )
+
+    def rename_team(self, team_id: str, name: str) -> None:
+        team = self._team(team_id)
+        clean_name = _required(name, "Team name")
+        if any(
+            item.id != team_id
+            and item.competition_id == team.competition_id
+            and _key(item.name) == _key(clean_name)
+            for item in self.teams
+        ):
+            raise RegistrationDataError(f"Team {clean_name!r} already exists")
+        team.name = clean_name
+        self.save()
+
+    def update_bowler_profile(
+        self, bowler_id: str, name: str, membership_id: str
+    ) -> None:
+        bowler = self._bowler(bowler_id)
+        clean_name = _required(name, "Bowler name")
+        clean_id = membership_id.strip()
+        if clean_id and any(
+            item.id != bowler_id
+            and item.membership_id
+            and _membership_key(item.membership_id) == _membership_key(clean_id)
+            for item in self.bowlers
+        ):
+            raise RegistrationDataError(
+                f"Member ID {clean_id} already belongs to another player"
+            )
+        identity_changed = (
+            _key(bowler.name) != _key(clean_name)
+            or _membership_key(bowler.membership_id) != _membership_key(clean_id)
+        )
+        bowler.name = clean_name
+        bowler.membership_id = clean_id
+        if identity_changed:
+            for registration in self.registrations:
+                if registration.bowler_id == bowler_id:
+                    registration.verification = VerificationState.NOT_CHECKED
+                    registration.average = None
+                    registration.average_year = ""
+                    registration.games = None
+                    registration.note = "Player identity changed; check the average again"
+        self.save()
 
     def register_bowler(
         self,

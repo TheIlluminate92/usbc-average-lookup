@@ -50,9 +50,31 @@ class RegistrationDesk(ttk.Frame):
 
     def _build(self) -> None:
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(3, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        heading = ttk.Frame(self, style="App.TFrame")
+        self.section_tabs = ttk.Notebook(self)
+        self.section_tabs.grid(row=0, column=0, sticky="nsew")
+        registration_tab = ttk.Frame(
+            self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
+        )
+        self.players_tab = ttk.Frame(
+            self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
+        )
+        self.teams_tab = ttk.Frame(
+            self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
+        )
+        self.competitions_tab = ttk.Frame(
+            self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
+        )
+        self.section_tabs.add(registration_tab, text="Registration")
+        self.section_tabs.add(self.players_tab, text="Players")
+        self.section_tabs.add(self.teams_tab, text="Teams")
+        self.section_tabs.add(self.competitions_tab, text="Leagues & Tournaments")
+
+        registration_tab.columnconfigure(0, weight=1)
+        registration_tab.rowconfigure(3, weight=1)
+
+        heading = ttk.Frame(registration_tab, style="App.TFrame")
         heading.grid(row=0, column=0, sticky="ew")
         heading.columnconfigure(0, weight=1)
         ttk.Label(
@@ -73,7 +95,7 @@ class RegistrationDesk(ttk.Frame):
             style="Primary.TButton",
         ).grid(row=0, column=1, rowspan=2, sticky="e")
 
-        selector = ttk.Frame(self, style="Surface.TFrame", padding=14)
+        selector = ttk.Frame(registration_tab, style="Surface.TFrame", padding=14)
         selector.grid(row=1, column=0, sticky="ew", pady=(18, 12))
         selector.columnconfigure(1, weight=1)
         ttk.Label(selector, text="Working on", style="Surface.TLabel").grid(
@@ -99,7 +121,7 @@ class RegistrationDesk(ttk.Frame):
         )
         self.check_all_button.grid(row=0, column=4, padx=(8, 0))
 
-        quick = ttk.Frame(self, style="Surface.TFrame", padding=14)
+        quick = ttk.Frame(registration_tab, style="Surface.TFrame", padding=14)
         quick.grid(row=2, column=0, sticky="ew", pady=(0, 12))
         quick.columnconfigure(0, weight=2)
         quick.columnconfigure(1, weight=1)
@@ -131,7 +153,7 @@ class RegistrationDesk(ttk.Frame):
         self.add_button.grid(row=1, column=3, padx=(10, 0), pady=(5, 0))
         self.name_entry.bind("<Return>", lambda _event: self._quick_add())
 
-        table_frame = ttk.Frame(self, style="Surface.TFrame")
+        table_frame = ttk.Frame(registration_tab, style="Surface.TFrame")
         table_frame.grid(row=3, column=0, sticky="nsew")
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(1, weight=1)
@@ -180,7 +202,7 @@ class RegistrationDesk(ttk.Frame):
         self.table.bind("<<TreeviewSelect>>", lambda _event: self._update_row_actions())
         self.table.bind("<Double-1>", lambda _event: self._review_selected())
 
-        footer = ttk.Frame(self, style="App.TFrame")
+        footer = ttk.Frame(registration_tab, style="App.TFrame")
         footer.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         ttk.Label(
             footer,
@@ -200,26 +222,532 @@ class RegistrationDesk(ttk.Frame):
         )
         self.review_button.pack(side=tk.RIGHT, padx=(0, 8))
 
+        self._build_players_tab()
+        self._build_teams_tab()
+        self._build_competitions_tab()
+
+    def _build_players_tab(self) -> None:
+        tab = self.players_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(2, weight=1)
+        heading = ttk.Frame(tab, style="App.TFrame")
+        heading.grid(row=0, column=0, sticky="ew")
+        heading.columnconfigure(0, weight=1)
+        ttk.Label(
+            heading,
+            text="Player Management",
+            style="Muted.TLabel",
+            font=("Segoe UI", 20, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            heading,
+            text="One player identity shared across every season and tournament.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self.player_edit_button = ttk.Button(
+            heading,
+            text="Edit selected player",
+            command=self._edit_managed_player,
+            state=tk.DISABLED,
+        )
+        self.player_edit_button.grid(row=0, column=1, rowspan=2, sticky="e")
+
+        search = ttk.Frame(tab, style="Surface.TFrame", padding=14)
+        search.grid(row=1, column=0, sticky="ew", pady=(18, 12))
+        search.columnconfigure(1, weight=1)
+        ttk.Label(search, text="Find player", style="Surface.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 10)
+        )
+        self.player_search_var = tk.StringVar()
+        player_search = ttk.Entry(search, textvariable=self.player_search_var)
+        player_search.grid(row=0, column=1, sticky="ew")
+        player_search.bind("<KeyRelease>", lambda _event: self._render_players())
+        self.player_count_label = ttk.Label(
+            search, text="0 players", style="Surface.TLabel"
+        )
+        self.player_count_label.grid(row=0, column=2, padx=(12, 0))
+
+        frame = ttk.Frame(tab, style="Surface.TFrame")
+        frame.grid(row=2, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        self.player_table = ttk.Treeview(
+            frame,
+            columns=("name", "member_id", "registrations", "history"),
+            show="headings",
+        )
+        for column, label, width, stretch in (
+            ("name", "Player", 220, True),
+            ("member_id", "Member ID", 130, False),
+            ("registrations", "Registrations", 100, False),
+            ("history", "League / tournament history", 430, True),
+        ):
+            self.player_table.heading(column, text=label)
+            self.player_table.column(
+                column, width=width, minwidth=80, stretch=stretch, anchor="w"
+            )
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.player_table.yview)
+        self.player_table.configure(yscrollcommand=scrollbar.set)
+        self.player_table.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.player_table.bind(
+            "<<TreeviewSelect>>", lambda _event: self._update_player_actions()
+        )
+        self.player_table.bind("<Double-1>", lambda _event: self._edit_managed_player())
+
+    def _build_teams_tab(self) -> None:
+        tab = self.teams_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(2, weight=1)
+        heading = ttk.Frame(tab, style="App.TFrame")
+        heading.grid(row=0, column=0, sticky="ew")
+        heading.columnconfigure(0, weight=1)
+        ttk.Label(
+            heading,
+            text="Team Management",
+            style="Muted.TLabel",
+            font=("Segoe UI", 20, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            heading,
+            text="Teams and rosters are filtered by league season or tournament.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self.team_add_button = ttk.Button(
+            heading, text="Add team", command=self._new_managed_team, state=tk.DISABLED
+        )
+        self.team_add_button.grid(row=0, column=1, rowspan=2, sticky="e")
+        self.team_rename_button = ttk.Button(
+            heading,
+            text="Rename selected",
+            command=self._rename_managed_team,
+            state=tk.DISABLED,
+        )
+        self.team_rename_button.grid(row=0, column=2, rowspan=2, sticky="e", padx=(8, 0))
+
+        selector = ttk.Frame(tab, style="Surface.TFrame", padding=14)
+        selector.grid(row=1, column=0, sticky="ew", pady=(18, 12))
+        selector.columnconfigure(1, weight=1)
+        ttk.Label(selector, text="League / tournament", style="Surface.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 10)
+        )
+        self.team_management_competition_var = tk.StringVar()
+        self.team_management_competition_box = ttk.Combobox(
+            selector,
+            textvariable=self.team_management_competition_var,
+            state="readonly",
+        )
+        self.team_management_competition_box.grid(row=0, column=1, sticky="ew")
+        self.team_management_competition_box.bind(
+            "<<ComboboxSelected>>", lambda _event: self._render_teams()
+        )
+        self.team_count_label = ttk.Label(
+            selector, text="0 teams", style="Surface.TLabel"
+        )
+        self.team_count_label.grid(row=0, column=2, padx=(12, 0))
+
+        frame = ttk.Frame(tab, style="Surface.TFrame")
+        frame.grid(row=2, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        self.team_management_table = ttk.Treeview(
+            frame,
+            columns=("team", "active", "total", "roster"),
+            show="headings",
+        )
+        for column, label, width, stretch in (
+            ("team", "Team", 220, True),
+            ("active", "Active bowlers", 100, False),
+            ("total", "All entries", 90, False),
+            ("roster", "Roster", 470, True),
+        ):
+            self.team_management_table.heading(column, text=label)
+            self.team_management_table.column(
+                column, width=width, minwidth=75, stretch=stretch, anchor="w"
+            )
+        scrollbar = ttk.Scrollbar(
+            frame, orient=tk.VERTICAL, command=self.team_management_table.yview
+        )
+        self.team_management_table.configure(yscrollcommand=scrollbar.set)
+        self.team_management_table.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.team_management_table.bind(
+            "<<TreeviewSelect>>", lambda _event: self._update_team_actions()
+        )
+        self.team_management_table.bind(
+            "<Double-1>", lambda _event: self._rename_managed_team()
+        )
+
+    def _build_competitions_tab(self) -> None:
+        tab = self.competitions_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        heading = ttk.Frame(tab, style="App.TFrame")
+        heading.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        heading.columnconfigure(0, weight=1)
+        ttk.Label(
+            heading,
+            text="League & Tournament Management",
+            style="Muted.TLabel",
+            font=("Segoe UI", 20, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            heading,
+            text="Each league season remains an independent historical workspace.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ttk.Button(
+            heading,
+            text="New league or tournament",
+            command=self._new_competition,
+            style="Primary.TButton",
+        ).grid(row=0, column=1, rowspan=2, sticky="e")
+        self.competition_edit_button = ttk.Button(
+            heading,
+            text="Edit selected",
+            command=self._edit_managed_competition,
+            state=tk.DISABLED,
+        )
+        self.competition_edit_button.grid(
+            row=0, column=2, rowspan=2, sticky="e", padx=(8, 0)
+        )
+        self.competition_archive_button = ttk.Button(
+            heading,
+            text="Archive selected",
+            command=self._toggle_competition_archive,
+            state=tk.DISABLED,
+        )
+        self.competition_archive_button.grid(
+            row=0, column=3, rowspan=2, sticky="e", padx=(8, 0)
+        )
+
+        frame = ttk.Frame(tab, style="Surface.TFrame")
+        frame.grid(row=1, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        self.competition_management_table = ttk.Treeview(
+            frame,
+            columns=("kind", "name", "season", "teams", "bowlers", "status"),
+            show="headings",
+        )
+        for column, label, width, stretch in (
+            ("kind", "Type", 100, False),
+            ("name", "Name", 240, True),
+            ("season", "Season / year", 120, False),
+            ("teams", "Teams", 70, False),
+            ("bowlers", "Bowlers", 80, False),
+            ("status", "Status", 90, False),
+        ):
+            self.competition_management_table.heading(column, text=label)
+            self.competition_management_table.column(
+                column, width=width, minwidth=65, stretch=stretch, anchor="w"
+            )
+        scrollbar = ttk.Scrollbar(
+            frame, orient=tk.VERTICAL, command=self.competition_management_table.yview
+        )
+        self.competition_management_table.configure(yscrollcommand=scrollbar.set)
+        self.competition_management_table.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.competition_management_table.tag_configure(
+            "archived", foreground="#9FB0BF"
+        )
+        self.competition_management_table.bind(
+            "<<TreeviewSelect>>", lambda _event: self._update_competition_actions()
+        )
+        self.competition_management_table.bind(
+            "<Double-1>", lambda _event: self._edit_managed_competition()
+        )
+
     def refresh(self) -> None:
         if self.store is None:
             self.competition_box.configure(values=(), state=tk.DISABLED)
             self._set_competition_actions(False)
             self.counter_label.configure(text="Registration data could not be opened")
+            self._refresh_management_views()
             return
         competitions = sorted(
-            self.store.competitions,
+            (item for item in self.store.competitions if not item.archived),
             key=lambda item: (item.kind.value, item.season, item.name.casefold()),
             reverse=True,
         )
-        self.competition_by_label = {item.display_name: item for item in competitions}
+        self.competition_by_label = {
+            item.selection_label: item for item in competitions
+        }
         labels = list(self.competition_by_label)
         self.competition_box.configure(values=labels, state="readonly")
         if self.competition_var.get() not in self.competition_by_label:
             self.competition_var.set(labels[0] if labels else "")
         self._competition_changed()
+        self._refresh_management_views()
 
     def refresh_auth_state(self) -> None:
         self._update_actions()
+
+    def _refresh_management_views(self) -> None:
+        self._render_players()
+        self._refresh_team_management_competitions()
+        self._render_competitions()
+
+    def _render_players(self) -> None:
+        self.player_table.delete(*self.player_table.get_children())
+        if self.store is None:
+            self.player_count_label.configure(text="Player data unavailable")
+            self._update_player_actions()
+            return
+        query = " ".join(self.player_search_var.get().split()).casefold()
+        competition_by_id = {item.id: item for item in self.store.competitions}
+        registrations_by_bowler: dict[str, list] = {}
+        for registration in self.store.registrations:
+            registrations_by_bowler.setdefault(registration.bowler_id, []).append(
+                registration
+            )
+        visible = []
+        for bowler in sorted(self.store.bowlers, key=lambda item: item.name.casefold()):
+            if query and query not in f"{bowler.name} {bowler.membership_id}".casefold():
+                continue
+            registrations = registrations_by_bowler.get(bowler.id, [])
+            history = []
+            for registration in registrations:
+                competition = competition_by_id.get(registration.competition_id)
+                if competition is None:
+                    continue
+                label = competition.display_name
+                if competition.archived:
+                    label += " (archived)"
+                if label not in history:
+                    history.append(label)
+            visible.append(bowler)
+            self.player_table.insert(
+                "",
+                tk.END,
+                iid=bowler.id,
+                values=(
+                    bowler.name,
+                    bowler.membership_id or "—",
+                    len(registrations),
+                    "; ".join(history) or "No registrations",
+                ),
+            )
+        self.player_count_label.configure(
+            text=f"{len(visible)} of {len(self.store.bowlers)} players"
+        )
+        self._update_player_actions()
+
+    def _selected_player_id(self) -> str | None:
+        selected = self.player_table.selection()
+        return selected[0] if selected else None
+
+    def _update_player_actions(self) -> None:
+        self.player_edit_button.configure(
+            state=tk.NORMAL if self._selected_player_id() else tk.DISABLED
+        )
+
+    def _edit_managed_player(self) -> None:
+        if self.store is None:
+            return
+        bowler_id = self._selected_player_id()
+        if bowler_id is None:
+            return
+        bowler = next((item for item in self.store.bowlers if item.id == bowler_id), None)
+        if bowler is None:
+            return
+        choice = PlayerEditDialog(self, bowler.name, bowler.membership_id).show()
+        if choice is None:
+            return
+        try:
+            self.store.update_bowler_profile(bowler_id, *choice)
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not update player", str(error), parent=self)
+            return
+        self._render_players()
+        self._render_rows()
+        self.status_callback("Player updated; affected averages need rechecking")
+
+    def _refresh_team_management_competitions(self) -> None:
+        labels = list(self.competition_by_label)
+        self.team_management_competition_box.configure(
+            values=labels,
+            state="readonly" if labels else tk.DISABLED,
+        )
+        if self.team_management_competition_var.get() not in self.competition_by_label:
+            preferred = self.competition_var.get()
+            self.team_management_competition_var.set(
+                preferred
+                if preferred in self.competition_by_label
+                else (labels[0] if labels else "")
+            )
+        self._render_teams()
+
+    def _team_management_competition(self) -> Competition | None:
+        return self.competition_by_label.get(
+            self.team_management_competition_var.get()
+        )
+
+    def _render_teams(self) -> None:
+        self.team_management_table.delete(*self.team_management_table.get_children())
+        competition = self._team_management_competition()
+        if self.store is None or competition is None:
+            self.team_count_label.configure(text="0 teams")
+            self._update_team_actions()
+            return
+        teams = self.store.list_teams(competition.id)
+        views = self.store.registration_views(competition.id)
+        for team in teams:
+            members = [view for view in views if view.registration.team_id == team.id]
+            active = [view for view in members if not view.registration.withdrawn]
+            self.team_management_table.insert(
+                "",
+                tk.END,
+                iid=team.id,
+                values=(
+                    team.name,
+                    len(active),
+                    len(members),
+                    ", ".join(view.bowler.name for view in active) or "No active bowlers",
+                ),
+            )
+        self.team_count_label.configure(text=f"{len(teams)} teams")
+        self._update_team_actions()
+
+    def _selected_managed_team_id(self) -> str | None:
+        selected = self.team_management_table.selection()
+        return selected[0] if selected else None
+
+    def _update_team_actions(self) -> None:
+        has_competition = self._team_management_competition() is not None
+        self.team_add_button.configure(
+            state=tk.NORMAL if has_competition else tk.DISABLED
+        )
+        self.team_rename_button.configure(
+            state=tk.NORMAL if self._selected_managed_team_id() else tk.DISABLED
+        )
+
+    def _new_managed_team(self) -> None:
+        if self.store is None:
+            return
+        competition = self._team_management_competition()
+        if competition is None:
+            return
+        name = simpledialog.askstring("Add team", "Team name", parent=self)
+        if name is None:
+            return
+        try:
+            self.store.add_team(competition.id, name)
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not add team", str(error), parent=self)
+            return
+        self._refresh_teams()
+        self._render_teams()
+        self._render_competitions()
+
+    def _rename_managed_team(self) -> None:
+        if self.store is None:
+            return
+        team_id = self._selected_managed_team_id()
+        if team_id is None:
+            return
+        team = next((item for item in self.store.teams if item.id == team_id), None)
+        if team is None:
+            return
+        name = simpledialog.askstring(
+            "Rename team", "Team name", initialvalue=team.name, parent=self
+        )
+        if name is None:
+            return
+        try:
+            self.store.rename_team(team.id, name)
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not rename team", str(error), parent=self)
+            return
+        self._refresh_teams()
+        self._render_rows()
+        self._render_teams()
+
+    def _render_competitions(self) -> None:
+        self.competition_management_table.delete(
+            *self.competition_management_table.get_children()
+        )
+        if self.store is None:
+            self._update_competition_actions()
+            return
+        for competition in sorted(
+            self.store.competitions,
+            key=lambda item: (
+                item.archived,
+                item.kind.value,
+                item.name.casefold(),
+                item.season,
+            ),
+        ):
+            teams = self.store.list_teams(competition.id)
+            registrations = self.store.registration_views(competition.id)
+            self.competition_management_table.insert(
+                "",
+                tk.END,
+                iid=competition.id,
+                values=(
+                    competition.kind.value,
+                    competition.name,
+                    competition.season or "—",
+                    len(teams),
+                    len(registrations),
+                    "Archived" if competition.archived else "Active",
+                ),
+                tags=(("archived",) if competition.archived else ()),
+            )
+        self._update_competition_actions()
+
+    def _selected_managed_competition(self) -> Competition | None:
+        if self.store is None:
+            return None
+        selected = self.competition_management_table.selection()
+        if not selected:
+            return None
+        return next(
+            (item for item in self.store.competitions if item.id == selected[0]),
+            None,
+        )
+
+    def _update_competition_actions(self) -> None:
+        competition = self._selected_managed_competition()
+        state = tk.NORMAL if competition else tk.DISABLED
+        self.competition_edit_button.configure(state=state)
+        self.competition_archive_button.configure(state=state)
+        if competition:
+            self.competition_archive_button.configure(
+                text="Restore selected" if competition.archived else "Archive selected"
+            )
+
+    def _edit_managed_competition(self) -> None:
+        if self.store is None:
+            return
+        competition = self._selected_managed_competition()
+        if competition is None:
+            return
+        choice = CompetitionDialog(self, competition).show()
+        if choice is None:
+            return
+        try:
+            self.store.update_competition(competition.id, *choice)
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not update", str(error), parent=self)
+            return
+        self.refresh()
+
+    def _toggle_competition_archive(self) -> None:
+        if self.store is None:
+            return
+        competition = self._selected_managed_competition()
+        if competition is None:
+            return
+        try:
+            self.store.set_competition_archived(
+                competition.id, not competition.archived
+            )
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not update", str(error), parent=self)
+            return
+        self.refresh()
 
     def _current_competition(self) -> Competition | None:
         return self.competition_by_label.get(self.competition_var.get())
@@ -273,7 +801,7 @@ class RegistrationDesk(ttk.Frame):
             messagebox.showerror("Could not create", str(error), parent=self)
             return
         self.refresh()
-        self.competition_var.set(competition.display_name)
+        self.competition_var.set(competition.selection_label)
         self._competition_changed()
 
     def _new_team(self) -> None:
@@ -290,6 +818,8 @@ class RegistrationDesk(ttk.Frame):
             return
         self._refresh_teams()
         self.quick_team_var.set(team.name)
+        self._render_teams()
+        self._render_competitions()
 
     def _quick_add(self) -> None:
         competition = self._current_competition()
@@ -315,6 +845,7 @@ class RegistrationDesk(ttk.Frame):
         self.name_var.set("")
         self.member_id_var.set("")
         self._render_rows()
+        self._refresh_management_views()
         self.name_entry.focus_set()
         if self.api_provider() is not None:
             self._start_lookup(registration.id, bowler)
@@ -337,6 +868,7 @@ class RegistrationDesk(ttk.Frame):
             return
         self._refresh_teams()
         self._render_rows()
+        self._refresh_management_views()
         if self.api_provider() is not None:
             self._queue_lookups(
                 [
@@ -601,6 +1133,7 @@ class RegistrationDesk(ttk.Frame):
             messagebox.showerror("Could not update bowler", str(error), parent=self)
             return
         self._render_rows()
+        self._refresh_management_views()
         if self.api_provider() is not None:
             self._start_lookup(
                 view.registration.id, InputBowler(name, membership_id)
@@ -620,17 +1153,86 @@ class RegistrationDesk(ttk.Frame):
             messagebox.showerror("Could not update registration", str(error), parent=self)
             return
         self._render_rows()
+        self._refresh_management_views()
 
     def close(self) -> None:
         for _worker_number in range(2):
             self.lookup_queue.put(None)
 
 
+class PlayerEditDialog(tk.Toplevel):
+    def __init__(self, parent: tk.Misc, name: str, membership_id: str) -> None:
+        super().__init__(parent)
+        self.choice: tuple[str, str] | None = None
+        self.title("Edit player")
+        self.geometry("500x290")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        content = ttk.Frame(self, style="App.TFrame", padding=24)
+        content.pack(fill=tk.BOTH, expand=True)
+        content.columnconfigure(1, weight=1)
+        ttk.Label(
+            content,
+            text="Edit player identity",
+            style="Muted.TLabel",
+            font=("Segoe UI", 17, "bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 18))
+        self.name_var = tk.StringVar(value=name)
+        self.id_var = tk.StringVar(value=membership_id)
+        ttk.Label(content, text="Player name", style="Muted.TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, 12), pady=7
+        )
+        name_entry = ttk.Entry(content, textvariable=self.name_var)
+        name_entry.grid(row=1, column=1, sticky="ew", pady=7)
+        ttk.Label(content, text="Member ID", style="Muted.TLabel").grid(
+            row=2, column=0, sticky="w", padx=(0, 12), pady=7
+        )
+        ttk.Entry(content, textvariable=self.id_var).grid(
+            row=2, column=1, sticky="ew", pady=7
+        )
+        ttk.Label(
+            content,
+            text=(
+                "This updates the player across every season. "
+                "Saved averages will need rechecking."
+            ),
+            style="Muted.TLabel",
+            wraplength=340,
+        ).grid(row=3, column=1, sticky="w", pady=(5, 0))
+        buttons = ttk.Frame(content, style="App.TFrame")
+        buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(24, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
+        ttk.Button(
+            buttons,
+            text="Save player",
+            command=self._accept,
+            style="Warm.TButton",
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        name_entry.focus_set()
+        self.bind("<Return>", lambda _event: self._accept())
+
+    def _accept(self) -> None:
+        name = self.name_var.get().strip()
+        if not name:
+            messagebox.showwarning("Name needed", "Enter a player name.", parent=self)
+            return
+        self.choice = (name, self.id_var.get().strip())
+        self.destroy()
+
+    def show(self) -> tuple[str, str] | None:
+        self.wait_window()
+        return self.choice
+
+
 class CompetitionDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc) -> None:
+    def __init__(
+        self, parent: tk.Misc, competition: Competition | None = None
+    ) -> None:
         super().__init__(parent)
         self.choice: tuple[str, str, CompetitionKind] | None = None
-        self.title("New league or tournament")
+        self.competition = competition
+        self.title("Edit league or tournament" if competition else "New league or tournament")
         self.geometry("500x320")
         self.resizable(False, False)
         self.transient(parent)
@@ -640,13 +1242,19 @@ class CompetitionDialog(tk.Toplevel):
         content.columnconfigure(1, weight=1)
         ttk.Label(
             content,
-            text="Create a registration workspace",
+            text=(
+                "Edit league or tournament"
+                if competition
+                else "Create a registration workspace"
+            ),
             style="Muted.TLabel",
             font=("Segoe UI", 17, "bold"),
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 18))
-        self.kind_var = tk.StringVar(value=CompetitionKind.LEAGUE.value)
-        self.name_var = tk.StringVar()
-        self.season_var = tk.StringVar()
+        self.kind_var = tk.StringVar(
+            value=competition.kind.value if competition else CompetitionKind.LEAGUE.value
+        )
+        self.name_var = tk.StringVar(value=competition.name if competition else "")
+        self.season_var = tk.StringVar(value=competition.season if competition else "")
         for row, label in enumerate(("Type", "Name", "Season or year"), start=1):
             ttk.Label(content, text=label, style="Muted.TLabel").grid(
                 row=row, column=0, sticky="w", padx=(0, 12), pady=7
@@ -671,7 +1279,10 @@ class CompetitionDialog(tk.Toplevel):
         buttons.grid(row=5, column=0, columnspan=2, sticky="e", pady=(26, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
         ttk.Button(
-            buttons, text="Create", command=self._accept, style="Primary.TButton"
+            buttons,
+            text="Save changes" if competition else "Create",
+            command=self._accept,
+            style="Primary.TButton",
         ).pack(side=tk.LEFT, padx=(8, 0))
         name_entry.focus_set()
         self.bind("<Return>", lambda _event: self._accept())

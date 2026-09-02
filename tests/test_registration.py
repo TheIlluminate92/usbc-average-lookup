@@ -188,6 +188,62 @@ def test_correcting_member_id_can_reuse_existing_identity(tmp_path) -> None:
     assert store.registration_views(new.id)[0].bowler.membership_id == "1234-567890"
 
 
+def test_player_management_edit_updates_history_and_invalidates_averages(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.json")
+    old = store.add_competition("Monday", "2025-26", CompetitionKind.LEAGUE)
+    new = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    first = store.register_bowler(old.id, "Erik Bowler", "1234-567890")
+    store.register_bowler(new.id, "Erik Bowler", "1234-567890")
+    store.apply_lookup_result(
+        first.id,
+        LookupResult(
+            input_name="Erik Bowler",
+            status=LookupStatus.FOUND,
+            membership_id="1234-567890",
+            average=180,
+        ),
+    )
+
+    store.update_bowler_profile(store.bowlers[0].id, "Erik B.", "1234-567890")
+
+    assert store.bowlers[0].name == "Erik B."
+    assert all(item.average is None for item in store.registrations)
+    assert all(
+        item.verification is VerificationState.NOT_CHECKED
+        for item in store.registrations
+    )
+
+
+def test_team_and_competition_management_changes_persist(tmp_path) -> None:
+    path = tmp_path / "registration.json"
+    store = RegistrationStore(path)
+    competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    team = store.add_team(competition.id, "Old Name")
+
+    store.rename_team(team.id, "New Name")
+    store.update_competition(
+        competition.id, "Monday Misfits", "2026-27", CompetitionKind.LEAGUE
+    )
+    store.set_competition_archived(competition.id, True)
+
+    reopened = RegistrationStore(path)
+    assert reopened.teams[0].name == "New Name"
+    assert reopened.competitions[0].name == "Monday Misfits"
+    assert reopened.competitions[0].archived
+
+
+def test_player_management_rejects_duplicate_member_id(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.json")
+    competition = store.add_competition("Open", "2027", CompetitionKind.TOURNAMENT)
+    store.register_bowler(competition.id, "First Player", "1111-222222")
+    store.register_bowler(competition.id, "Second Player", "3333-444444")
+
+    with pytest.raises(RegistrationDataError, match="another player"):
+        store.update_bowler_profile(
+            store.bowlers[1].id, "Second Player", "1111-222222"
+        )
+
+
 def test_invalid_file_is_not_silently_overwritten(tmp_path) -> None:
     path = tmp_path / "registration.json"
     path.write_text("not json", encoding="utf-8")

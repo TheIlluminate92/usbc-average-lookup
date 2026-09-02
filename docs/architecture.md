@@ -23,6 +23,13 @@ two-worker background queue prevents a slow or ambiguous lookup from blocking
 the registration desk or creating an unbounded burst of requests. Ambiguous
 candidate lists remain a deliberate operator decision.
 
+The desktop workspace presents four domain-focused tabs. Registration is the
+fast operational screen. Player management edits the central identity and
+invalidates averages that may no longer belong to that identity. Team
+management always requires a selected league season or tournament and never
+mixes teams across competitions. League and tournament management owns names,
+season labels, type, and reversible archival.
+
 ```text
 Tkinter Windows GUI
         |
