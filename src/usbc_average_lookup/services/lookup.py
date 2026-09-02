@@ -23,6 +23,12 @@ def look_up_bowler(api: BowlApi, bowler: InputBowler) -> LookupResult:
         )
     except ValueError as error:
         return _result(bowler, LookupStatus.API_ERROR, str(error))
+    except Exception:
+        return _result(
+            bowler,
+            LookupStatus.API_ERROR,
+            "Unexpected lookup error. Try again or enter a member ID.",
+        )
 
 
 def look_up_all(api: BowlApi, bowlers: Iterable[InputBowler]) -> list[LookupResult]:
@@ -45,6 +51,13 @@ def resolve_selected_member(
         )
     except ValueError as error:
         return _result(bowler, LookupStatus.API_ERROR, str(error), member=member)
+    except Exception:
+        return _result(
+            bowler,
+            LookupStatus.API_ERROR,
+            "Unexpected lookup error. Try again or enter a member ID.",
+            member=member,
+        )
 
 
 def _resolve_matches(
@@ -79,10 +92,11 @@ def resolve_member(api: BowlApi, bowler: InputBowler, member: Member) -> LookupR
     averages = api.get_composite_averages(member.prefix, member.suffix)
     selected = select_latest_standard(averages)
     if selected is None:
-        return _result(
-            bowler,
-            LookupStatus.NO_AVERAGE,
-            "Member found, but no standard composite average is available",
+        return LookupResult(
+            input_name=bowler.name or member.display_name,
+            status=LookupStatus.NO_AVERAGE,
+            membership_id=bowler.membership_id or f"{member.prefix}-{member.suffix}",
+            note="Member found, but no standard composite average is available",
             member=member,
         )
     return LookupResult(

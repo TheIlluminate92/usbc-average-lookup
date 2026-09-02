@@ -997,6 +997,20 @@ class RegistrationStore:
             registration.note = "Waiting for BOWL.com"
         self.save()
 
+    def mark_lookup_error(self, registration_id: str, note: str) -> None:
+        snapshot = deepcopy(self.registrations)
+        try:
+            registration = self._registration(registration_id)
+            registration.verification = VerificationState.ERROR
+            registration.average = None
+            registration.average_year = ""
+            registration.games = None
+            registration.note = note.strip() or "Lookup result could not be saved"
+            self.save()
+        except Exception:
+            self.registrations = snapshot
+            raise
+
     def apply_lookup_result(self, registration_id: str, result: LookupResult) -> None:
         snapshot = (
             deepcopy(self.bowlers),
@@ -1153,6 +1167,7 @@ class RegistrationStore:
                     f"Member ID {clean_id} is already registered in this competition"
                 )
             registration.bowler_id = target.id
+            self._add_registration_to_linked_pool(registration)
             target.name = clean_name
             registration.verification = VerificationState.NOT_CHECKED
             registration.average = None

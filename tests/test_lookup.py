@@ -60,6 +60,19 @@ def test_preserves_api_error_detail_for_the_fixes_screen() -> None:
     assert result.note == "Narrow the member search"
 
 
+def test_unexpected_lookup_failure_becomes_reviewable_result() -> None:
+    class BrokenApi(FakeApi):
+        def search_members(self, name="", membership_id=""):
+            raise RuntimeError("internal detail that should not be exported")
+
+    result = look_up_bowler(BrokenApi(), InputBowler("Common Bowler"))
+
+    assert result.status is LookupStatus.API_ERROR
+    assert result.needs_attention
+    assert result.note == "Unexpected lookup error. Try again or enter a member ID."
+    assert "internal detail" not in result.note
+
+
 def test_replaces_generic_name_search_error_with_actionable_guidance() -> None:
     class ErrorApi(FakeApi):
         def search_members(self, name="", membership_id=""):
@@ -98,6 +111,8 @@ def test_returns_no_average() -> None:
     result = look_up_bowler(FakeApi([member()]), InputBowler("Alex Bowler"))
 
     assert result.status is LookupStatus.NO_AVERAGE
+    assert result.membership_id == "1234-567890"
+    assert result.member == member()
 
 
 def test_resolves_selected_candidate_without_rerunning_search() -> None:

@@ -1650,6 +1650,14 @@ class RegistrationDesk(ttk.Frame):
         try:
             self.store.mark_checking_many([registration_id for registration_id, _ in items])
         except (OSError, RegistrationDataError) as error:
+            for registration_id, _bowler in items:
+                self.bulk_pending.discard(registration_id)
+            if self.bulk_pending:
+                self.status_callback(
+                    f"{len(self.bulk_pending)} registrations still checking…"
+                )
+            else:
+                self.status_callback("Registration checks stopped")
             messagebox.showerror("Could not save lookup status", str(error), parent=self)
             return
         self._render_rows()
@@ -1686,12 +1694,27 @@ class RegistrationDesk(ttk.Frame):
         try:
             self.store.apply_lookup_result(registration_id, result)
         except (OSError, RegistrationDataError) as error:
+            try:
+                self.store.mark_lookup_error(registration_id, str(error))
+            except (OSError, RegistrationDataError):
+                pass
             messagebox.showerror("Could not save lookup result", str(error), parent=self)
+            self._render_rows()
+            self._render_players()
+            self._render_teams()
+            self._complete_lookup_progress(
+                registration_id, "Lookup needs attention"
+            )
             return
         self.lookup_results[registration_id] = result
         self._render_rows()
         self._render_players()
         self._render_teams()
+        self._complete_lookup_progress(registration_id, status_text)
+
+    def _complete_lookup_progress(
+        self, registration_id: str, status_text: str
+    ) -> None:
         if registration_id in self.bulk_pending:
             self.bulk_pending.remove(registration_id)
             remaining = len(self.bulk_pending)
@@ -1924,6 +1947,9 @@ class PlayerPickerDialog(tk.Toplevel):
         self.table.column("name", width=300, anchor="w")
         self.table.column("member_id", width=160, anchor="w")
         self.table.grid(row=2, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(content, orient=tk.VERTICAL, command=self.table.yview)
+        self.table.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=2, column=1, sticky="ns")
         for bowler in sorted(bowlers, key=lambda item: item.name.casefold()):
             self.table.insert(
                 "",
@@ -1997,6 +2023,9 @@ class LeagueDirectoryPlayerPickerDialog(tk.Toplevel):
             self.table.heading(column, text=label)
             self.table.column(column, width=width, anchor="w")
         self.table.grid(row=2, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(content, orient=tk.VERTICAL, command=self.table.yview)
+        self.table.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=2, column=1, sticky="ns")
         for bowler in sorted(bowlers, key=lambda item: item.name.casefold()):
             view = views_by_bowler_id.get(bowler.id)
             if view is None:
@@ -2092,6 +2121,9 @@ class TeamCopyDialog(tk.Toplevel):
             self.table.heading(column, text=label)
             self.table.column(column, width=width, anchor="w")
         self.table.grid(row=2, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(content, orient=tk.VERTICAL, command=self.table.yview)
+        self.table.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=2, column=1, sticky="ns")
         for team in sorted(
             teams,
             key=lambda item: (
@@ -2615,13 +2647,13 @@ class RegistrationMatchDialog(tk.Toplevel):
         self.result = result
         self.on_select = on_select
         self.title("Choose the right bowler")
-        self.geometry("680x420")
+        self.geometry("700x470")
         self.transient(parent)
         self.grab_set()
         content = ttk.Frame(self, style="App.TFrame", padding=22)
         content.pack(fill=tk.BOTH, expand=True)
         content.columnconfigure(0, weight=1)
-        content.rowconfigure(2, weight=1)
+        content.rowconfigure(3, weight=1)
         ttk.Label(
             content,
             text=f"Choose the right {result.input_name}",
@@ -2633,6 +2665,16 @@ class RegistrationMatchDialog(tk.Toplevel):
             text="The rest of registration can continue while this waits.",
             style="Muted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(3, 14))
+        search_bar = ttk.Frame(content, style="App.TFrame")
+        search_bar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        search_bar.columnconfigure(1, weight=1)
+        ttk.Label(search_bar, text="Filter matches", style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_bar, textvariable=self.search_var)
+        search_entry.grid(row=0, column=1, sticky="ew")
+        search_entry.bind("<KeyRelease>", lambda _event: self._render_candidates())
         self.table = ttk.Treeview(
             content,
             columns=("name", "id", "association", "status"),
@@ -2646,35 +2688,54 @@ class RegistrationMatchDialog(tk.Toplevel):
         ):
             self.table.heading(column, text=label)
             self.table.column(column, width=width, anchor="w")
-        self.table.grid(row=2, column=0, sticky="nsew")
-        for index, member in enumerate(result.candidates):
-            association = ", ".join(
-                value for value in (member.association, member.association_state) if value
-            )
-            self.table.insert(
-                "",
-                tk.END,
-                iid=str(index),
-                values=(
-                    member.display_name,
-                    f"{member.prefix}-{member.suffix}",
-                    association or "—",
-                    "Active" if member.active else "Inactive",
-                ),
-            )
-        if result.candidates:
-            self.table.selection_set("0")
-            self.table.focus("0")
+        self.table.grid(row=3, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(content, orient=tk.VERTICAL, command=self.table.yview)
+        self.table.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=3, column=1, sticky="ns")
         buttons = ttk.Frame(content, style="App.TFrame")
-        buttons.grid(row=3, column=0, sticky="e", pady=(14, 0))
+        buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="Not now", command=self.destroy).pack(side=tk.LEFT)
-        ttk.Button(
+        self.use_button = ttk.Button(
             buttons,
             text="Use selected bowler",
             command=self._accept,
             style="Primary.TButton",
-        ).pack(side=tk.LEFT, padx=(8, 0))
+        )
+        self.use_button.pack(side=tk.LEFT, padx=(8, 0))
         self.table.bind("<Double-1>", lambda _event: self._accept())
+        self._render_candidates()
+
+    def _render_candidates(self) -> None:
+        self.table.delete(*self.table.get_children())
+        query = " ".join(self.search_var.get().split()).casefold()
+        visible_ids: list[str] = []
+        for index, member in enumerate(self.result.candidates):
+            member_id = f"{member.prefix}-{member.suffix}"
+            association = ", ".join(
+                value
+                for value in (member.association, member.association_state)
+                if value
+            )
+            searchable = f"{member.display_name} {member_id} {association}".casefold()
+            if query and query not in searchable:
+                continue
+            item_id = str(index)
+            visible_ids.append(item_id)
+            self.table.insert(
+                "",
+                tk.END,
+                iid=item_id,
+                values=(
+                    member.display_name,
+                    member_id,
+                    association or "—",
+                    "Active" if member.active else "Inactive",
+                ),
+            )
+        if visible_ids:
+            self.table.selection_set(visible_ids[0])
+            self.table.focus(visible_ids[0])
+        self.use_button.configure(state=tk.NORMAL if visible_ids else tk.DISABLED)
 
     def _accept(self) -> None:
         selected = self.table.selection()

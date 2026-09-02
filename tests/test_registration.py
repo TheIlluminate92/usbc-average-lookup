@@ -283,6 +283,25 @@ def test_correcting_member_id_can_reuse_existing_identity(tmp_path) -> None:
     assert store.registration_views(new.id)[0].bowler.membership_id == "1234-567890"
 
 
+def test_correcting_to_existing_identity_adds_player_to_linked_pool(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.db")
+    prior = store.add_competition("Monday", "2025-26", CompetitionKind.LEAGUE)
+    other = store.add_competition("Tuesday", "2026-27", CompetitionKind.LEAGUE)
+    current = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    pool = store.add_player_pool("2026-27")
+    store.set_competition_player_pool(current.id, pool.id)
+    target = store.register_bowler(prior.id, "Correct Player", "1111-222222")
+    typo = store.register_bowler(current.id, "Correct Player", "3333-444444")
+    store.register_existing_bowler(other.id, typo.bowler_id)
+
+    store.update_registration(
+        typo.id, "Correct Player", "1111-222222", ""
+    )
+
+    assert store.registration_views(current.id)[0].bowler.id == target.bowler_id
+    assert target.bowler_id in {item.id for item in store.pool_bowlers(pool.id)}
+
+
 def test_player_management_edit_updates_history_and_invalidates_averages(tmp_path) -> None:
     store = RegistrationStore(tmp_path / "registration.json")
     old = store.add_competition("Monday", "2025-26", CompetitionKind.LEAGUE)

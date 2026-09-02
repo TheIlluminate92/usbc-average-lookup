@@ -61,6 +61,7 @@ class AverageLookupApp(tk.Tk):
         self.configure(background=COLORS["canvas"])
         self.results: list[LookupResult] = []
         self.bowlers: list[InputBowler] = []
+        self.lookup_generation = 0
         self.selected_path: Path | None = None
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)
         self.signing_in = False
@@ -472,6 +473,8 @@ class AverageLookupApp(tk.Tk):
             messagebox.showerror("Could not read roster", str(error))
             return
         self.selected_path = path
+        self.lookup_generation += 1
+        self._close_issue_dialogs()
         self.bowlers = bowlers
         self.results = []
         self.file_label.configure(text=path.name)
@@ -491,14 +494,28 @@ class AverageLookupApp(tk.Tk):
             return
         self.lookup_button.configure(state=tk.DISABLED)
         self.auth_status.configure(text="Looking up averages…")
-        Thread(target=self._lookup_worker, daemon=True).start()
+        self.lookup_generation += 1
+        generation = self.lookup_generation
+        Thread(
+            target=self._lookup_worker,
+            args=(self.api, generation, list(self.bowlers)),
+            daemon=True,
+        ).start()
 
-    def _lookup_worker(self) -> None:
-        assert self.api is not None
-        results = look_up_all(self.api, self.bowlers)
-        self.after(0, self._lookup_finished, results)
+    def _lookup_worker(
+        self,
+        api: HttpBowlApi,
+        generation: int,
+        bowlers: list[InputBowler],
+    ) -> None:
+        results = look_up_all(api, bowlers)
+        self.after(0, self._lookup_finished, generation, results)
 
-    def _lookup_finished(self, results: list[LookupResult]) -> None:
+    def _lookup_finished(
+        self, generation: int, results: list[LookupResult]
+    ) -> None:
+        if generation != self.lookup_generation:
+            return
         self.results = results
         self._render_results()
         self.auth_status.configure(text="Lookup complete")
@@ -508,31 +525,43 @@ class AverageLookupApp(tk.Tk):
         if self.api is None:
             messagebox.showwarning("Sign in needed", "Sign in to BOWL.com first.")
             return
+        replace_roster = False
         if self.bowlers and len(self.bowlers) != len(self.results):
-            replace = messagebox.askyesno(
+            replace_roster = messagebox.askyesno(
                 "Roster not processed",
                 "The selected roster has not been looked up. Start a separate single lookup?",
             )
-            if not replace:
+            if not replace_roster:
                 return
-            self.bowlers = []
-            self.results = []
-            self.selected_path = None
         bowler = SingleLookupDialog(self).show()
         if bowler is None:
             return
+        if replace_roster:
+            self.bowlers = []
+            self.results = []
+            self.selected_path = None
+            self._close_issue_dialogs()
         self.single_button.configure(state=tk.DISABLED)
         self.auth_status.configure(text="Looking up one bowler…")
-        Thread(target=self._single_lookup_worker, args=(bowler,), daemon=True).start()
+        self.lookup_generation += 1
+        generation = self.lookup_generation
+        Thread(
+            target=self._single_lookup_worker,
+            args=(self.api, generation, bowler),
+            daemon=True,
+        ).start()
 
-    def _single_lookup_worker(self, bowler: InputBowler) -> None:
-        assert self.api is not None
-        result = look_up_bowler(self.api, bowler)
-        self.after(0, self._single_lookup_finished, bowler, result)
+    def _single_lookup_worker(
+        self, api: HttpBowlApi, generation: int, bowler: InputBowler
+    ) -> None:
+        result = look_up_bowler(api, bowler)
+        self.after(0, self._single_lookup_finished, generation, bowler, result)
 
     def _single_lookup_finished(
-        self, bowler: InputBowler, result: LookupResult
+        self, generation: int, bowler: InputBowler, result: LookupResult
     ) -> None:
+        if generation != self.lookup_generation:
+            return
         self.bowlers.append(bowler)
         self.results.append(result)
         if self.selected_path is None:
@@ -553,6 +582,8 @@ class AverageLookupApp(tk.Tk):
             self.fixes_table.see(str(index))
 
     def _clear_results(self) -> None:
+        self.lookup_generation += 1
+        self._close_issue_dialogs()
         self.results = []
         self._render_results()
         self.auth_status.configure(
@@ -636,9 +667,11 @@ class AverageLookupApp(tk.Tk):
             messagebox.showwarning("Sign in needed", "Sign in to BOWL.com first.")
             return
         self.auth_status.configure(text=f"Retrying {bowler.name}…")
+        self.lookup_generation += 1
+        generation = self.lookup_generation
         Thread(
             target=self._fix_worker,
-            args=(index, bowler, None, move_next),
+            args=(self.api, generation, index, bowler, None, move_next),
             daemon=True,
         ).start()
 
@@ -649,34 +682,48 @@ class AverageLookupApp(tk.Tk):
             messagebox.showwarning("Sign in needed", "Sign in to BOWL.com first.")
             return
         self.auth_status.configure(text=f"Updating {bowler.name}…")
+        self.lookup_generation += 1
+        generation = self.lookup_generation
         Thread(
             target=self._fix_worker,
-            args=(index, bowler, member, move_next),
+            args=(self.api, generation, index, bowler, member, move_next),
             daemon=True,
         ).start()
 
     def _fix_worker(
         self,
+        api: HttpBowlApi,
+        generation: int,
         index: int,
         bowler: InputBowler,
         member: Member | None,
         move_next: bool,
     ) -> None:
-        assert self.api is not None
         result = (
-            resolve_selected_member(self.api, bowler, member)
+            resolve_selected_member(api, bowler, member)
             if member is not None
-            else look_up_bowler(self.api, bowler)
+            else look_up_bowler(api, bowler)
         )
-        self.after(0, self._fix_finished, index, bowler, result, move_next)
+        self.after(
+            0,
+            self._fix_finished,
+            generation,
+            index,
+            bowler,
+            result,
+            move_next,
+        )
 
     def _fix_finished(
         self,
+        generation: int,
         index: int,
         bowler: InputBowler,
         result: LookupResult,
         move_next: bool,
     ) -> None:
+        if generation != self.lookup_generation:
+            return
         self.bowlers[index] = bowler
         self.results[index] = result
         self._close_issue_dialogs()
@@ -925,7 +972,24 @@ class IssueDialog(tk.Toplevel):
         candidate_frame = ttk.Frame(content, style="Surface.TFrame", padding=8)
         candidate_frame.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(14, 12))
         candidate_frame.columnconfigure(0, weight=1)
-        candidate_frame.rowconfigure(0, weight=1)
+        candidate_frame.rowconfigure(1, weight=1)
+        self.candidate_search_var = tk.StringVar()
+        candidate_search_bar = ttk.Frame(candidate_frame, style="Surface.TFrame")
+        candidate_search_bar.grid(
+            row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8)
+        )
+        candidate_search_bar.columnconfigure(1, weight=1)
+        ttk.Label(
+            candidate_search_bar,
+            text="Filter matches",
+            style="Surface.TLabel",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        candidate_search = ttk.Entry(
+            candidate_search_bar,
+            textvariable=self.candidate_search_var,
+        )
+        candidate_search.grid(row=0, column=1, sticky="ew")
+        candidate_search.bind("<KeyRelease>", lambda _event: self._render_candidates())
         self.candidate_table = ttk.Treeview(
             candidate_frame,
             columns=("name", "id", "association", "active"),
@@ -940,35 +1004,14 @@ class IssueDialog(tk.Toplevel):
         ):
             self.candidate_table.heading(column, text=label)
             self.candidate_table.column(column, width=width, anchor="w")
-        self.candidate_table.grid(row=0, column=0, sticky="nsew")
-        for index, member in enumerate(self.result.candidates):
-            association = ", ".join(
-                part for part in (member.association, member.association_state) if part
-            )
-            self.candidate_table.insert(
-                "",
-                tk.END,
-                iid=str(index),
-                values=(
-                    member.display_name,
-                    f"{member.prefix}-{member.suffix}",
-                    association or "—",
-                    "Active" if member.active else "Inactive",
-                ),
-            )
-        if self.result.candidates:
-            self.candidate_table.selection_set("0")
-            self.candidate_table.focus("0")
-        else:
-            guidance = (
-                "Enter a member ID above and retry"
-                if self.result.status is LookupStatus.API_ERROR
-                and not self.result.membership_id
-                else "Edit above and retry"
-            )
-            self.candidate_table.insert(
-                "", tk.END, values=("No selectable matches", "—", guidance, "—")
-            )
+        self.candidate_table.grid(row=1, column=0, sticky="nsew")
+        candidate_scrollbar = ttk.Scrollbar(
+            candidate_frame,
+            orient=tk.VERTICAL,
+            command=self.candidate_table.yview,
+        )
+        self.candidate_table.configure(yscrollcommand=candidate_scrollbar.set)
+        candidate_scrollbar.grid(row=1, column=1, sticky="ns")
 
         self.next_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
@@ -990,6 +1033,54 @@ class IssueDialog(tk.Toplevel):
             state=tk.NORMAL if self.result.candidates else tk.DISABLED,
         )
         self.use_button.pack(side=tk.LEFT, padx=(8, 0))
+        self._render_candidates()
+
+    def _render_candidates(self) -> None:
+        self.candidate_table.delete(*self.candidate_table.get_children())
+        query = " ".join(self.candidate_search_var.get().split()).casefold()
+        visible_ids: list[str] = []
+        for index, member in enumerate(self.result.candidates):
+            member_id = f"{member.prefix}-{member.suffix}"
+            association = ", ".join(
+                part for part in (member.association, member.association_state) if part
+            )
+            searchable = f"{member.display_name} {member_id} {association}".casefold()
+            if query and query not in searchable:
+                continue
+            item_id = str(index)
+            visible_ids.append(item_id)
+            self.candidate_table.insert(
+                "",
+                tk.END,
+                iid=item_id,
+                values=(
+                    member.display_name,
+                    member_id,
+                    association or "—",
+                    "Active" if member.active else "Inactive",
+                ),
+            )
+        if visible_ids:
+            self.candidate_table.selection_set(visible_ids[0])
+            self.candidate_table.focus(visible_ids[0])
+        else:
+            guidance = (
+                "No matches for this filter"
+                if self.result.candidates
+                else (
+                    "Enter a member ID above and retry"
+                    if self.result.status is LookupStatus.API_ERROR
+                    and not self.result.membership_id
+                    else "Edit above and retry"
+                )
+            )
+            self.candidate_table.insert(
+                "", tk.END, values=("No selectable matches", "—", guidance, "—")
+            )
+        if hasattr(self, "use_button"):
+            self.use_button.configure(
+                state=tk.NORMAL if visible_ids else tk.DISABLED
+            )
 
     def _bowler(self) -> InputBowler | None:
         name = self.name_var.get().strip()
