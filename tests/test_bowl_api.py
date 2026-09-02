@@ -145,3 +145,42 @@ def test_member_search_uses_the_correct_route(
     HttpBowlApi(lambda: "token").search_members(name, membership_id)
 
     assert expected_path in requested_urls[0]
+
+
+def test_rejects_successful_member_response_without_results(monkeypatch) -> None:
+    response = io.BytesIO(
+        b'{"isSuccess": true, "validationErrors": [], "errors": [], "data": null}'
+    )
+    monkeypatch.setattr(bowl_api, "urlopen", lambda request, timeout: response)
+
+    with pytest.raises(BowlApiError, match="unexpected member-search response"):
+        HttpBowlApi(lambda: "token").search_members("Alex Bowler")
+
+
+def test_rejects_text_member_active_flag() -> None:
+    with pytest.raises(BowlApiError, match="invalid active flag"):
+        _parse_member(
+            {
+                "id": "100",
+                "prefix": "1234",
+                "suffix": "567890",
+                "first": "Alex",
+                "last": "Bowler",
+                "active": "false",
+            }
+        )
+
+
+@pytest.mark.parametrize("field", ["sport", "challenge"])
+def test_rejects_text_composite_boolean_flags(field: str) -> None:
+    record = {
+        "year": "2025",
+        "sport": False,
+        "challenge": False,
+        "games": 188,
+        "avg": 153,
+    }
+    record[field] = "false"
+
+    with pytest.raises(BowlApiError, match=f"invalid {field} flag"):
+        _parse_composite_average(record)
