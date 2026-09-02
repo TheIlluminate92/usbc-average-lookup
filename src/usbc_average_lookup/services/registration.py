@@ -877,25 +877,98 @@ class RegistrationStore:
         self.save()
 
     def apply_lookup_result(self, registration_id: str, result: LookupResult) -> None:
-        registration = self._registration(registration_id)
-        bowler = self._bowler(registration.bowler_id)
-        if result.membership_id:
-            bowler.membership_id = result.membership_id
-        registration.average = result.average
-        registration.average_year = result.year
-        registration.games = result.games
-        registration.note = result.note
-        if result.status is LookupStatus.FOUND or result.confirmed_inactive:
-            registration.verification = VerificationState.VERIFIED
-        elif result.status is LookupStatus.MULTIPLE_MATCHES:
-            registration.verification = VerificationState.NEEDS_REVIEW
-        elif result.status is LookupStatus.NOT_FOUND:
-            registration.verification = VerificationState.NOT_FOUND
-        elif result.status is LookupStatus.NO_AVERAGE:
-            registration.verification = VerificationState.NO_AVERAGE
-        else:
-            registration.verification = VerificationState.ERROR
-        self.save()
+        snapshot = (
+            deepcopy(self.bowlers),
+            deepcopy(self.player_pool_entries),
+            deepcopy(self.registrations),
+        )
+        try:
+            registration = self._registration(registration_id)
+            bowler = self._bowler(registration.bowler_id)
+            if result.membership_id:
+                self._apply_result_identity(
+                    registration, bowler, result.membership_id.strip()
+                )
+            registration.average = result.average
+            registration.average_year = result.year
+            registration.games = result.games
+            registration.note = result.note
+            if result.status is LookupStatus.FOUND or result.confirmed_inactive:
+                registration.verification = VerificationState.VERIFIED
+            elif result.status is LookupStatus.MULTIPLE_MATCHES:
+                registration.verification = VerificationState.NEEDS_REVIEW
+            elif result.status is LookupStatus.NOT_FOUND:
+                registration.verification = VerificationState.NOT_FOUND
+            elif result.status is LookupStatus.NO_AVERAGE:
+                registration.verification = VerificationState.NO_AVERAGE
+            else:
+                registration.verification = VerificationState.ERROR
+            self.save()
+        except Exception:
+            self.bowlers, self.player_pool_entries, self.registrations = snapshot
+            raise
+
+    def _apply_result_identity(
+        self,
+        registration: Registration,
+        current_bowler: BowlerProfile,
+        membership_id: str,
+    ) -> None:
+        target = next(
+            (
+                bowler
+                for bowler in self.bowlers
+                if bowler.id != current_bowler.id
+                and bowler.membership_id
+                and _membership_key(bowler.membership_id)
+                == _membership_key(membership_id)
+            ),
+            None,
+        )
+        if target is None:
+            current_bowler.membership_id = membership_id
+            return
+        if any(
+            item.id != registration.id
+            and item.competition_id == registration.competition_id
+            and item.bowler_id == target.id
+            for item in self.registrations
+        ):
+            raise RegistrationDataError(
+                f"Member ID {membership_id} is already registered in this competition"
+            )
+
+        current_registrations = [
+            item for item in self.registrations if item.bowler_id == current_bowler.id
+        ]
+        target_competition_ids = {
+            item.competition_id
+            for item in self.registrations
+            if item.bowler_id == target.id
+        }
+        can_merge_profile = not any(
+            item.competition_id in target_competition_ids
+            for item in current_registrations
+        )
+        if can_merge_profile:
+            for item in current_registrations:
+                item.bowler_id = target.id
+            for pool_entry in self.player_pool_entries:
+                if pool_entry.bowler_id == current_bowler.id:
+                    pool_entry.bowler_id = target.id
+            self._deduplicate_pool_entries()
+            self.bowlers.remove(current_bowler)
+            return
+
+        registration.bowler_id = target.id
+        competition = self._competition(registration.competition_id)
+        if competition.player_pool_id and not any(
+            item.pool_id == competition.player_pool_id and item.bowler_id == target.id
+            for item in self.player_pool_entries
+        ):
+            self.player_pool_entries.append(
+                PlayerPoolEntry(competition.player_pool_id, target.id)
+            )
 
     def assign_team(self, registration_id: str, team_id: str) -> None:
         registration = self._registration(registration_id)

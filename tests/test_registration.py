@@ -125,6 +125,88 @@ def test_lookup_result_updates_registration_without_replacing_raw_score(tmp_path
     assert view.status == "Ready"
 
 
+def test_reviewed_lookup_reuses_existing_player_identity_and_pool_entry(tmp_path) -> None:
+    path = tmp_path / "registration.db"
+    store = RegistrationStore(path)
+    prior = store.add_competition("Monday", "2025-26", CompetitionKind.LEAGUE)
+    other = store.add_competition("Tuesday", "2025-26", CompetitionKind.LEAGUE)
+    current = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    pool = store.add_player_pool("2026-27")
+    store.set_competition_player_pool(current.id, pool.id)
+    known = store.register_bowler(prior.id, "David Brown", "1111-222222")
+    store.register_bowler(other.id, "David Brown", "3333-444444")
+    pending = store.register_bowler(current.id, "David Brown")
+    known_bowler_id = known.bowler_id
+    pending_bowler_id = pending.bowler_id
+
+    store.apply_lookup_result(
+        pending.id,
+        LookupResult(
+            input_name="David Brown",
+            status=LookupStatus.FOUND,
+            membership_id="1111-222222",
+            average=181,
+            year="2025",
+            games=60,
+        ),
+    )
+
+    view = store.registration_views(current.id)[0]
+    assert view.bowler.id == known_bowler_id
+    assert view.bowler.membership_id == "1111-222222"
+    assert pending_bowler_id not in {item.id for item in store.bowlers}
+    assert len(store.bowlers) == 2
+    assert {item.id for item in store.pool_bowlers(pool.id)} == {
+        known_bowler_id,
+    }
+
+    reopened = RegistrationStore(path)
+    assert reopened.registration_views(current.id)[0].bowler.id == known_bowler_id
+    assert {item.id for item in reopened.pool_bowlers(pool.id)} == {
+        known_bowler_id,
+    }
+
+
+def test_reviewed_lookup_rejects_member_already_in_same_competition(tmp_path) -> None:
+    path = tmp_path / "registration.db"
+    store = RegistrationStore(path)
+    competition = store.add_competition("Open", "2027", CompetitionKind.TOURNAMENT)
+    store.register_bowler(competition.id, "David Brown", "1111-222222")
+    other = store.register_bowler(
+        competition.id, "David Brown", "3333-444444"
+    )
+    original_bowler_id = other.bowler_id
+
+    with pytest.raises(RegistrationDataError, match="already registered"):
+        store.apply_lookup_result(
+            other.id,
+            LookupResult(
+                input_name="David Brown",
+                status=LookupStatus.FOUND,
+                membership_id="1111-222222",
+                average=181,
+            ),
+        )
+
+    view = next(
+        item
+        for item in store.registration_views(competition.id)
+        if item.registration.id == other.id
+    )
+    assert view.bowler.id == original_bowler_id
+    assert view.bowler.membership_id == "3333-444444"
+    assert view.registration.verification is VerificationState.NOT_CHECKED
+
+    reopened = RegistrationStore(path)
+    reopened_view = next(
+        item
+        for item in reopened.registration_views(competition.id)
+        if item.registration.id == other.id
+    )
+    assert reopened_view.bowler.id == original_bowler_id
+    assert reopened_view.bowler.membership_id == "3333-444444"
+
+
 def test_interrupted_check_resets_to_not_checked_on_restart(tmp_path) -> None:
     path = tmp_path / "registration.json"
     store = RegistrationStore(path)

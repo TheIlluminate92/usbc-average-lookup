@@ -844,6 +844,7 @@ class RegistrationDesk(ttk.Frame):
             return
         self._render_players()
         self._render_rows()
+        self._render_teams()
         self.status_callback("Player updated; affected averages need rechecking")
 
     def _refresh_team_management_competitions(self) -> None:
@@ -1312,6 +1313,7 @@ class RegistrationDesk(ttk.Frame):
             return
         self._render_competitions()
         self._refresh_player_pools()
+        self._render_players()
 
     def _edit_managed_competition(self) -> None:
         if self.store is None:
@@ -1534,6 +1536,7 @@ class RegistrationDesk(ttk.Frame):
             messagebox.showerror("Could not save lookup status", str(error), parent=self)
             return
         self._render_rows()
+        self._render_teams()
         for registration_id, bowler in items:
             self.lookup_queue.put((api, registration_id, bowler))
         if len(items) == 1:
@@ -1570,6 +1573,8 @@ class RegistrationDesk(ttk.Frame):
             return
         self.lookup_results[registration_id] = result
         self._render_rows()
+        self._render_players()
+        self._render_teams()
         if registration_id in self.bulk_pending:
             self.bulk_pending.remove(registration_id)
             remaining = len(self.bulk_pending)
