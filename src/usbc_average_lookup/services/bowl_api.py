@@ -81,7 +81,14 @@ class HttpBowlApi:
             allow_unsuccessful=True,
         )
         data = payload.get("data")
-        records = data.get("results", []) if isinstance(data, dict) else []
+        if not isinstance(data, dict):
+            if payload.get("isSuccess") is not True:
+                detail = _response_error(payload)
+                if detail:
+                    raise BowlApiError(detail)
+                return []
+            raise BowlApiError("BOWL.com returned an unexpected member-search response")
+        records = data.get("results")
         if not isinstance(records, list):
             raise BowlApiError("BOWL.com returned an unexpected member-search response")
         members = [_parse_member(record) for record in records]
@@ -106,7 +113,9 @@ class HttpBowlApi:
             },
         )
         data = payload.get("data")
-        records = data.get("results", []) if isinstance(data, dict) else []
+        if not isinstance(data, dict):
+            raise BowlApiError("BOWL.com returned an unexpected average response")
+        records = data.get("results")
         if not isinstance(records, list):
             raise BowlApiError("BOWL.com returned an unexpected average response")
         return [_parse_composite_average(record) for record in records]
@@ -181,6 +190,16 @@ def _split_name(name: str) -> tuple[str, str]:
     return pieces[0], pieces[-1]
 
 
+def _required_boolean(record: dict, field: str) -> bool:
+    try:
+        value = record[field]
+    except (KeyError, TypeError) as error:
+        raise BowlApiError("BOWL.com returned an incomplete record") from error
+    if not isinstance(value, bool):
+        raise BowlApiError(f"BOWL.com returned an invalid {field} flag")
+    return value
+
+
 def _parse_member(record: dict) -> Member:
     try:
         return Member(
@@ -189,7 +208,7 @@ def _parse_member(record: dict) -> Member:
             suffix=str(record["suffix"]),
             first_name=str(record["first"]),
             last_name=str(record["last"]),
-            active=bool(record["active"]),
+            active=_required_boolean(record, "active"),
             association=str(record.get("assn", "")),
             association_state=str(record.get("assnstate", "")),
         )
@@ -203,8 +222,8 @@ def _parse_composite_average(record: dict) -> CompositeAverage:
             year=str(record["year"]),
             games=int(record["games"]),
             average=int(record["avg"]),
-            sport=bool(record["sport"]),
-            challenge=bool(record["challenge"]),
+            sport=_required_boolean(record, "sport"),
+            challenge=_required_boolean(record, "challenge"),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise BowlApiError("BOWL.com returned an incomplete average record") from error
