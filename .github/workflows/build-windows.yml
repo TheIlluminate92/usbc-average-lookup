@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    tags: ["v*"]
     paths:
       - "src/**"
       - "pyproject.toml"
       - ".github/workflows/build-windows.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -59,3 +60,22 @@ jobs:
           path: dist/USBC-Average-Lookup
           if-no-files-found: error
           retention-days: 14
+      - name: Package Windows download
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: >-
+          Compress-Archive
+          -Path dist/USBC-Average-Lookup
+          -DestinationPath USBC-Average-Lookup-Windows.zip
+      - name: Publish test release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            USBC-Average-Lookup-Windows.zip `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "Bowling Manager $env:GITHUB_REF_NAME" `
+            --notes "Windows test build with SQLite storage, season player pools, and regular/substitute roster management. Extract the ZIP and run USBC-Average-Lookup.exe." `
+            --prerelease
