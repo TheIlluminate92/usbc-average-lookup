@@ -44,8 +44,11 @@ retained in the UI and issue export with an explanatory note.
 
 ## Input formats
 
-The model accepts `.csv` and `.txt` files with comma, tab, pipe, or semicolon
-delimiters. A header is optional:
+The current parser accepts `.csv`, `.tsv`, `.txt`, `.json`, and `.xlsx`
+files. Delimited text may use commas, tabs, pipes, or semicolons, and a header is
+optional. These formats are a flexible starting point rather than a frozen
+interchange contract; support can evolve once representative league files are
+available:
 
 ```csv
 Name,Membership ID
@@ -66,7 +69,7 @@ Every input row remains visible in the output, including failures:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedAt": "2026-08-30T12:00:00+00:00",
   "summary": {
     "processed": 2,
