@@ -46,6 +46,29 @@ class CompositeAverage:
 
 
 @dataclass(frozen=True, slots=True)
+class LeagueAverage:
+    league_id: str
+    league_name: str
+    season: str
+    center_id: str
+    center_name: str
+    association_id: str
+    association_name: str
+    association_number: str
+    year: str
+    average: int
+    games: int
+    sport: bool
+    challenge: bool
+    roll_and_grow: bool
+    bumper: bool
+    string_pin: bool
+    pattern: str = ""
+    hand: str = ""
+    adjusted_average: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class LookupResult:
     input_name: str
     status: LookupStatus
