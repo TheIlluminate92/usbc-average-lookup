@@ -5,6 +5,7 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+- Made Registration the first and default top-level workspace.
 - Reconciled all GitHub documentation with the current v0.5 application.
 - Added a full operator user guide.
 - Documented current limits, local-data/privacy boundaries, database backup and

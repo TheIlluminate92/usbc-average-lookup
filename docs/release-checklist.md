@@ -20,8 +20,8 @@ database copy used.
 
 - Extract the ZIP into a new empty folder and start the executable from the
   extracted folder.
-- Confirm the main window shows League Manager, Registration, and Average
-  lookup.
+- Confirm the main window opens on Registration, followed by League Manager
+  and Average lookup.
 - Confirm the build does not require Python to be installed.
 - Confirm existing schema-version 3 data opens unchanged.
 - Upgrade a copy of each older supported SQLite schema and verify an adjacent

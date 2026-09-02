@@ -43,8 +43,8 @@ Tkinter application
 `AverageLookupApp` is the application shell. It owns authentication state and
 the three top-level notebooks:
 
-- League Manager
 - Registration
+- League Manager
 - Average lookup
 
 `RegistrationDesk` controls the separate Registration workspace and the four

@@ -244,8 +244,8 @@ class AverageLookupApp(tk.Tk):
         lookup_workspace = ttk.Frame(self.workspace, style="App.TFrame")
         league_workspace = ttk.Frame(self.workspace, style="App.TFrame")
         registration_workspace = ttk.Frame(self.workspace, style="App.TFrame")
-        self.workspace.add(league_workspace, text="League Manager")
         self.workspace.add(registration_workspace, text="Registration")
+        self.workspace.add(league_workspace, text="League Manager")
         self.workspace.add(lookup_workspace, text="Average lookup")
 
         main = ttk.Frame(

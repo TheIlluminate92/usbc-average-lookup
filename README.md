@@ -34,8 +34,11 @@ extracted program folder does not copy league data.
 
 ## Current application
 
-The main window has three top-level workspaces:
+The main window opens on Registration and has three top-level workspaces:
 
+- **Registration** supports fast single-player entry, whole-team entry, and
+  one-step registration into multiple leagues with a separate team assignment
+  for each.
 - **League Manager**
   - **Leagues & Seasons** creates and archives league-season or tournament
     workspaces, links player pools, manages teams and players, and opens score
@@ -46,9 +49,6 @@ The main window has three top-level workspaces:
     team-specific substitutes, and the league-wide substitute pool.
   - **Scores** stores permanent weekly league score sheets, individual games,
     calculated team totals, and correction history.
-- **Registration** supports fast single-player entry, whole-team entry, and
-  one-step registration into multiple leagues with a separate team assignment
-  for each.
 - **Average lookup** imports a roster or accepts one player, checks BOWL.com,
   resolves ambiguous matches, exports results, and can add the result list to
   the permanent player directory.
