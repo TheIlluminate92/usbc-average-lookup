@@ -7,6 +7,7 @@ from usbc_average_lookup.services.registration import (
     CompetitionKind,
     RegistrationDataError,
     RegistrationStore,
+    RosterRole,
     VerificationState,
 )
 
@@ -65,6 +66,17 @@ def test_different_member_ids_keep_same_named_bowlers_separate(tmp_path) -> None
 
     assert len(store.bowlers) == 2
     assert len(store.registration_views(competition.id)) == 2
+
+
+def test_failed_duplicate_registration_does_not_change_player_identity(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.json")
+    competition = store.add_competition("Open", "2027", CompetitionKind.TOURNAMENT)
+    store.register_bowler(competition.id, "David Brown")
+
+    with pytest.raises(RegistrationDataError, match="already registered"):
+        store.register_bowler(competition.id, "David Brown", "1111-222222")
+
+    assert store.bowlers[0].membership_id == ""
 
 
 def test_team_registration_is_atomic_when_a_bowler_is_duplicate(tmp_path) -> None:
@@ -244,6 +256,87 @@ def test_player_management_rejects_duplicate_member_id(tmp_path) -> None:
         )
 
 
+def test_substitute_can_be_league_wide_or_assigned_to_team(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.json")
+    competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    team = store.add_team(competition.id, "Team One")
+    registration = store.register_bowler(
+        competition.id,
+        "Sub Player",
+        "1234-567890",
+        roster_role=RosterRole.SUBSTITUTE,
+    )
+
+    view = store.registration_views(competition.id)[0]
+    assert view.team is None
+    assert view.registration.roster_role is RosterRole.SUBSTITUTE
+    assert view.status == "Not checked"
+
+    store.assign_registration(
+        registration.id, team.id, RosterRole.SUBSTITUTE
+    )
+
+    assigned = store.registration_views(competition.id)[0]
+    assert assigned.team.name == "Team One"
+    assert assigned.registration.roster_role is RosterRole.SUBSTITUTE
+
+
+def test_removing_player_from_team_keeps_league_registration(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.json")
+    competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    team = store.add_team(competition.id, "Team One")
+    registration = store.register_bowler(
+        competition.id, "Regular Player", team_id=team.id
+    )
+
+    store.assign_registration(registration.id, "", RosterRole.REGULAR)
+
+    view = store.registration_views(competition.id)[0]
+    assert view.team is None
+    assert view.status == "Unassigned team"
+    assert len(store.registrations) == 1
+
+
+def test_yearly_player_pool_can_be_copied_without_changing_prior_year(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.json")
+    competition = store.add_competition("Monday", "2025-26", CompetitionKind.LEAGUE)
+    player = store.register_bowler(competition.id, "Player One")
+    old_pool = store.add_player_pool("2025-26")
+    store.add_bowler_to_pool(old_pool.id, player.bowler_id)
+
+    new_pool = store.copy_player_pool(old_pool.id, "2026-27")
+    store.remove_bowler_from_pool(new_pool.id, player.bowler_id)
+
+    assert [item.name for item in store.pool_bowlers(old_pool.id)] == ["Player One"]
+    assert store.pool_bowlers(new_pool.id) == []
+
+
+def test_linked_competition_automatically_adds_registrations_to_pool(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.json")
+    pool = store.add_player_pool("2026-27")
+    competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    store.set_competition_player_pool(competition.id, pool.id)
+
+    registration = store.register_bowler(competition.id, "Player One")
+
+    assert [item.id for item in store.pool_bowlers(pool.id)] == [
+        registration.bowler_id
+    ]
+
+
+def test_linking_pool_includes_players_already_registered_for_season(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.json")
+    competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    registration = store.register_bowler(competition.id, "Player One")
+    pool = store.add_player_pool("2026-27")
+
+    store.set_competition_player_pool(competition.id, pool.id)
+
+    assert [item.id for item in store.pool_bowlers(pool.id)] == [
+        registration.bowler_id
+    ]
+
+
 def test_invalid_file_is_not_silently_overwritten(tmp_path) -> None:
     path = tmp_path / "registration.json"
     path.write_text("not json", encoding="utf-8")
@@ -261,5 +354,28 @@ def test_json_uses_versioned_plain_data(tmp_path) -> None:
 
     document = json.loads(path.read_text(encoding="utf-8"))
 
-    assert document["schemaVersion"] == 1
+    assert document["schemaVersion"] == 2
     assert document["competitions"][0]["kind"] == "Tournament"
+
+
+def test_version_one_registration_data_migrates_on_next_save(tmp_path) -> None:
+    path = tmp_path / "registration.json"
+    store = RegistrationStore(path)
+    competition = store.add_competition("Monday", "2025-26", CompetitionKind.LEAGUE)
+    store.register_bowler(competition.id, "Player One")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["schemaVersion"] = 1
+    document.pop("playerPools")
+    document.pop("playerPoolEntries")
+    for item in document["competitions"]:
+        item.pop("player_pool_id")
+    for item in document["registrations"]:
+        item.pop("roster_role")
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    migrated = RegistrationStore(path)
+    migrated.save()
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["schemaVersion"] == 2
+    assert migrated.registrations[0].roster_role is RosterRole.REGULAR

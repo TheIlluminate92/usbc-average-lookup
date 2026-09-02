@@ -5,15 +5,22 @@ through the GUI or export logic.
 
 ## Registration domain
 
-Registration is intentionally separated into four records:
+Registration is intentionally separated into six records:
 
 - `BowlerProfile` is the reusable person identity and optional USBC member ID.
+- `PlayerPool` is an independently editable season/year list.
+- `PlayerPoolEntry` connects a reusable bowler identity to a season pool.
 - `Competition` is one league season or one tournament.
 - `Team` belongs to exactly one competition.
 - `Registration` connects a bowler to a competition and its current team while
-  retaining lookup state, selected average, and withdrawal state.
+  retaining regular/substitute role, lookup state, selected average, and
+  withdrawal state.
 
-This prevents annual team changes from rewriting earlier seasons. The first
+This prevents annual team changes or player-pool edits from rewriting earlier
+seasons. A competition can link to a player pool; current and future
+registrations are then included in that pool. Removing a registration from a
+team clears only the team assignment, while withdrawal remains a separate
+operation. The first
 storage adapter is a local, schema-versioned JSON document written atomically.
 The UI talks to `RegistrationStore`, not directly to JSON, so a later SQLite or
 shared-service adapter does not need to change the registration screens.
@@ -27,8 +34,10 @@ The desktop workspace presents four domain-focused tabs. Registration is the
 fast operational screen. Player management edits the central identity and
 invalidates averages that may no longer belong to that identity. Team
 management always requires a selected league season or tournament and never
-mixes teams across competitions. League and tournament management owns names,
-season labels, type, and reversible archival.
+mixes teams across competitions. It separates regulars, team-specific
+substitutes, and unassigned league-wide substitutes. League and tournament
+management owns names, season labels, type, player-pool links, and reversible
+archival.
 
 ```text
 Tkinter Windows GUI

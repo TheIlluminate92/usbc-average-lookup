@@ -17,8 +17,8 @@ verified averages using BOWL.com's JSON-backed member search and average data.
 The workspace is divided into four focused tabs:
 
 - **Registration** for fast individual and whole-team entry
-- **Players** for searching and correcting the shared player directory
-- **Teams** for league/tournament-filtered team lists and rosters
+- **Players** for the permanent directory and year-by-year player pools
+- **Teams** for league/tournament-filtered regular and substitute rosters
 - **Leagues & Tournaments** for creating, editing, archiving, and restoring
   competition workspaces
 
@@ -30,10 +30,14 @@ The workspace is divided into four focused tabs:
 5. Review only ambiguous or unsuccessful matches. Registrations save
    automatically after each change.
 
-The bowler is a reusable identity. The registration and team assignment belong
-to a specific league season or tournament, so the same person can move teams in
-a future season without changing historical rosters. Duplicate registrations
-within one competition are rejected.
+The bowler is a reusable identity. A season player pool is a separate reusable
+list that can be copied forward, then adjusted without changing the prior year.
+A league or tournament can link to one pool, while registrations and team
+assignments still belong only to that competition. Regulars and substitutes can
+be assigned to a team; an unassigned substitute remains in the league-wide
+substitute pool. Removing someone from a team does not remove their league
+registration or permanent player record. Duplicate registrations within one
+competition are rejected.
 
 Registration data is stored locally in a versioned JSON file under
 `%LOCALAPPDATA%\Bowling Manager\registration-data.json`. Writes use a
@@ -122,8 +126,9 @@ Every input row remains visible in the output, including failures:
 
 - A runnable Tkinter Windows GUI with Registration Desk and Average Lookup tabs
 - Persistent league-season and tournament workspaces
-- Season-specific teams with quick entry, whole-team entry, reassignment, and
-  withdrawal/restore controls
+- Copy-forward season player pools kept separate from the permanent directory
+- Season-specific teams with regular rosters, team substitutes, a league-wide
+  substitute pool, reassignment, and withdrawal/restore controls
 - Player, team, and league/tournament management tabs, with teams explicitly
   filtered by competition
 - Background registration checks capped at two concurrent BOWL.com requests
@@ -180,7 +185,8 @@ docs/                     Requirements, architecture, and discovery notes
 
 1. Test the Registration Desk with representative handwritten league and
    tournament rosters, then refine the keyboard workflow and terminology.
-2. Add editing for saved bowler identity details and season-copy assistance.
+2. Test season-pool copy-forward and regular/substitute roster changes with a
+   real four-league weekly schedule.
 3. Confirm BOWL.com/USBC terms and acceptable request volume before broader use.
 4. Test signed-out, expired-session, rate-limit, and unexpected-response behavior
    against the real endpoints.

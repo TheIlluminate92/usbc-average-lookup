@@ -29,6 +29,11 @@ class VerificationState(StrEnum):
     ERROR = "Lookup error"
 
 
+class RosterRole(StrEnum):
+    REGULAR = "Regular"
+    SUBSTITUTE = "Substitute"
+
+
 @dataclass(slots=True)
 class Competition:
     id: str
@@ -37,6 +42,7 @@ class Competition:
     kind: CompetitionKind
     created_at: str
     archived: bool = False
+    player_pool_id: str = ""
 
     @property
     def display_name(self) -> str:
@@ -55,6 +61,20 @@ class BowlerProfile:
 
 
 @dataclass(slots=True)
+class PlayerPool:
+    id: str
+    label: str
+    created_at: str
+    archived: bool = False
+
+
+@dataclass(slots=True)
+class PlayerPoolEntry:
+    pool_id: str
+    bowler_id: str
+
+
+@dataclass(slots=True)
 class Team:
     id: str
     competition_id: str
@@ -67,6 +87,7 @@ class Registration:
     competition_id: str
     bowler_id: str
     team_id: str = ""
+    roster_role: RosterRole = RosterRole.REGULAR
     verification: VerificationState = VerificationState.NOT_CHECKED
     average: int | None = None
     average_year: str = ""
@@ -86,7 +107,7 @@ class RegistrationView:
     def status(self) -> str:
         if self.registration.withdrawn:
             return "Withdrawn"
-        if self.team is None:
+        if self.team is None and self.registration.roster_role is RosterRole.REGULAR:
             return "Unassigned team"
         if self.registration.verification is VerificationState.VERIFIED:
             return "Ready"
@@ -116,12 +137,15 @@ def default_registration_path() -> Path:
 
 
 class RegistrationStore:
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
+    SUPPORTED_SCHEMA_VERSIONS = {1, 2}
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or default_registration_path()
         self.competitions: list[Competition] = []
         self.bowlers: list[BowlerProfile] = []
+        self.player_pools: list[PlayerPool] = []
+        self.player_pool_entries: list[PlayerPoolEntry] = []
         self.teams: list[Team] = []
         self.registrations: list[Registration] = []
         self.load()
@@ -131,7 +155,7 @@ class RegistrationStore:
             return
         try:
             document = json.loads(self.path.read_text(encoding="utf-8"))
-            if document.get("schemaVersion") != self.SCHEMA_VERSION:
+            if document.get("schemaVersion") not in self.SUPPORTED_SCHEMA_VERSIONS:
                 raise RegistrationDataError("Registration data uses an unsupported version")
             self.competitions = [
                 Competition(
@@ -141,15 +165,26 @@ class RegistrationStore:
                     kind=CompetitionKind(item["kind"]),
                     created_at=str(item.get("created_at", "")),
                     archived=bool(item.get("archived", False)),
+                    player_pool_id=str(item.get("player_pool_id", "")),
                 )
                 for item in document.get("competitions", [])
             ]
             self.bowlers = [BowlerProfile(**item) for item in document.get("bowlers", [])]
+            self.player_pools = [
+                PlayerPool(**item) for item in document.get("playerPools", [])
+            ]
+            self.player_pool_entries = [
+                PlayerPoolEntry(**item)
+                for item in document.get("playerPoolEntries", [])
+            ]
             self.teams = [Team(**item) for item in document.get("teams", [])]
             self.registrations = [
                 Registration(
                     **{
                         **item,
+                        "roster_role": RosterRole(
+                            item.get("roster_role", RosterRole.REGULAR)
+                        ),
                         "verification": VerificationState(
                             VerificationState.NOT_CHECKED
                             if item.get("verification") == VerificationState.CHECKING
@@ -180,6 +215,10 @@ class RegistrationStore:
             "savedAt": _now(),
             "competitions": [_serialized(item) for item in self.competitions],
             "bowlers": [_serialized(item) for item in self.bowlers],
+            "playerPools": [_serialized(item) for item in self.player_pools],
+            "playerPoolEntries": [
+                _serialized(item) for item in self.player_pool_entries
+            ],
             "teams": [_serialized(item) for item in self.teams],
             "registrations": [_serialized(item) for item in self.registrations],
         }
@@ -266,6 +305,89 @@ class RegistrationStore:
         self._competition(competition_id).archived = archived
         self.save()
 
+    def set_competition_player_pool(
+        self, competition_id: str, player_pool_id: str
+    ) -> None:
+        competition = self._competition(competition_id)
+        if player_pool_id:
+            self._player_pool(player_pool_id)
+        competition.player_pool_id = player_pool_id
+        if player_pool_id:
+            registered_bowler_ids = {
+                item.bowler_id
+                for item in self.registrations
+                if item.competition_id == competition_id
+            }
+            existing_bowler_ids = {
+                item.bowler_id
+                for item in self.player_pool_entries
+                if item.pool_id == player_pool_id
+            }
+            self.player_pool_entries.extend(
+                PlayerPoolEntry(player_pool_id, bowler_id)
+                for bowler_id in registered_bowler_ids - existing_bowler_ids
+            )
+        self.save()
+
+    def add_player_pool(self, label: str) -> PlayerPool:
+        clean_label = _required(label, "Player pool year")
+        if any(_key(item.label) == _key(clean_label) for item in self.player_pools):
+            raise RegistrationDataError(f"Player pool {clean_label!r} already exists")
+        pool = PlayerPool(_new_id(), clean_label, _now())
+        self.player_pools.append(pool)
+        self.save()
+        return pool
+
+    def copy_player_pool(self, source_pool_id: str, new_label: str) -> PlayerPool:
+        source = self._player_pool(source_pool_id)
+        clean_label = _required(new_label, "Player pool year")
+        if any(_key(item.label) == _key(clean_label) for item in self.player_pools):
+            raise RegistrationDataError(f"Player pool {clean_label!r} already exists")
+        pool = PlayerPool(_new_id(), clean_label, _now())
+        self.player_pools.append(pool)
+        source_bowler_ids = [
+            item.bowler_id
+            for item in self.player_pool_entries
+            if item.pool_id == source.id
+        ]
+        self.player_pool_entries.extend(
+            PlayerPoolEntry(pool.id, bowler_id) for bowler_id in source_bowler_ids
+        )
+        self.save()
+        return pool
+
+    def pool_bowlers(self, pool_id: str) -> list[BowlerProfile]:
+        self._player_pool(pool_id)
+        bowler_ids = {
+            item.bowler_id
+            for item in self.player_pool_entries
+            if item.pool_id == pool_id
+        }
+        return sorted(
+            (item for item in self.bowlers if item.id in bowler_ids),
+            key=lambda item: _key(item.name),
+        )
+
+    def add_bowler_to_pool(self, pool_id: str, bowler_id: str) -> None:
+        self._player_pool(pool_id)
+        self._bowler(bowler_id)
+        if not any(
+            item.pool_id == pool_id and item.bowler_id == bowler_id
+            for item in self.player_pool_entries
+        ):
+            self.player_pool_entries.append(PlayerPoolEntry(pool_id, bowler_id))
+            self.save()
+
+    def remove_bowler_from_pool(self, pool_id: str, bowler_id: str) -> None:
+        self._player_pool(pool_id)
+        self._bowler(bowler_id)
+        self.player_pool_entries = [
+            item
+            for item in self.player_pool_entries
+            if not (item.pool_id == pool_id and item.bowler_id == bowler_id)
+        ]
+        self.save()
+
     def list_teams(self, competition_id: str) -> list[Team]:
         return sorted(
             (team for team in self.teams if team.competition_id == competition_id),
@@ -322,12 +444,38 @@ class RegistrationStore:
         name: str,
         membership_id: str = "",
         team_id: str = "",
+        roster_role: RosterRole = RosterRole.REGULAR,
     ) -> Registration:
-        registration = self._register_bowler(
-            competition_id, name, membership_id, team_id
+        snapshot = (
+            deepcopy(self.bowlers),
+            deepcopy(self.player_pool_entries),
+            deepcopy(self.registrations),
         )
-        self.save()
-        return registration
+        try:
+            registration = self._register_bowler(
+                competition_id, name, membership_id, team_id, roster_role
+            )
+            self.save()
+            return registration
+        except Exception:
+            self.bowlers, self.player_pool_entries, self.registrations = snapshot
+            raise
+
+    def register_existing_bowler(
+        self,
+        competition_id: str,
+        bowler_id: str,
+        team_id: str = "",
+        roster_role: RosterRole = RosterRole.REGULAR,
+    ) -> Registration:
+        bowler = self._bowler(bowler_id)
+        return self.register_bowler(
+            competition_id,
+            bowler.name,
+            bowler.membership_id,
+            team_id,
+            roster_role,
+        )
 
     def register_team(
         self,
@@ -339,6 +487,7 @@ class RegistrationStore:
             raise RegistrationDataError("Enter at least one bowler")
         snapshot = (
             deepcopy(self.bowlers),
+            deepcopy(self.player_pool_entries),
             deepcopy(self.teams),
             deepcopy(self.registrations),
         )
@@ -358,14 +507,23 @@ class RegistrationStore:
                 self.teams.append(team)
             registrations = [
                 self._register_bowler(
-                    competition_id, bowler.name, bowler.membership_id, team.id
+                    competition_id,
+                    bowler.name,
+                    bowler.membership_id,
+                    team.id,
+                    RosterRole.REGULAR,
                 )
                 for bowler in bowlers
             ]
             self.save()
             return team, registrations
         except Exception:
-            self.bowlers, self.teams, self.registrations = snapshot
+            (
+                self.bowlers,
+                self.player_pool_entries,
+                self.teams,
+                self.registrations,
+            ) = snapshot
             raise
 
     def registration_views(self, competition_id: str) -> list[RegistrationView]:
@@ -421,11 +579,23 @@ class RegistrationStore:
 
     def assign_team(self, registration_id: str, team_id: str) -> None:
         registration = self._registration(registration_id)
+        self.assign_registration(
+            registration_id, team_id, registration.roster_role
+        )
+
+    def assign_registration(
+        self,
+        registration_id: str,
+        team_id: str,
+        roster_role: RosterRole,
+    ) -> None:
+        registration = self._registration(registration_id)
         if team_id:
             team = self._team(team_id)
             if team.competition_id != registration.competition_id:
                 raise RegistrationDataError("That team belongs to another competition")
         registration.team_id = team_id
+        registration.roster_role = roster_role
         self.save()
 
     def update_registration(
@@ -434,6 +604,7 @@ class RegistrationStore:
         name: str,
         membership_id: str,
         team_id: str,
+        roster_role: RosterRole | None = None,
     ) -> None:
         registration = self._registration(registration_id)
         current_bowler = self._bowler(registration.bowler_id)
@@ -477,6 +648,10 @@ class RegistrationStore:
             if not any(
                 item.bowler_id == current_bowler.id for item in self.registrations
             ):
+                for pool_entry in self.player_pool_entries:
+                    if pool_entry.bowler_id == current_bowler.id:
+                        pool_entry.bowler_id = target.id
+                self._deduplicate_pool_entries()
                 self.bowlers.remove(current_bowler)
         else:
             identity_changed = (
@@ -493,6 +668,8 @@ class RegistrationStore:
                 registration.games = None
                 registration.note = "Identity changed; check the average again"
         registration.team_id = team_id
+        if roster_role is not None:
+            registration.roster_role = roster_role
         self.save()
 
     def set_withdrawn(self, registration_id: str, withdrawn: bool) -> None:
@@ -505,6 +682,7 @@ class RegistrationStore:
         name: str,
         membership_id: str,
         team_id: str,
+        roster_role: RosterRole,
     ) -> Registration:
         self._competition(competition_id)
         clean_name = _required(name, "Bowler name")
@@ -529,9 +707,18 @@ class RegistrationStore:
             competition_id=competition_id,
             bowler_id=bowler.id,
             team_id=team_id,
+            roster_role=roster_role,
             created_at=_now(),
         )
         self.registrations.append(registration)
+        competition = self._competition(competition_id)
+        if competition.player_pool_id and not any(
+            item.pool_id == competition.player_pool_id and item.bowler_id == bowler.id
+            for item in self.player_pool_entries
+        ):
+            self.player_pool_entries.append(
+                PlayerPoolEntry(competition.player_pool_id, bowler.id)
+            )
         return registration
 
     def _find_bowler(self, name: str, membership_id: str) -> BowlerProfile | None:
@@ -557,6 +744,17 @@ class RegistrationStore:
     def _validate_references(self) -> None:
         competition_ids = {item.id for item in self.competitions}
         bowler_ids = {item.id for item in self.bowlers}
+        player_pool_ids = {item.id for item in self.player_pools}
+        if any(
+            item.player_pool_id and item.player_pool_id not in player_pool_ids
+            for item in self.competitions
+        ):
+            raise RegistrationDataError("Registration data contains an unknown player pool")
+        if any(
+            item.pool_id not in player_pool_ids or item.bowler_id not in bowler_ids
+            for item in self.player_pool_entries
+        ):
+            raise RegistrationDataError("Registration data contains an orphaned player pool entry")
         team_ids = {item.id for item in self.teams}
         if any(team.competition_id not in competition_ids for team in self.teams):
             raise RegistrationDataError("Registration data contains an orphaned team")
@@ -568,6 +766,12 @@ class RegistrationStore:
                 and registration.team_id not in team_ids
             ):
                 raise RegistrationDataError("Registration data contains an orphaned entry")
+            if registration.team_id:
+                team = next(item for item in self.teams if item.id == registration.team_id)
+                if team.competition_id != registration.competition_id:
+                    raise RegistrationDataError(
+                        "Registration data assigns a player to another competition's team"
+                    )
 
     def _competition(self, item_id: str) -> Competition:
         return _find(self.competitions, item_id, "competition")
@@ -578,8 +782,21 @@ class RegistrationStore:
     def _team(self, item_id: str) -> Team:
         return _find(self.teams, item_id, "team")
 
+    def _player_pool(self, item_id: str) -> PlayerPool:
+        return _find(self.player_pools, item_id, "player pool")
+
     def _registration(self, item_id: str) -> Registration:
         return _find(self.registrations, item_id, "registration")
+
+    def _deduplicate_pool_entries(self) -> None:
+        seen: set[tuple[str, str]] = set()
+        unique: list[PlayerPoolEntry] = []
+        for item in self.player_pool_entries:
+            key = (item.pool_id, item.bowler_id)
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
+        self.player_pool_entries = unique
 
 
 def _find(items: list, item_id: str, label: str):
