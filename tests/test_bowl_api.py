@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 
 import pytest
 
@@ -7,6 +8,7 @@ from usbc_average_lookup.services.bowl_api import (
     BowlApiError,
     HttpBowlApi,
     _parse_composite_average,
+    _parse_league_average,
     _parse_member,
     _split_membership_id,
     _split_name,
@@ -184,3 +186,55 @@ def test_rejects_text_composite_boolean_flags(field: str) -> None:
 
     with pytest.raises(BowlApiError, match=f"invalid {field} flag"):
         _parse_composite_average(record)
+
+
+def test_fetches_sanitized_league_activity_fixture(monkeypatch) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "league_activities.json"
+    monkeypatch.setattr(
+        bowl_api,
+        "urlopen",
+        lambda request, timeout: io.BytesIO(fixture.read_bytes()),
+    )
+
+    records = HttpBowlApi(lambda: "token").get_league_averages("1234", "567890")
+
+    assert len(records) == 2
+    assert records[0].league_name == "Example Monday League"
+    assert records[0].average == 148
+    assert records[0].games == 87
+    assert records[1].string_pin is True
+
+
+def test_empty_league_activity_page_is_valid(monkeypatch) -> None:
+    response = io.BytesIO(
+        b'{"isSuccess": true, "validationErrors": [], "errors": [], '
+        b'"data": {"results": [], "totalCount": 0, "totalPages": 0, '
+        b'"pageSize": 1000, "pageIndex": 1}}'
+    )
+    monkeypatch.setattr(bowl_api, "urlopen", lambda request, timeout: response)
+
+    assert HttpBowlApi(lambda: "token").get_league_averages("1234", "567890") == []
+
+
+def test_rejects_text_league_condition_flags() -> None:
+    with pytest.raises(BowlApiError, match="invalid stringpin flag"):
+        _parse_league_average(
+            {
+                "lid": "league",
+                "lname": "Example League",
+                "season": "W",
+                "cid": "center",
+                "cname": "Example Center",
+                "aid": "association",
+                "aname": "Example Association",
+                "anum": "00000",
+                "avg": 150,
+                "games": 30,
+                "year": "2025",
+                "sport": False,
+                "challenge": False,
+                "rollngrow": False,
+                "bumper": False,
+                "stringpin": "false",
+            }
+        )
