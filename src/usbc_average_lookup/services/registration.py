@@ -596,6 +596,75 @@ class RegistrationStore:
         self.save()
         return team
 
+    def copy_team_to_competition(
+        self,
+        source_team_id: str,
+        competition_id: str,
+        name: str,
+        copy_roster: bool = True,
+    ) -> tuple[Team, int, int]:
+        source_team = self._team(source_team_id)
+        self._competition(competition_id)
+        clean_name = _required(name, "Team name")
+        if source_team.competition_id == competition_id:
+            raise RegistrationDataError("Choose a team from another league or tournament")
+        if any(
+            team.competition_id == competition_id and _key(team.name) == _key(clean_name)
+            for team in self.teams
+        ):
+            raise RegistrationDataError(f"Team {clean_name!r} already exists")
+
+        snapshot = (
+            deepcopy(self.teams),
+            deepcopy(self.player_pool_entries),
+            deepcopy(self.registrations),
+        )
+        try:
+            team = Team(_new_id(), competition_id, clean_name)
+            self.teams.append(team)
+            copied = 0
+            skipped = 0
+            if copy_roster:
+                source_registrations = [
+                    item
+                    for item in self.registrations
+                    if item.team_id == source_team_id and not item.withdrawn
+                ]
+                for source_registration in source_registrations:
+                    existing = next(
+                        (
+                            item
+                            for item in self.registrations
+                            if item.competition_id == competition_id
+                            and item.bowler_id == source_registration.bowler_id
+                        ),
+                        None,
+                    )
+                    if existing is not None:
+                        if existing.team_id or existing.withdrawn:
+                            skipped += 1
+                            continue
+                        existing.team_id = team.id
+                        existing.roster_role = source_registration.roster_role
+                        copied += 1
+                        continue
+                    registration = Registration(
+                        id=_new_id(),
+                        competition_id=competition_id,
+                        bowler_id=source_registration.bowler_id,
+                        team_id=team.id,
+                        roster_role=source_registration.roster_role,
+                        created_at=_now(),
+                    )
+                    self.registrations.append(registration)
+                    self._add_registration_to_linked_pool(registration)
+                    copied += 1
+            self.save()
+            return team, copied, skipped
+        except Exception:
+            self.teams, self.player_pool_entries, self.registrations = snapshot
+            raise
+
     def update_competition(
         self,
         competition_id: str,
@@ -687,6 +756,58 @@ class RegistrationStore:
             (item for item in self.bowlers if item.id in bowler_ids),
             key=lambda item: _key(item.name),
         )
+
+    def import_players(self, bowlers: list[InputBowler]) -> tuple[int, int]:
+        snapshot = deepcopy(self.bowlers)
+        added = 0
+        reused = 0
+        claimed_blank_ids: set[str] = set()
+        try:
+            for incoming in bowlers:
+                clean_name = _required(incoming.name, "Bowler name")
+                clean_id = incoming.membership_id.strip()
+                matched = None
+                if clean_id:
+                    matched = next(
+                        (
+                            item
+                            for item in self.bowlers
+                            if item.membership_id
+                            and _membership_key(item.membership_id)
+                            == _membership_key(clean_id)
+                        ),
+                        None,
+                    )
+                same_name = [
+                    item for item in self.bowlers if _key(item.name) == _key(clean_name)
+                ]
+                if matched is None:
+                    matched = next(
+                        (
+                            item
+                            for item in same_name
+                            if not item.membership_id
+                            and item.id not in claimed_blank_ids
+                        ),
+                        None,
+                    )
+                if matched is None:
+                    profile = BowlerProfile(_new_id(), clean_name, clean_id)
+                    self.bowlers.append(profile)
+                    if not clean_id:
+                        claimed_blank_ids.add(profile.id)
+                    added += 1
+                    continue
+                if clean_id and not matched.membership_id:
+                    matched.membership_id = clean_id
+                elif not matched.membership_id:
+                    claimed_blank_ids.add(matched.id)
+                reused += 1
+            self.save()
+        except Exception:
+            self.bowlers = snapshot
+            raise
+        return added, reused
 
     def add_bowler_to_pool(self, pool_id: str, bowler_id: str) -> None:
         self._player_pool(pool_id)
@@ -1104,15 +1225,19 @@ class RegistrationStore:
             created_at=_now(),
         )
         self.registrations.append(registration)
-        competition = self._competition(competition_id)
+        self._add_registration_to_linked_pool(registration)
+        return registration
+
+    def _add_registration_to_linked_pool(self, registration: Registration) -> None:
+        competition = self._competition(registration.competition_id)
         if competition.player_pool_id and not any(
-            item.pool_id == competition.player_pool_id and item.bowler_id == bowler.id
+            item.pool_id == competition.player_pool_id
+            and item.bowler_id == registration.bowler_id
             for item in self.player_pool_entries
         ):
             self.player_pool_entries.append(
-                PlayerPoolEntry(competition.player_pool_id, bowler.id)
+                PlayerPoolEntry(competition.player_pool_id, registration.bowler_id)
             )
-        return registration
 
     def _find_bowler(self, name: str, membership_id: str) -> BowlerProfile | None:
         if membership_id:

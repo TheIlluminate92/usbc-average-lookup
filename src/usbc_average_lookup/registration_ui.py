@@ -15,6 +15,7 @@ from usbc_average_lookup.services.registration import (
     Competition,
     CompetitionKind,
     PlayerPool,
+    Registration,
     RegistrationDataError,
     RegistrationStore,
     RegistrationView,
@@ -600,7 +601,7 @@ class RegistrationDesk(ttk.Frame):
         actions.grid(row=2, column=0, sticky="ew", pady=(10, 0))
         ttk.Label(
             actions,
-            text="Add teams and registrations here, or use the dedicated management tabs.",
+            text="Reuse players or teams from prior seasons.",
             style="Muted.TLabel",
         ).pack(side=tk.LEFT)
         self.competition_pool_button = ttk.Button(
@@ -612,11 +613,18 @@ class RegistrationDesk(ttk.Frame):
         self.competition_pool_button.pack(side=tk.RIGHT)
         self.competition_add_player_button = ttk.Button(
             actions,
-            text="Add player",
+            text="Register new player",
             command=self._add_player_to_managed_competition,
             state=tk.DISABLED,
         )
         self.competition_add_player_button.pack(side=tk.RIGHT, padx=(0, 8))
+        self.competition_pull_player_button = ttk.Button(
+            actions,
+            text="Pull existing player",
+            command=self._pull_player_into_managed_competition,
+            state=tk.DISABLED,
+        )
+        self.competition_pull_player_button.pack(side=tk.RIGHT, padx=(0, 8))
         self.competition_add_team_button = ttk.Button(
             actions,
             text="Add team",
@@ -624,6 +632,13 @@ class RegistrationDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.competition_add_team_button.pack(side=tk.RIGHT, padx=(0, 8))
+        self.competition_copy_team_button = ttk.Button(
+            actions,
+            text="Copy existing team",
+            command=self._copy_team_to_managed_competition,
+            state=tk.DISABLED,
+        )
+        self.competition_copy_team_button.pack(side=tk.RIGHT, padx=(0, 8))
 
     def refresh(self) -> None:
         if self.store is None:
@@ -1082,32 +1097,56 @@ class RegistrationDesk(ttk.Frame):
         if competition is None or team_id is None:
             return
         role = self._desired_roster_role()
-        available = [
-            view
-            for view in self.store.registration_views(competition.id)
-            if view.registration.team_id != team_id
-        ]
-        registration_id = RegistrationPickerDialog(
-            self, "Add existing league player", available
-        ).show()
-        if registration_id is None:
-            return
-        view = next(
-            item for item in available if item.registration.id == registration_id
+        destination_team_id = (
+            "" if self._active_roster_table() is self.league_substitute_table else team_id
         )
-        if view.team is not None and not messagebox.askyesno(
+        views = self.store.registration_views(competition.id)
+        view_by_bowler_id = {view.bowler.id: view for view in views}
+        available = [
+            bowler
+            for bowler in self.store.bowlers
+            if not (
+                (view := view_by_bowler_id.get(bowler.id))
+                and view.registration.team_id == destination_team_id
+                and view.registration.roster_role is role
+            )
+        ]
+        if not available:
+            messagebox.showinfo(
+                "No players available",
+                "Every player is already assigned to this roster section.",
+                parent=self,
+            )
+            return
+        bowler_id = LeagueDirectoryPlayerPickerDialog(
+            self, competition, available, view_by_bowler_id
+        ).show()
+        if bowler_id is None:
+            return
+        view = view_by_bowler_id.get(bowler_id)
+        if view is not None and view.team is not None and not messagebox.askyesno(
             "Move player?",
-            f"{view.bowler.name} is currently on {view.team.name}. Move them here?",
+            f"{view.bowler.name} is currently on {view.team.name} in "
+            f"{competition.display_name}. Move them?",
             parent=self,
         ):
             return
         try:
-            self.store.assign_registration(registration_id, team_id, role)
+            if view is None:
+                self.store.register_existing_bowler(
+                    competition.id, bowler_id, destination_team_id, role
+                )
+            else:
+                self.store.assign_registration(
+                    view.registration.id, destination_team_id, role
+                )
         except (OSError, RegistrationDataError) as error:
             messagebox.showerror("Could not update roster", str(error), parent=self)
             return
         self._render_teams()
         self._render_rows()
+        self._render_players()
+        self._render_competitions()
 
     def _register_new_team_player(self) -> None:
         if self.store is None:
@@ -1247,6 +1286,8 @@ class RegistrationDesk(ttk.Frame):
         self.competition_archive_button.configure(state=state)
         self.competition_add_team_button.configure(state=active_state)
         self.competition_add_player_button.configure(state=active_state)
+        self.competition_pull_player_button.configure(state=active_state)
+        self.competition_copy_team_button.configure(state=active_state)
         self.competition_pool_button.configure(state=active_state)
         if competition:
             self.competition_archive_button.configure(
@@ -1294,6 +1335,82 @@ class RegistrationDesk(ttk.Frame):
         self._render_players()
         self._render_teams()
         self._render_rows()
+
+    def _pull_player_into_managed_competition(self) -> None:
+        if self.store is None:
+            return
+        competition = self._selected_managed_competition()
+        if competition is None or competition.archived:
+            return
+        registered_ids = {
+            view.bowler.id for view in self.store.registration_views(competition.id)
+        }
+        available = [
+            bowler for bowler in self.store.bowlers if bowler.id not in registered_ids
+        ]
+        if not available:
+            messagebox.showinfo(
+                "No players available",
+                "Every player in the permanent player list is already in this "
+                "league or tournament.",
+                parent=self,
+            )
+            return
+        bowler_id = PlayerPickerDialog(
+            self, f"Pull player into {competition.display_name}", available
+        ).show()
+        if bowler_id is None:
+            return
+        try:
+            self.store.register_existing_bowler(competition.id, bowler_id)
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not pull player", str(error), parent=self)
+            return
+        self._render_competitions()
+        self._render_players()
+        self._render_teams()
+        self._render_rows()
+
+    def _copy_team_to_managed_competition(self) -> None:
+        if self.store is None:
+            return
+        competition = self._selected_managed_competition()
+        if competition is None or competition.archived:
+            return
+        source_teams = [
+            team for team in self.store.teams if team.competition_id != competition.id
+        ]
+        if not source_teams:
+            messagebox.showinfo(
+                "No teams available",
+                "Create a team in another league or tournament first.",
+                parent=self,
+            )
+            return
+        choice = TeamCopyDialog(
+            self, competition, self.store.competitions, source_teams, self.store.registrations
+        ).show()
+        if choice is None:
+            return
+        source_team_id, name, copy_roster = choice
+        try:
+            team, copied, skipped = self.store.copy_team_to_competition(
+                source_team_id, competition.id, name, copy_roster
+            )
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not copy team", str(error), parent=self)
+            return
+        self._refresh_teams()
+        self._refresh_team_management_competitions()
+        self._render_competitions()
+        self._render_players()
+        self._render_rows()
+        detail = f"Copied {team.name}"
+        if copy_roster:
+            detail += f" with {copied} active player{'s' if copied != 1 else ''}"
+            if skipped:
+                detail += f"; {skipped} already assigned elsewhere"
+        self.status_callback(detail)
 
     def _link_competition_player_pool(self) -> None:
         if self.store is None:
@@ -1838,14 +1955,18 @@ class PlayerPickerDialog(tk.Toplevel):
         return self.choice
 
 
-class RegistrationPickerDialog(tk.Toplevel):
+class LeagueDirectoryPlayerPickerDialog(tk.Toplevel):
     def __init__(
-        self, parent: tk.Misc, title: str, views: list[RegistrationView]
+        self,
+        parent: tk.Misc,
+        competition: Competition,
+        bowlers: list[BowlerProfile],
+        views_by_bowler_id: dict[str, RegistrationView],
     ) -> None:
         super().__init__(parent)
         self.choice: str | None = None
-        self.title(title)
-        self.geometry("700x440")
+        self.title("Pull player into roster")
+        self.geometry("760x470")
         self.transient(parent)
         self.grab_set()
         content = ttk.Frame(self, style="App.TFrame", padding=22)
@@ -1854,46 +1975,52 @@ class RegistrationPickerDialog(tk.Toplevel):
         content.rowconfigure(2, weight=1)
         ttk.Label(
             content,
-            text=title,
+            text=f"Player list for {competition.display_name}",
             style="Muted.TLabel",
             font=("Segoe UI", 17, "bold"),
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
             content,
-            text="These players are already registered in this league or tournament.",
+            text="The league-status column only reflects the selected league or tournament.",
             style="Muted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(3, 12))
         self.table = ttk.Treeview(
             content,
-            columns=("name", "member_id", "assignment", "role"),
+            columns=("name", "member_id", "league_status"),
             show="headings",
         )
         for column, label, width in (
-            ("name", "Player", 220),
-            ("member_id", "Member ID", 125),
-            ("assignment", "Current assignment", 190),
-            ("role", "Role", 100),
+            ("name", "Player", 240),
+            ("member_id", "Member ID", 135),
+            ("league_status", "Status in selected league", 310),
         ):
             self.table.heading(column, text=label)
             self.table.column(column, width=width, anchor="w")
         self.table.grid(row=2, column=0, sticky="nsew")
-        for view in views:
+        for bowler in sorted(bowlers, key=lambda item: item.name.casefold()):
+            view = views_by_bowler_id.get(bowler.id)
+            if view is None:
+                status = "Not registered in this league"
+            elif view.team is not None:
+                status = f"{view.team.name} — {view.registration.roster_role.value}"
+            elif view.registration.roster_role is RosterRole.SUBSTITUTE:
+                status = "League substitute pool"
+            else:
+                status = "Registered — no team"
             self.table.insert(
                 "",
                 tk.END,
-                iid=view.registration.id,
-                values=(
-                    view.bowler.name,
-                    view.bowler.membership_id or "—",
-                    view.team.name if view.team else "Unassigned",
-                    view.registration.roster_role.value,
-                ),
+                iid=bowler.id,
+                values=(bowler.name, bowler.membership_id or "—", status),
             )
         buttons = ttk.Frame(content, style="App.TFrame")
         buttons.grid(row=3, column=0, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
         ttk.Button(
-            buttons, text="Add to team", command=self._accept, style="Primary.TButton"
+            buttons,
+            text="Add selected",
+            command=self._accept,
+            style="Primary.TButton",
         ).pack(side=tk.LEFT, padx=(8, 0))
         self.table.bind("<Double-1>", lambda _event: self._accept())
         children = self.table.get_children()
@@ -1909,6 +2036,129 @@ class RegistrationPickerDialog(tk.Toplevel):
         self.destroy()
 
     def show(self) -> str | None:
+        self.wait_window()
+        return self.choice
+
+
+class TeamCopyDialog(tk.Toplevel):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        target: Competition,
+        competitions: list[Competition],
+        teams: list[Team],
+        registrations: list[Registration],
+    ) -> None:
+        super().__init__(parent)
+        self.choice: tuple[str, str, bool] | None = None
+        self.team_by_id = {team.id: team for team in teams}
+        competition_by_id = {item.id: item for item in competitions}
+        active_counts: dict[str, int] = {}
+        for registration in registrations:
+            if registration.team_id and not registration.withdrawn:
+                active_counts[registration.team_id] = (
+                    active_counts.get(registration.team_id, 0) + 1
+                )
+        self.title("Copy existing team")
+        self.geometry("760x520")
+        self.transient(parent)
+        self.grab_set()
+        content = ttk.Frame(self, style="App.TFrame", padding=22)
+        content.pack(fill=tk.BOTH, expand=True)
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(2, weight=1)
+        ttk.Label(
+            content,
+            text=f"Copy a team into {target.display_name}",
+            style="Muted.TLabel",
+            font=("Segoe UI", 17, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            content,
+            text="Choose a team from another league season or tournament.",
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(3, 12))
+        self.table = ttk.Treeview(
+            content,
+            columns=("source", "team", "players"),
+            show="headings",
+            height=9,
+        )
+        for column, label, width in (
+            ("source", "League / tournament", 360),
+            ("team", "Team", 230),
+            ("players", "Active players", 100),
+        ):
+            self.table.heading(column, text=label)
+            self.table.column(column, width=width, anchor="w")
+        self.table.grid(row=2, column=0, sticky="nsew")
+        for team in sorted(
+            teams,
+            key=lambda item: (
+                competition_by_id[item.competition_id].display_name.casefold(),
+                item.name.casefold(),
+            ),
+        ):
+            source = competition_by_id[team.competition_id]
+            source_label = source.display_name
+            if source.archived:
+                source_label += " (archived)"
+            self.table.insert(
+                "",
+                tk.END,
+                iid=team.id,
+                values=(source_label, team.name, active_counts.get(team.id, 0)),
+            )
+        options = ttk.Frame(content, style="App.TFrame")
+        options.grid(row=3, column=0, sticky="ew", pady=(16, 0))
+        options.columnconfigure(1, weight=1)
+        ttk.Label(options, text="New team name", style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 12)
+        )
+        self.name_var = tk.StringVar()
+        ttk.Entry(options, textvariable=self.name_var).grid(
+            row=0, column=1, sticky="ew"
+        )
+        self.copy_roster_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            options,
+            text="Copy active team roster (old averages are not copied)",
+            variable=self.copy_roster_var,
+        ).grid(row=1, column=1, sticky="w", pady=(10, 0))
+        buttons = ttk.Frame(content, style="App.TFrame")
+        buttons.grid(row=4, column=0, sticky="e", pady=(18, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
+        ttk.Button(
+            buttons,
+            text="Copy team",
+            command=self._accept,
+            style="Primary.TButton",
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        self.table.bind("<<TreeviewSelect>>", lambda _event: self._team_selected())
+        self.table.bind("<Double-1>", lambda _event: self._accept())
+        children = self.table.get_children()
+        if children:
+            self.table.selection_set(children[0])
+            self.table.focus(children[0])
+            self._team_selected()
+
+    def _team_selected(self) -> None:
+        selected = self.table.selection()
+        if selected:
+            self.name_var.set(self.team_by_id[selected[0]].name)
+
+    def _accept(self) -> None:
+        selected = self.table.selection()
+        if not selected:
+            return
+        name = self.name_var.get().strip()
+        if not name:
+            messagebox.showwarning("Team name needed", "Enter a team name.", parent=self)
+            return
+        self.choice = (selected[0], name, self.copy_roster_var.get())
+        self.destroy()
+
+    def show(self) -> tuple[str, str, bool] | None:
         self.wait_window()
         return self.choice
 

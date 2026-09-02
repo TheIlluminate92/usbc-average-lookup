@@ -322,6 +322,13 @@ class AverageLookupApp(tk.Tk):
             style="Warm.TButton",
         )
         self.save_button.pack(side=tk.RIGHT)
+        self.player_list_button = ttk.Button(
+            footer,
+            text="Add to player list",
+            command=self._add_results_to_player_list,
+            state=tk.DISABLED,
+        )
+        self.player_list_button.pack(side=tk.RIGHT, padx=(0, 8))
         self.fix_button = ttk.Button(
             footer,
             text="Fix selected",
@@ -740,6 +747,39 @@ class AverageLookupApp(tk.Tk):
             f"Saved {exported or selected_count} bowlers to {Path(selected).name}.",
         )
 
+    def _add_results_to_player_list(self) -> None:
+        if not self.results:
+            messagebox.showwarning("No results", "Look up a bowler roster first.")
+            return
+        if self.registration_store is None:
+            messagebox.showerror(
+                "Player list unavailable",
+                "The registration database could not be opened.",
+            )
+            return
+        unresolved = sum(result.needs_attention for result in self.results)
+        if unresolved and not messagebox.askyesno(
+            "Unresolved players",
+            f"{unresolved} player{'s' if unresolved != 1 else ''} do not have a "
+            "confirmed match. Add them to the permanent player list anyway?",
+        ):
+            return
+        players = [
+            InputBowler(result.input_name, result.membership_id)
+            for result in self.results
+        ]
+        try:
+            added, reused = self.registration_store.import_players(players)
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not update player list", str(error))
+            return
+        self.registration_desk.refresh()
+        messagebox.showinfo(
+            "Player list updated",
+            f"Added {added} new player{'s' if added != 1 else ''}; "
+            f"{reused} existing player{'s were' if reused != 1 else ' was'} reused.",
+        )
+
     def _update_action_states(self) -> None:
         self.single_button.configure(
             state=tk.NORMAL if self.api is not None else tk.DISABLED
@@ -750,6 +790,13 @@ class AverageLookupApp(tk.Tk):
         has_results = bool(self.results)
         self.clear_button.configure(state=tk.NORMAL if has_results else tk.DISABLED)
         self.save_button.configure(state=tk.NORMAL if has_results else tk.DISABLED)
+        self.player_list_button.configure(
+            state=(
+                tk.NORMAL
+                if has_results and self.registration_store is not None
+                else tk.DISABLED
+            )
+        )
 
 
 class SingleLookupDialog(tk.Toplevel):

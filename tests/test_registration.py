@@ -327,6 +327,119 @@ def test_team_and_competition_management_changes_persist(tmp_path) -> None:
     assert reopened.competitions[0].archived
 
 
+def test_lookup_roster_can_be_imported_into_permanent_player_list(tmp_path) -> None:
+    path = tmp_path / "registration.db"
+    store = RegistrationStore(path)
+    competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    existing = store.register_bowler(
+        competition.id, "David Brown", "1111-222222"
+    )
+
+    added, reused = store.import_players(
+        [
+            InputBowler("David Brown", "1111-222222"),
+            InputBowler("New Player", "3333-444444"),
+            InputBowler("Needs Review"),
+            InputBowler("Needs Review"),
+        ]
+    )
+
+    assert added == 3
+    assert reused == 1
+    assert len(store.bowlers) == 4
+    assert store.registration_views(competition.id)[0].bowler.id == existing.bowler_id
+    added_again, reused_again = store.import_players(
+        [
+            InputBowler("David Brown", "1111-222222"),
+            InputBowler("New Player", "3333-444444"),
+            InputBowler("Needs Review"),
+            InputBowler("Needs Review"),
+        ]
+    )
+    assert added_again == 0
+    assert reused_again == 4
+    reopened = RegistrationStore(path)
+    assert [item.name for item in reopened.bowlers].count("Needs Review") == 2
+    assert ("David Brown", "1111-222222") in {
+        (item.name, item.membership_id) for item in reopened.bowlers
+    }
+    assert ("New Player", "3333-444444") in {
+        (item.name, item.membership_id) for item in reopened.bowlers
+    }
+
+
+def test_copy_team_carries_active_roster_into_new_league_without_averages(
+    tmp_path,
+) -> None:
+    path = tmp_path / "registration.db"
+    store = RegistrationStore(path)
+    old = store.add_competition("Monday", "2025-26", CompetitionKind.LEAGUE)
+    new = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    pool = store.add_player_pool("2026-27")
+    store.set_competition_player_pool(new.id, pool.id)
+    old_team = store.add_team(old.id, "Pin Pals")
+    other_new_team = store.add_team(new.id, "Already Assigned")
+    regular = store.register_bowler(
+        old.id, "Regular Player", "1111-111111", old_team.id
+    )
+    store.register_bowler(
+        old.id,
+        "Sub Player",
+        "2222-222222",
+        old_team.id,
+        RosterRole.SUBSTITUTE,
+    )
+    withdrawn = store.register_bowler(
+        old.id, "Former Player", "3333-333333", old_team.id
+    )
+    assigned_elsewhere = store.register_bowler(
+        old.id, "Busy Player", "4444-444444", old_team.id
+    )
+    store.set_withdrawn(withdrawn.id, True)
+    store.register_existing_bowler(new.id, regular.bowler_id)
+    store.register_existing_bowler(
+        new.id, assigned_elsewhere.bowler_id, other_new_team.id
+    )
+
+    copied_team, copied, skipped = store.copy_team_to_competition(
+        old_team.id, new.id, "Pin Pals", copy_roster=True
+    )
+
+    assert copied == 2
+    assert skipped == 1
+    assert [item.name for item in store.list_teams(old.id)] == ["Pin Pals"]
+    assert {item.name for item in store.list_teams(new.id)} == {
+        "Already Assigned",
+        "Pin Pals",
+    }
+    new_views = {item.bowler.name: item for item in store.registration_views(new.id)}
+    assert new_views["Regular Player"].team.id == copied_team.id
+    assert new_views["Regular Player"].registration.average is None
+    assert (
+        new_views["Regular Player"].registration.verification
+        is VerificationState.NOT_CHECKED
+    )
+    assert new_views["Sub Player"].team.id == copied_team.id
+    assert (
+        new_views["Sub Player"].registration.roster_role
+        is RosterRole.SUBSTITUTE
+    )
+    assert new_views["Busy Player"].team.id == other_new_team.id
+    assert "Former Player" not in new_views
+    assert {item.name for item in store.pool_bowlers(pool.id)} == {
+        "Busy Player",
+        "Regular Player",
+        "Sub Player",
+    }
+
+    reopened = RegistrationStore(path)
+    reopened_views = {
+        item.bowler.name: item for item in reopened.registration_views(new.id)
+    }
+    assert reopened_views["Regular Player"].team.name == "Pin Pals"
+    assert reopened_views["Sub Player"].team.name == "Pin Pals"
+
+
 def test_player_management_rejects_duplicate_member_id(tmp_path) -> None:
     store = RegistrationStore(tmp_path / "registration.json")
     competition = store.add_competition("Open", "2027", CompetitionKind.TOURNAMENT)
