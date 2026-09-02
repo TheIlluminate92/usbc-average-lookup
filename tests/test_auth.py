@@ -6,6 +6,7 @@ from usbc_average_lookup.services import auth
 from usbc_average_lookup.services.auth import (
     AUTH_MESSAGE_PREFIX,
     AuthState,
+    SignInCancelledError,
     WebViewAuthenticator,
     _bearer_token_from_headers,
     _bearer_token_from_storage_values,
@@ -162,3 +163,8 @@ def test_force_kills_helper_that_does_not_stop() -> None:
 def test_rejects_failed_or_invalid_private_webview_payload(payload, message: str) -> None:
     with pytest.raises(RuntimeError, match=message):
         _session_from_payload(payload)
+
+
+def test_closed_sign_in_window_is_a_cancellation() -> None:
+    with pytest.raises(SignInCancelledError, match="window was closed"):
+        _session_from_payload({"error": "The sign-in window was closed"})

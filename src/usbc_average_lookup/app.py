@@ -13,6 +13,7 @@ from usbc_average_lookup.registration_ui import RegistrationDesk
 from usbc_average_lookup.services.auth import (
     AuthSession,
     AuthState,
+    SignInCancelledError,
     WebViewAuthenticator,
     clear_legacy_sign_in_data,
 )
@@ -379,6 +380,9 @@ class AverageLookupApp(tk.Tk):
     def _sign_in_worker(self) -> None:
         try:
             session = self.authenticator.sign_in()
+        except SignInCancelledError:
+            self.after(0, self._sign_in_cancelled)
+            return
         except Exception as error:
             self.after(0, self._sign_in_failed, str(error))
             return
@@ -395,11 +399,25 @@ class AverageLookupApp(tk.Tk):
         self.registration_desk.refresh_auth_state()
 
     def _sign_in_failed(self, message: str) -> None:
-        self.signing_in = False
-        self.auth_status.configure(text="Sign-in not completed")
-        self.sign_in_button.configure(state=tk.NORMAL)
-        self.sign_out_button.configure(state=tk.DISABLED)
+        self._restore_sign_in_controls()
         messagebox.showerror("Could not sign in", message)
+
+    def _sign_in_cancelled(self) -> None:
+        self._restore_sign_in_controls()
+
+    def _restore_sign_in_controls(self) -> None:
+        self.signing_in = False
+        signed_in = self.api is not None
+        self.auth_status.configure(
+            text="Signed in — ready" if signed_in else "Not signed in"
+        )
+        self.sign_in_button.configure(
+            text="Sign in again" if signed_in else "Sign in to BOWL.com",
+            state=tk.NORMAL,
+        )
+        self.sign_out_button.configure(state=tk.NORMAL if signed_in else tk.DISABLED)
+        self._update_action_states()
+        self.registration_desk.refresh_auth_state()
 
     def _sign_out(self) -> None:
         self.authenticator.sign_out()

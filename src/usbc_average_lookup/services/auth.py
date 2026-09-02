@@ -19,6 +19,10 @@ class AuthState(StrEnum):
     EXPIRED = "Session expired"
 
 
+class SignInCancelledError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class AuthSession:
     state: AuthState
@@ -139,7 +143,10 @@ def _session_from_payload(payload: Any) -> AuthSession:
         return AuthSession(AuthState.SIGNED_IN, bearer_token=token.strip())
     message = payload.get("error")
     if isinstance(message, str) and message.strip():
-        raise RuntimeError(message.strip())
+        cleaned = message.strip()
+        if cleaned.casefold() == "the sign-in window was closed":
+            raise SignInCancelledError(cleaned)
+        raise RuntimeError(cleaned)
     raise RuntimeError("BOWL.com sign-in did not return a session")
 
 
