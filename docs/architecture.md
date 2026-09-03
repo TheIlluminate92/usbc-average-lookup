@@ -20,6 +20,7 @@ Tkinter application
   |     +-- leagues / seasons / tournaments
   |     +-- permanent players and season pools
   |     +-- competition teams and rosters
+  |     +-- competition rounds, matchups, BYEs, and lane pairs
   |     +-- weekly score sheets and history
   |
   +-- Registration
@@ -40,8 +41,8 @@ Tkinter application
   |     +-- composite averages
   |     +-- league activities (client support only)
   |
-  +-- RegistrationStore / ScoringStore
-        +-- SQLite schema version 3
+  +-- RegistrationStore / ScheduleStore / ScoringStore
+        +-- SQLite schema version 4
 ```
 
 ## UI composition
@@ -53,9 +54,9 @@ compact workspace strip, and the three top-level workspaces:
 - League Manager
 - Average lookup
 
-`RegistrationDesk` controls the separate Registration workspace and the six
+`RegistrationDesk` controls the separate Registration workspace and the seven
 League Manager sections. `LeagueWorkspaceContext` propagates one selected
-competition across Registration, Teams, Scores, Rules, and League home.
+competition across Registration, Teams, Schedule, Scores, Rules, and League home.
 
 Additional windows construct another desk against the same store but receive
 an independent workspace context. `RegistrationStore` change listeners schedule
@@ -64,7 +65,8 @@ prevents two score-entry dialogs from editing one weekly session concurrently.
 Average lookup remains owned by the main application shell and is not currently
 detachable.
 
-`ScoringDesk` is mounted inside League Manager. `RelationshipBrowser` opens as
+`ScheduleDesk` and `ScoringDesk` are mounted inside League Manager.
+`RelationshipBrowser` opens as
 a separate navigation window and holds its own Back/Forward history.
 
 UI classes call domain stores rather than SQL. The stores validate rules, save
@@ -100,6 +102,26 @@ registration. Each target names a competition and either an existing team, a
 pending new team name, or no team. `register_bowler_many` snapshots all affected
 collections, applies every target, writes once, and restores the snapshot if
 any target fails.
+
+## Scheduling data model
+
+`Competition` selects Round robin, Single elimination, or Custom/manual format.
+The first 0.7 implementation generates Round robin schedules into:
+
+| Record | Purpose |
+| --- | --- |
+| `CompetitionRound` | One numbered week/round, stage, date, and state |
+| `CompetitionMatch` | Two teams or an explicit BYE plus a lane pair and state |
+
+The circle rotation creates `n - 1` rounds for an even team count. An odd count
+receives an internal BYE position and `n` rounds. Match and lane assignment are
+stored separately so future points use explicit opponents instead of inferring
+them from lane order.
+
+Team IDs and displayed names are snapshots rather than foreign keys to the
+mutable live roster. This matches weekly score history: later team renames do
+not rewrite an existing schedule. A match retains a foreign key only to its
+own round so focused schedule deletion can remain atomic.
 
 ## Scoring data model
 
@@ -155,7 +177,7 @@ candidate because raw league activities are not yet persisted.
 %LOCALAPPDATA%\Bowling Manager\bowling-manager.db
 ```
 
-Schema version 3 contains:
+Schema version 4 contains:
 
 - `metadata`
 - `player_pools`
@@ -168,6 +190,8 @@ Schema version 3 contains:
 - `score_lines`
 - `game_scores`
 - `score_change_log`
+- `competition_rounds`
+- `competition_matches`
 
 SQLite foreign keys are enabled on every connection. Tables use primary keys,
 uniqueness constraints, and state `CHECK` constraints. The store validates

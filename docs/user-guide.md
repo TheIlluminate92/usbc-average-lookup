@@ -1,6 +1,6 @@
 # User guide
 
-This guide describes the current v0.6 pre-alpha Windows application. Labels may
+This guide describes the current v0.7 pre-alpha Windows application. Labels may
 change as the workflow is tested with real leagues.
 
 ## Install and start
@@ -26,7 +26,7 @@ Moving or replacing the program folder does not move or erase that database.
 The compact top strip works like a browser and opens on **Registration**:
 
 - **Registration** — fast day-of or preseason player entry.
-- **League Manager** — league home, rosters, scoring, rules, players, and
+- **League Manager** — league home, rosters, schedules, scoring, rules, players, and
   historical seasons.
 - **Average lookup** — BOWL.com lookup from a roster file or one player.
 
@@ -37,7 +37,8 @@ or close it; its `×` and middle-click also close it. All tabs and windows
 refresh from the same database.
 
 Every League Manager subtab also has a right-click menu. Use it to open League
-home, Teams & roster, Scores & history, Rules & setup, Player directory, or All
+home, Teams & roster, Schedule & lanes, Scores & history, Rules & setup,
+Player directory, or All
 leagues in another top-level tab or a separate window. The new view keeps the
 league currently selected in the workspace bar.
 
@@ -60,7 +61,7 @@ signed out.
 
 1. Open **League Manager** and **All leagues**.
 2. Select **New league or tournament**.
-3. Enter the name, season/year, and type.
+3. Enter the name, season/year, type, and competition format.
 
 Treat each league season as a separate workspace. For example, `Monday Misfits
 2025-26` and `Monday Misfits 2026-27` are different records. This keeps earlier
@@ -74,6 +75,27 @@ The screen also supports:
 - registering a new player or pulling one from the permanent directory;
 - linking a reusable player pool;
 - opening league score history.
+
+Available formats are **Round robin**, **Single elimination**, and
+**Custom / manual**. This first 0.7 build generates Round robin schedules.
+The other formats are saved for future schedule builders.
+
+## Generate a round-robin schedule
+
+1. Create every participating team first.
+2. Open **Schedule & lanes**.
+3. Select **Generate round robin** and enter the first lane in the league's
+   lane block.
+4. Review each week from the Week / round selector.
+
+Every team appears once per round and meets every other team once during a
+complete cycle. Odd team counts receive one explicit BYE per round. Lane pairs
+rotate with the weekly matchups. Select or double-click a matchup to correct
+its lane pair; a duplicate lane pair in the same round is rejected.
+
+Schedules snapshot team names. Renaming a current team does not rewrite the
+schedule that was already generated. Matchups are not yet connected to weekly
+score sheets or standings.
 
 Use **All leagues** when you need the master season list or want to create,
 archive, restore, or revisit a different league. Use **League home** for the
@@ -105,7 +127,7 @@ Forward inside the relationship browser to move through related records.
 
 Open **League Manager** and **Teams & roster**. Choose the current league or
 tournament once in the shared workspace selector. Registration, Rules, Teams,
-and Scores follow that selection.
+Schedule, and Scores follow that selection.
 
 The main Teams & roster page is a full-size team list. Double-click a team, or
 select it and use **Manage roster**, to open that team's separate roster window.
@@ -232,6 +254,9 @@ Game states are:
 
 Team scratch and handicap totals are calculated from player game records. They
 cannot be edited independently.
+
+Select the Team heading in either score table to switch between ascending and
+descending team order. Player lineup order remains intact within each team.
 
 ## Finalize, correct, and review history
 

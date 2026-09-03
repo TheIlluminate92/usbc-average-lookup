@@ -12,7 +12,7 @@ tournament software while keeping historical records stable and auditable.
 
 ## Current release stage
 
-The current line is v0.6 pre-alpha. It is suitable for controlled testing with
+The current line is v0.7 pre-alpha. It is suitable for controlled testing with
 small real leagues, not broad public distribution. The product is manual-first:
 league management and scoring work offline, while BOWL.com sign-in is optional
 and used only for average verification.
@@ -43,10 +43,26 @@ Windows user profile in a schema-versioned SQLite database.
 
 - Treat each league season as an independent competition, even when the league
   name repeats next year.
-- Store name, season/year, and League or Tournament type.
+- Store name, season/year, League or Tournament type, and competition format.
 - Archive and restore old workspaces without deleting history.
 - Keep teams, registrations, rules, and scores scoped to their competition.
 - Prevent a team from being assigned across competitions.
+
+### Scheduling and formats
+
+- Support Round robin, Single elimination, and Custom/manual competition
+  formats without treating ordinary weekly league play as an elimination
+  bracket.
+- Generate a complete round-robin cycle in which every team meets every other
+  team once.
+- Keep one explicit BYE per round when the team count is odd.
+- Store matchups separately from lane pairs so points and standings do not have
+  to infer opponents from physical lane assignments.
+- Rotate lane pairs from a configurable first lane and allow an operator to
+  correct a lane assignment.
+- Preserve scheduled team-name snapshots when the live roster is renamed.
+- Connect rounds to score sheets and implement elimination advancement in a
+  later 0.7 increment.
 
 ### Teams and rosters
 
@@ -86,7 +102,8 @@ Windows user profile in a schema-versioned SQLite database.
 - Keep one current league/tournament selection synchronized across management
   and registration views.
 - Provide a league home work queue plus task-oriented Teams & roster, Scores &
-  history, Rules & setup, Player directory, and All leagues sections.
+  history, Schedule & lanes, Rules & setup, Player directory, and All leagues
+  sections.
 - Refresh every open management window after a successful domain write.
 - Allow Registration and a selected management view to open in additional
   windows with an independent league selection.

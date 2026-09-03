@@ -18,7 +18,7 @@ The repository and executable still use the historical name
 ## Download
 
 The current portable Windows test build is
-[v0.6.0-alpha.5](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.6.0-alpha.5).
+[v0.7.0-alpha.1](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.7.0-alpha.1).
 Download `USBC-Average-Lookup-Windows.zip`, extract the entire folder, and run
 `USBC-Average-Lookup.exe`.
 
@@ -39,7 +39,7 @@ workspaces. Right-click Registration or League Manager to open another tab or
 pop the current view into a separate window. Extra tabs keep their own league
 and section, show a close `×`, and can be moved into a window or closed from
 their right-click menu. Inside League Manager, right-click League home, Teams,
-Scores, Rules, Player directory, or All leagues to open that exact section in
+Schedule, Scores, Rules, Player directory, or All leagues to open that exact section in
 another tab or window. Middle-click also closes an extra top-level tab.
 
 - **Registration** supports fast single-player entry, whole-team entry, and
@@ -52,6 +52,8 @@ another tab or window. Middle-click also closes an extra top-level tab.
     team to open its regulars, team substitutes, and league-wide substitute
     pool in a separate roster window. Secondary commands are under **More
     actions**.
+  - **Schedule & lanes** generates a complete round-robin rotation, keeps
+    explicit weekly matchups and BYEs, and allows lane-pair corrections.
   - **Scores & history** stores permanent weekly score sheets, individual
     games, calculated team totals, and one combined history/corrections view.
   - **Rules & setup** keeps league details, average/handicap rules, scoring
@@ -79,13 +81,16 @@ View relationships action. Editing remains on the clearly labeled buttons.
    operation and use a different team in each.
 4. Sign in to BOWL.com only when average verification is needed. Manual league
    management and score entry work while signed out.
-5. Configure the league's average transformation, handicap, blind, vacancy,
+5. Select the competition format and configure the league's average
+   transformation, handicap, blind, vacancy,
    and games-per-night settings.
-6. Create a weekly score sheet. Active regular rosters are snapshotted into
+6. For a round-robin competition, generate the schedule and starting lane
+   block from **Schedule & lanes**.
+7. Create a weekly score sheet. Active regular rosters are snapshotted into
    that week.
-7. Add substitutes, vacancies, or a previously removed player; enter games;
+8. Add substitutes, vacancies, or a previously removed player; enter games;
    review team totals; and finalize the week.
-8. Reopen a final week only with a reason. Corrections remain in the permanent
+9. Reopen a final week only with a reason. Corrections remain in the permanent
    change log.
 
 See the [user guide](docs/user-guide.md) for detailed operating instructions.
@@ -97,6 +102,10 @@ See the [user guide](docs/user-guide.md) for detailed operating instructions.
 - Permanent players shared across league seasons and tournaments.
 - Independently editable year/season player pools.
 - League-season and tournament workspaces with archive/restore.
+- Competition format selection plus persistent round, matchup, lane-pair, and
+  BYE records.
+- Complete round-robin generation for even or odd team counts, with manual
+  lane-pair correction.
 - Competition-specific teams, regular rosters, team substitutes, and a
   league-wide substitute pool.
 - Copying a prior team and optionally its active roster into a new season.
@@ -134,10 +143,10 @@ See the [user guide](docs/user-guide.md) for detailed operating instructions.
   screen.
 - Member name search follows the BOWL.com frontend's first page of ten results.
   For very common names, a membership ID is the reliable search path.
-- Weekly score sheets do not yet define team matchups, lanes, points,
-  standings, schedules, leaderboards, or recap-sheet exports.
-- Score rows currently use a fixed team/name order. Clickable ascending and
-  descending team sorting is still planned.
+- Schedules are not yet connected to score sheets, match results, points,
+  standings, leaderboards, or recap-sheet exports.
+- Single elimination and Custom/manual formats can be selected, but their
+  schedule builders are not implemented yet.
 - There is no bracket, side-pot, payout, or other money-handling module.
 - There is no shared server, user login, cloud synchronization, or concurrent
   multi-computer editing. The SQLite file is local to one Windows profile.
@@ -255,6 +264,7 @@ src/usbc_average_lookup/
     exports.py           JSON, delimited, and Excel output
     input_parser.py      Flexible roster input
     registration.py      SQLite schema and registration domain
+    scheduling.py        Rounds, matchups, BYEs, and lane assignments
     scoring.py           Weekly scores, totals, and audit history
 tests/                    Automated behavior and regression tests
 docs/                     User, architecture, requirements, API, and release docs
@@ -277,12 +287,13 @@ docs/                     User, architecture, requirements, API, and release doc
    weekly schedule and occasional tournaments.
 2. Replace multi-selection gestures with clearer checkbox-style controls and
    make score entry more keyboard-friendly.
-3. Add weekly matchups and configurable points, then derive standings only from
-   finalized score sheets.
-4. Retain raw league activities so a league can select prior-league or adjusted
+3. Connect scheduled matchups to weekly scores, add configurable points, and
+   derive standings only from finalized score sheets.
+4. Add single-elimination generation after round-robin scoring is verified.
+5. Retain raw league activities so a league can select prior-league or adjusted
    averages instead of only Standard Composite.
-5. Define recap-sheet imports/exports after representative files are available.
-6. Complete packaged-build resource, privacy, and 200-bowler workload checks.
+6. Define recap-sheet imports/exports after representative files are available.
+7. Complete packaged-build resource, privacy, and 200-bowler workload checks.
 
 QR self-registration remains a parked future idea. Brackets and other money
 handling remain deliberately out of scope.

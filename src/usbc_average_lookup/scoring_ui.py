@@ -71,6 +71,7 @@ class ScoringDesk(ttk.Frame):
         self.session_by_label: dict[str, LeagueSession] = {}
         self.team_by_name: dict[str, Team] = {}
         self.current_sheet: list[ScoreLineView] = []
+        self.team_sort_descending = False
         self._build()
         self._unsubscribe_context = self.workspace_context.subscribe(
             self._workspace_competition_changed
@@ -360,7 +361,21 @@ class ScoringDesk(ttk.Frame):
         self.current_sheet = scoring.score_sheet(session.id)
         self._configure_score_columns(session.games_per_player)
         team_filter = self.team_filter_var.get()
-        for view in self.current_sheet:
+        team_names = sorted(
+            {view.line.team_name for view in self.current_sheet},
+            key=str.casefold,
+            reverse=self.team_sort_descending,
+        )
+        team_rank = {name: rank for rank, name in enumerate(team_names)}
+        displayed_sheet = sorted(
+            self.current_sheet,
+            key=lambda view: (
+                team_rank[view.line.team_name],
+                view.line.lineup_order,
+                view.line.player_name.casefold(),
+            ),
+        )
+        for view in displayed_sheet:
             if team_filter != "All teams" and view.line.team_name != team_filter:
                 continue
             role = "Vacancy" if view.line.is_vacancy else view.line.roster_role.value
@@ -380,7 +395,12 @@ class ScoringDesk(ttk.Frame):
                     view.counted_total,
                 ),
             )
-        for total in scoring.team_totals(session.id):
+        totals = sorted(
+            scoring.team_totals(session.id),
+            key=lambda total: total.team_name.casefold(),
+            reverse=self.team_sort_descending,
+        )
+        for total in totals:
             if team_filter != "All teams" and total.team_name != team_filter:
                 continue
             games = tuple(
@@ -440,7 +460,13 @@ class ScoringDesk(ttk.Frame):
             headings[column] = (f"Game {number}", 90)
         for column in columns:
             label, width = headings[column]
-            self.sheet_table.heading(column, text=label)
+            heading_options = {"text": label}
+            if column == "team":
+                heading_options = {
+                    "text": f"Team {'▼' if self.team_sort_descending else '▲'}",
+                    "command": self._toggle_team_sort,
+                }
+            self.sheet_table.heading(column, **heading_options)
             self.sheet_table.column(
                 column,
                 width=width,
@@ -450,13 +476,21 @@ class ScoringDesk(ttk.Frame):
             )
         total_columns = ("team", *game_columns, "total")
         self.totals_table.configure(columns=total_columns)
-        self.totals_table.heading("team", text="Team")
+        self.totals_table.heading(
+            "team",
+            text=f"Team {'▼' if self.team_sort_descending else '▲'}",
+            command=self._toggle_team_sort,
+        )
         self.totals_table.column("team", width=190, anchor="w", stretch=True)
         for number, column in enumerate(game_columns, start=1):
             self.totals_table.heading(column, text=f"Game {number}")
             self.totals_table.column(column, width=115, anchor="center")
         self.totals_table.heading("total", text="Series")
         self.totals_table.column("total", width=130, anchor="center")
+
+    def _toggle_team_sort(self) -> None:
+        self.team_sort_descending = not self.team_sort_descending
+        self._render_sheet()
 
     @staticmethod
     def _game_display(game: GameScore) -> str:

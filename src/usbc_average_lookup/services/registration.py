@@ -31,6 +31,12 @@ class CompetitionKind(StrEnum):
     TOURNAMENT = "Tournament"
 
 
+class CompetitionFormat(StrEnum):
+    ROUND_ROBIN = "Round robin"
+    SINGLE_ELIMINATION = "Single elimination"
+    CUSTOM = "Custom / manual"
+
+
 class VerificationState(StrEnum):
     NOT_CHECKED = "Not checked"
     CHECKING = "Checking"
@@ -53,6 +59,7 @@ class Competition:
     season: str
     kind: CompetitionKind
     created_at: str
+    competition_format: CompetitionFormat = CompetitionFormat.ROUND_ROBIN
     archived: bool = False
     player_pool_id: str = ""
     games_per_session: int = 3
@@ -171,7 +178,7 @@ def default_legacy_registration_path() -> Path:
 
 
 class RegistrationStore:
-    DATABASE_SCHEMA_VERSION = 3
+    DATABASE_SCHEMA_VERSION = 4
     LEGACY_SCHEMA_VERSIONS = {1, 2}
 
     def __init__(
@@ -232,6 +239,9 @@ class RegistrationStore:
                         season=row["season"],
                         kind=CompetitionKind(row["kind"]),
                         created_at=row["created_at"],
+                        competition_format=CompetitionFormat(
+                            row["competition_format"]
+                        ),
                         archived=bool(row["archived"]),
                         player_pool_id=row["player_pool_id"] or "",
                         games_per_session=row["games_per_session"],
@@ -247,7 +257,8 @@ class RegistrationStore:
                     )
                     for row in connection.execute(
                         """
-                        SELECT id, name, season, kind, created_at, archived,
+                        SELECT id, name, season, kind, created_at, competition_format,
+                               archived,
                                player_pool_id, games_per_session, average_rule_name,
                                average_minimum_games, average_multiplier,
                                average_add_pins, average_rounding, handicap_base,
@@ -345,11 +356,12 @@ class RegistrationStore:
                 connection.executemany(
                     """
                     INSERT INTO competitions (
-                        id, name, season, kind, created_at, archived, player_pool_id,
+                        id, name, season, kind, created_at, competition_format,
+                        archived, player_pool_id,
                         games_per_session, average_rule_name, average_minimum_games,
                         average_multiplier, average_add_pins, average_rounding,
                         handicap_base, handicap_percent, blind_penalty, vacancy_score
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
@@ -358,6 +370,7 @@ class RegistrationStore:
                             item.season,
                             item.kind.value,
                             item.created_at,
+                            item.competition_format.value,
                             int(item.archived),
                             item.player_pool_id or None,
                             item.games_per_session,
@@ -468,6 +481,64 @@ class RegistrationStore:
             )
         if version == self.DATABASE_SCHEMA_VERSION:
             return
+        if version == 3:
+            competition_columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(competitions)")
+            }
+            connection.execute("BEGIN IMMEDIATE")
+            if "competition_format" not in competition_columns:
+                connection.execute(
+                    """
+                    ALTER TABLE competitions ADD COLUMN competition_format TEXT NOT NULL
+                        DEFAULT 'Round robin'
+                    """
+                )
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS competition_rounds (
+                    id TEXT PRIMARY KEY,
+                    competition_id TEXT NOT NULL,
+                    round_number INTEGER NOT NULL CHECK (round_number > 0),
+                    label TEXT NOT NULL DEFAULT '',
+                    scheduled_on TEXT NOT NULL DEFAULT '',
+                    stage TEXT NOT NULL DEFAULT 'Regular season',
+                    status TEXT NOT NULL DEFAULT 'Scheduled' CHECK (status IN (
+                        'Scheduled', 'In progress', 'Final', 'Postponed', 'Cancelled'
+                    )),
+                    created_at TEXT NOT NULL,
+                    UNIQUE (competition_id, round_number)
+                );
+
+                CREATE TABLE IF NOT EXISTS competition_matches (
+                    id TEXT PRIMARY KEY,
+                    round_id TEXT NOT NULL
+                        REFERENCES competition_rounds(id) ON DELETE CASCADE,
+                    match_number INTEGER NOT NULL CHECK (match_number > 0),
+                    left_team_id TEXT NOT NULL,
+                    right_team_id TEXT,
+                    left_team_name TEXT NOT NULL,
+                    right_team_name TEXT NOT NULL DEFAULT '',
+                    lane_start INTEGER CHECK (lane_start > 0),
+                    status TEXT NOT NULL DEFAULT 'Scheduled' CHECK (status IN (
+                        'Scheduled', 'In progress', 'Final', 'Postponed',
+                        'Forfeit', 'Cancelled'
+                    )),
+                    is_position_round INTEGER NOT NULL DEFAULT 0
+                        CHECK (is_position_round IN (0, 1)),
+                    UNIQUE (round_id, match_number)
+                );
+
+                CREATE INDEX IF NOT EXISTS competition_rounds_competition_idx
+                    ON competition_rounds(competition_id, round_number);
+                CREATE INDEX IF NOT EXISTS competition_matches_round_idx
+                    ON competition_matches(round_id, match_number);
+
+                PRAGMA user_version = 4;
+                """
+            )
+            connection.commit()
+            return
         if version == 2:
             columns = {
                 row[1]
@@ -483,6 +554,7 @@ class RegistrationStore:
                 )
             connection.execute("PRAGMA user_version = 3")
             connection.commit()
+            self._ensure_schema(connection)
             return
         if version == 1:
             connection.executescript(
@@ -589,6 +661,7 @@ class RegistrationStore:
                 """
             )
             connection.commit()
+            self._ensure_schema(connection)
             return
         if version != 0:
             raise RegistrationDataError(
@@ -622,6 +695,7 @@ class RegistrationStore:
                 season TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
                 kind TEXT NOT NULL CHECK (kind IN ('League', 'Tournament')),
                 created_at TEXT NOT NULL,
+                competition_format TEXT NOT NULL DEFAULT 'Round robin',
                 archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
                 player_pool_id TEXT REFERENCES player_pools(id),
                 games_per_session INTEGER NOT NULL DEFAULT 3
@@ -752,7 +826,45 @@ class RegistrationStore:
             CREATE INDEX score_change_log_session_idx
                 ON score_change_log(session_id, changed_at);
 
-            PRAGMA user_version = 3;
+            CREATE TABLE competition_rounds (
+                id TEXT PRIMARY KEY,
+                competition_id TEXT NOT NULL,
+                round_number INTEGER NOT NULL CHECK (round_number > 0),
+                label TEXT NOT NULL DEFAULT '',
+                scheduled_on TEXT NOT NULL DEFAULT '',
+                stage TEXT NOT NULL DEFAULT 'Regular season',
+                status TEXT NOT NULL DEFAULT 'Scheduled' CHECK (status IN (
+                    'Scheduled', 'In progress', 'Final', 'Postponed', 'Cancelled'
+                )),
+                created_at TEXT NOT NULL,
+                UNIQUE (competition_id, round_number)
+            );
+
+            CREATE TABLE competition_matches (
+                id TEXT PRIMARY KEY,
+                round_id TEXT NOT NULL
+                    REFERENCES competition_rounds(id) ON DELETE CASCADE,
+                match_number INTEGER NOT NULL CHECK (match_number > 0),
+                left_team_id TEXT NOT NULL,
+                right_team_id TEXT,
+                left_team_name TEXT NOT NULL,
+                right_team_name TEXT NOT NULL DEFAULT '',
+                lane_start INTEGER CHECK (lane_start > 0),
+                status TEXT NOT NULL DEFAULT 'Scheduled' CHECK (status IN (
+                    'Scheduled', 'In progress', 'Final', 'Postponed',
+                    'Forfeit', 'Cancelled'
+                )),
+                is_position_round INTEGER NOT NULL DEFAULT 0
+                    CHECK (is_position_round IN (0, 1)),
+                UNIQUE (round_id, match_number)
+            );
+
+            CREATE INDEX competition_rounds_competition_idx
+                ON competition_rounds(competition_id, round_number);
+            CREATE INDEX competition_matches_round_idx
+                ON competition_matches(round_id, match_number);
+
+            PRAGMA user_version = 4;
 
             COMMIT;
             """
@@ -808,6 +920,9 @@ class RegistrationStore:
                     season=str(item.get("season", "")),
                     kind=CompetitionKind(item["kind"]),
                     created_at=str(item.get("created_at", "")),
+                    competition_format=CompetitionFormat(
+                        item.get("competition_format", CompetitionFormat.ROUND_ROBIN)
+                    ),
                     archived=bool(item.get("archived", False)),
                     player_pool_id=str(item.get("player_pool_id", "")),
                 )
@@ -854,7 +969,11 @@ class RegistrationStore:
             ) from error
 
     def add_competition(
-        self, name: str, season: str, kind: CompetitionKind
+        self,
+        name: str,
+        season: str,
+        kind: CompetitionKind,
+        competition_format: CompetitionFormat = CompetitionFormat.ROUND_ROBIN,
     ) -> Competition:
         clean_name = _required(name, "League or tournament name")
         clean_season = season.strip()
@@ -876,6 +995,7 @@ class RegistrationStore:
             season=clean_season,
             kind=kind,
             created_at=_now(),
+            competition_format=competition_format,
         )
         self.competitions.append(competition)
         self.save()
@@ -969,6 +1089,7 @@ class RegistrationStore:
         name: str,
         season: str,
         kind: CompetitionKind,
+        competition_format: CompetitionFormat | None = None,
     ) -> None:
         competition = self._competition(competition_id)
         clean_name = _required(name, "League or tournament name")
@@ -986,6 +1107,8 @@ class RegistrationStore:
         competition.name = clean_name
         competition.season = clean_season
         competition.kind = kind
+        if competition_format is not None:
+            competition.competition_format = competition_format
         self.save()
 
     def update_competition_scoring_settings(

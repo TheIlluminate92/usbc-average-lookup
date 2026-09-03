@@ -5,6 +5,21 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+## v0.7.0-alpha.1 — 2026-09-03
+
+- Added configurable Round robin, Single elimination, and Custom/manual
+  competition formats. Round-robin generation is the first implemented format.
+- Added a Schedule & lanes workspace with automatic full round-robin pairing,
+  rotating lane pairs, explicit BYEs, week/round navigation, and manual lane
+  corrections.
+- Added permanent round and matchup snapshots so later team renames do not
+  rewrite an existing schedule.
+- Added ascending/descending Team heading controls to both the player score
+  sheet and team totals.
+- Upgraded SQLite to schema version 4 with an automatic version-3 backup.
+- Kept standings, elimination generation, prize calculations, side brackets,
+  and payment handling deliberately out of this first 0.7 slice.
+
 ## v0.6.0-alpha.5 — 2026-09-03
 
 - Added right-click Open in new tab and Pop out into separate window actions

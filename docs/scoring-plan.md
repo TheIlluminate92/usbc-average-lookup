@@ -107,14 +107,15 @@ but only the verified Standard Composite value is currently saved on a
 registration and offered to scoring. Named previous-league average selection is
 therefore planned, not implemented.
 
-## Next scoring layer: matchups
+## Implemented scheduling foundation
 
-The next database/UI change should define an explicit match rather than infer it
-from the order of teams on a score sheet.
+Schema version 4 defines an explicit match rather than inferring it from score
+sheet or lane order. The Schedule & lanes workspace can generate a complete
+round-robin cycle from the current team list.
 
-Proposed records:
+Implemented records:
 
-- schedule/week reference;
+- competition and numbered round reference;
 - left and right team;
 - lane or pair assignment;
 - scheduled date/time when useful;
@@ -129,6 +130,12 @@ Requirements:
   actual bowling date.
 - Matchups reference score-sheet teams but must preserve historical team names.
 - No standings points are awarded from a Draft week.
+
+Round robin generation currently guarantees one appearance per team per round,
+one meeting per pair over a complete cycle, rotating lane pairs, and explicit
+BYEs for odd team counts. An operator can correct a lane pair without changing
+the matchup. The next increment will connect rounds to score sheets and add
+manual matchup correction before points are calculated.
 
 ## Configurable points
 

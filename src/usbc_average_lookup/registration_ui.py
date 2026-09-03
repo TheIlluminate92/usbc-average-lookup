@@ -12,6 +12,7 @@ from usbc_average_lookup.relationships_ui import (
     EntityRef,
     RelationshipBrowser,
 )
+from usbc_average_lookup.scheduling_ui import ScheduleDesk
 from usbc_average_lookup.scoring_ui import LeagueScoringSettingsDialog, ScoringDesk
 from usbc_average_lookup.services.bowl_api import BowlApi
 from usbc_average_lookup.services.input_parser import parse_input_text
@@ -19,6 +20,7 @@ from usbc_average_lookup.services.lookup import look_up_bowler, resolve_selected
 from usbc_average_lookup.services.registration import (
     BowlerProfile,
     Competition,
+    CompetitionFormat,
     CompetitionKind,
     PlayerPool,
     Registration,
@@ -140,11 +142,15 @@ class RegistrationDesk(ttk.Frame):
         self.scores_tab = ttk.Frame(
             self.section_tabs, style="App.TFrame", padding=(10, 8, 10, 10)
         )
+        self.schedule_tab = ttk.Frame(
+            self.section_tabs, style="App.TFrame", padding=(10, 8, 10, 10)
+        )
         self.rules_tab = ttk.Frame(
             self.section_tabs, style="App.TFrame", padding=(12, 10, 12, 12)
         )
         self.section_tabs.add(self.overview_tab, text="League home")
         self.section_tabs.add(self.teams_tab, text="Teams & roster")
+        self.section_tabs.add(self.schedule_tab, text="Schedule & lanes")
         self.section_tabs.add(self.scores_tab, text="Scores & history")
         self.section_tabs.add(self.rules_tab, text="Rules & setup")
         self.section_tabs.add(self.players_tab, text="Player directory")
@@ -324,6 +330,13 @@ class RegistrationDesk(ttk.Frame):
         self._build_teams_tab()
         self._build_competitions_tab()
         self._build_rules_tab()
+        self.schedule_desk = ScheduleDesk(
+            self.schedule_tab,
+            self.store,
+            self.status_callback,
+            workspace_context=self.workspace_context,
+        )
+        self.schedule_desk.pack(fill=tk.BOTH, expand=True)
         self.scoring_desk = ScoringDesk(
             self.scores_tab,
             self.store,
@@ -333,8 +346,12 @@ class RegistrationDesk(ttk.Frame):
         )
         self.scoring_desk.pack(fill=tk.BOTH, expand=True)
         self.section_tabs.bind(
-            "<<NotebookTabChanged>>", lambda _event: self.scoring_desk.refresh()
+            "<<NotebookTabChanged>>", lambda _event: self._refresh_active_workspaces()
         )
+
+    def _refresh_active_workspaces(self) -> None:
+        self.schedule_desk.refresh()
+        self.scoring_desk.refresh()
 
     def _build_overview_tab(self) -> None:
         tab = self.overview_tab
@@ -469,6 +486,7 @@ class RegistrationDesk(ttk.Frame):
         details.columnconfigure(1, weight=1)
         fields = (
             ("Workspace", "rules_workspace_value"),
+            ("Competition format", "rules_format_value"),
             ("Games per night", "rules_games_value"),
             ("Average rule", "rules_average_value"),
             ("Handicap", "rules_handicap_value"),
@@ -896,6 +914,7 @@ class RegistrationDesk(ttk.Frame):
             self.workspace_context.select(competition.id)
         self._competition_changed()
         self._refresh_team_management_competitions()
+        self.schedule_desk.refresh()
         self.scoring_desk.refresh()
 
     def _workspace_competition_changed(self, competition_id: str) -> None:
@@ -911,6 +930,7 @@ class RegistrationDesk(ttk.Frame):
             self.competition_var.set(label)
         self._competition_changed()
         self._refresh_team_management_competitions()
+        self.schedule_desk.refresh()
 
     def refresh_auth_state(self) -> None:
         self._update_actions()
@@ -921,6 +941,7 @@ class RegistrationDesk(ttk.Frame):
         self._render_players()
         self._refresh_team_management_competitions()
         self._render_competitions()
+        self.schedule_desk.refresh()
         self.scoring_desk.refresh()
         self._render_rules_summary()
 
@@ -1009,6 +1030,7 @@ class RegistrationDesk(ttk.Frame):
         if competition is None or self.store is None:
             for attribute in (
                 "rules_workspace_value",
+                "rules_format_value",
                 "rules_games_value",
                 "rules_average_value",
                 "rules_handicap_value",
@@ -1029,6 +1051,7 @@ class RegistrationDesk(ttk.Frame):
         self.rules_workspace_value.configure(
             text=f"{competition.display_name} • {competition.kind.value}"
         )
+        self.rules_format_value.configure(text=competition.competition_format.value)
         self.rules_games_value.configure(text=str(competition.games_per_session))
         self.rules_average_value.configure(
             text=(
@@ -1793,9 +1816,11 @@ class RegistrationDesk(ttk.Frame):
         choice = CompetitionDialog(self).show()
         if choice is None:
             return
-        name, season, kind = choice
+        name, season, kind, competition_format = choice
         try:
-            competition = self.store.add_competition(name, season, kind)
+            competition = self.store.add_competition(
+                name, season, kind, competition_format
+            )
         except (OSError, RegistrationDataError) as error:
             messagebox.showerror("Could not create", str(error), parent=self)
             return
@@ -3335,10 +3360,10 @@ class CompetitionDialog(tk.Toplevel):
         self, parent: tk.Misc, competition: Competition | None = None
     ) -> None:
         super().__init__(parent)
-        self.choice: tuple[str, str, CompetitionKind] | None = None
+        self.choice: tuple[str, str, CompetitionKind, CompetitionFormat] | None = None
         self.competition = competition
         self.title("Edit league or tournament" if competition else "New league or tournament")
-        self.geometry("500x320")
+        self.geometry("520x380")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -3360,7 +3385,16 @@ class CompetitionDialog(tk.Toplevel):
         )
         self.name_var = tk.StringVar(value=competition.name if competition else "")
         self.season_var = tk.StringVar(value=competition.season if competition else "")
-        for row, label in enumerate(("Type", "Name", "Season or year"), start=1):
+        self.format_var = tk.StringVar(
+            value=(
+                competition.competition_format.value
+                if competition
+                else CompetitionFormat.ROUND_ROBIN.value
+            )
+        )
+        for row, label in enumerate(
+            ("Type", "Name", "Season or year", "Competition format"), start=1
+        ):
             ttk.Label(content, text=label, style="Muted.TLabel").grid(
                 row=row, column=0, sticky="w", padx=(0, 12), pady=7
             )
@@ -3375,13 +3409,19 @@ class CompetitionDialog(tk.Toplevel):
         ttk.Entry(content, textvariable=self.season_var).grid(
             row=3, column=1, sticky="ew", pady=7
         )
+        ttk.Combobox(
+            content,
+            textvariable=self.format_var,
+            values=[item.value for item in CompetitionFormat],
+            state="readonly",
+        ).grid(row=4, column=1, sticky="ew", pady=7)
         ttk.Label(
             content,
             text="Example: Monday Misfits, 2026–27",
             style="Muted.TLabel",
-        ).grid(row=4, column=1, sticky="w")
+        ).grid(row=5, column=1, sticky="w")
         buttons = ttk.Frame(content, style="App.TFrame")
-        buttons.grid(row=5, column=0, columnspan=2, sticky="e", pady=(26, 0))
+        buttons.grid(row=6, column=0, columnspan=2, sticky="e", pady=(26, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
         ttk.Button(
             buttons,
@@ -3401,10 +3441,11 @@ class CompetitionDialog(tk.Toplevel):
             name,
             self.season_var.get().strip(),
             CompetitionKind(self.kind_var.get()),
+            CompetitionFormat(self.format_var.get()),
         )
         self.destroy()
 
-    def show(self) -> tuple[str, str, CompetitionKind] | None:
+    def show(self) -> tuple[str, str, CompetitionKind, CompetitionFormat] | None:
         self.wait_window()
         return self.choice
 
