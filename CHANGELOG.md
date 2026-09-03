@@ -5,6 +5,8 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+## v0.6.0-alpha.3 — 2026-09-03
+
 - Preserved a resolved inactive-member result when only the player's team or
   roster role changes.
 - Expanded Teams & roster into a full-size team list and moved each team's
