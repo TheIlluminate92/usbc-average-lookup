@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import sqlite3
+from collections.abc import Callable
 from contextlib import closing
 from copy import deepcopy
 from dataclasses import dataclass
@@ -190,6 +191,7 @@ class RegistrationStore:
         self.player_pool_entries: list[PlayerPoolEntry] = []
         self.teams: list[Team] = []
         self.registrations: list[Registration] = []
+        self._change_listeners: list[Callable[[], None]] = []
         if self.path.exists():
             self.load()
         elif self.legacy_json_path and self.legacy_json_path.exists():
@@ -421,6 +423,21 @@ class RegistrationStore:
             raise RegistrationDataError(
                 f"Registration data could not be saved: {error}"
             ) from error
+        self._notify_change()
+
+    def add_change_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+        if listener not in self._change_listeners:
+            self._change_listeners.append(listener)
+
+        def unsubscribe() -> None:
+            if listener in self._change_listeners:
+                self._change_listeners.remove(listener)
+
+        return unsubscribe
+
+    def _notify_change(self) -> None:
+        for listener in tuple(self._change_listeners):
+            listener()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=5)

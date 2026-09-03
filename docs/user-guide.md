@@ -1,6 +1,6 @@
 # User guide
 
-This guide describes the current v0.5 pre-alpha Windows application. Labels may
+This guide describes the current v0.6 pre-alpha Windows application. Labels may
 change as the workflow is tested with real leagues.
 
 ## Install and start
@@ -21,21 +21,32 @@ League data is stored separately from the application folder:
 
 Moving or replacing the program folder does not move or erase that database.
 
-## Main navigation
+## Main navigation and extra windows
 
-The top of the window has three workspaces:
+The compact top strip works like a browser and opens on **Registration**:
 
-- **League Manager** — setup, rosters, relationships, scoring, and history.
 - **Registration** — fast day-of or preseason player entry.
+- **League Manager** — league home, rosters, scoring, rules, players, and
+  historical seasons.
 - **Average lookup** — BOWL.com lookup from a roster file or one player.
 
-Sign-in status and the BOWL.com sign-in controls remain at the top. Sign-in is
+Use **+ New window** to open another Registration window or the current League
+Manager view. You can also right-click Registration or League Manager, or use
+**Open view in new window** inside League Manager. Each management window may
+remain on a different league. All windows refresh from the same database;
+closing an extra window does not close the main application.
+
+Average lookup remains in the main window. If a weekly score-entry dialog is
+already open in one window, another window cannot edit that same score sheet
+until the dialog closes.
+
+Sign-in status and the BOWL.com controls share the compact strip. Sign-in is
 required only for online lookup; local records and scoring remain usable while
 signed out.
 
 ## Create a league season or tournament
 
-1. Open **League Manager** and **Leagues & Seasons**.
+1. Open **League Manager** and **Leagues & seasons**.
 2. Select **New league or tournament**.
 3. Enter the name, season/year, and type.
 
@@ -56,7 +67,7 @@ Double-click the league row to explore its teams and players.
 
 ## Permanent players and season pools
 
-Open **League Manager** and **Players**.
+Open **League Manager** and **Player directory**.
 
 The permanent player directory stores one reusable identity with a name and
 optional member ID. A player can participate in any number of league seasons
@@ -75,8 +86,9 @@ Forward inside the relationship browser to move through related records.
 
 ## Teams and rosters
 
-Open **League Manager** and **Teams**, then select the league or tournament.
-Only teams belonging to the selected workspace are shown.
+Open **League Manager** and **Teams & roster**. Choose the current league or
+tournament once in the shared workspace selector. Registration, Rules, Teams,
+and Scores follow that selection.
 
 Each registration has one of two roles:
 
@@ -150,8 +162,9 @@ name-search request retrieves only the first page of ten BOWL.com candidates.
 
 ## Configure league scoring
 
-Open **League Manager**, **Scores**, select a league, and choose **League scoring
-settings**.
+Open **League Manager** and **Rules & setup**, then choose **Edit average &
+scoring rules**. The same settings button remains available in **Scores &
+history**.
 
 Current settings are:
 
@@ -177,7 +190,7 @@ floor(max(handicap base - entering average, 0) × handicap percentage)
 
 ## Create and enter a weekly score sheet
 
-1. Select the league in **Scores**.
+1. Select the league workspace, then open **Scores & history**.
 2. Select **New week** and enter the week number, optional date, and label.
 3. The application copies active regular roster assignments into a permanent
    weekly snapshot.

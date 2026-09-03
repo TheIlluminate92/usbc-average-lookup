@@ -81,7 +81,7 @@ The change log retains:
 History is accessible from:
 
 - Scores → History;
-- Leagues & Seasons → Score history;
+- Leagues & seasons → Score history;
 - Teams → Score history.
 
 League history can filter to a team. Team history includes weeks with score rows

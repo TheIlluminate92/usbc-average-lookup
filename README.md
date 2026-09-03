@@ -18,7 +18,7 @@ The repository and executable still use the historical name
 ## Download
 
 The current portable Windows test build is
-[v0.5.0-alpha.2](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.5.0-alpha.2).
+[v0.6.0-alpha.1](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.6.0-alpha.1).
 Download `USBC-Average-Lookup-Windows.zip`, extract the entire folder, and run
 `USBC-Average-Lookup.exe`.
 
@@ -34,21 +34,26 @@ extracted program folder does not copy league data.
 
 ## Current application
 
-The main window opens on Registration and has three top-level workspaces:
+The compact browser-style strip opens on Registration and has three top-level
+workspaces. Use **+ New window**, right-click a top-level tab, or use **Open
+view in new window** inside League Manager to work side by side.
 
 - **Registration** supports fast single-player entry, whole-team entry, and
   one-step registration into multiple leagues with a separate team assignment
   for each.
 - **League Manager**
-  - **Leagues & Seasons** creates and archives league-season or tournament
+  - **League home** summarizes the selected competition and its work queue.
+  - **Teams & roster** manages regulars, team substitutes, and the league-wide
+    substitute pool in one master-detail view.
+  - **Scores & history** stores permanent weekly score sheets, individual
+    games, calculated team totals, and correction history.
+  - **Rules & setup** keeps league details, average/handicap rules, scoring
+    defaults, and the linked player pool together.
+  - **Player directory** maintains one permanent identity per person and
+    optional year/season player pools.
+  - **Leagues & seasons** creates and archives league-season or tournament
     workspaces, links player pools, manages teams and players, and opens score
     history.
-  - **Players** maintains one permanent player identity per person and optional
-    year/season player pools.
-  - **Teams** filters teams by league or tournament and manages regulars,
-    team-specific substitutes, and the league-wide substitute pool.
-  - **Scores** stores permanent weekly league score sheets, individual games,
-    calculated team totals, and correction history.
 - **Average lookup** imports a roster or accepts one player, checks BOWL.com,
   resolves ambiguous matches, exports results, and can add the result list to
   the permanent player directory.
@@ -106,6 +111,11 @@ See the [user guide](docs/user-guide.md) for detailed operating instructions.
   history, and reasoned correction logs.
 - Relationship navigation in both directions between leagues, teams, and
   players.
+- One shared league/tournament context across Registration, Teams, Rules, and
+  Scores, with automatic refresh after a database change.
+- Browser-style workspace chrome and synchronized Registration or League
+  Manager windows. Detached management windows may stay on different leagues;
+  score-entry dialogs prevent simultaneous editing of the same weekly sheet.
 
 ## Important current limits
 
@@ -122,6 +132,8 @@ See the [user guide](docs/user-guide.md) for detailed operating instructions.
 - There is no bracket, side-pot, payout, or other money-handling module.
 - There is no shared server, user login, cloud synchronization, or concurrent
   multi-computer editing. The SQLite file is local to one Windows profile.
+- Registration and League Manager can open in additional windows. Average
+  lookup currently remains in the main window.
 - Input and output formats remain intentionally flexible until representative
   league and tournament files are available.
 - The Windows test build is unsigned and is not an installer.

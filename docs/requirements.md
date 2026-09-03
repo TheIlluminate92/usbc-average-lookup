@@ -12,7 +12,7 @@ tournament software while keeping historical records stable and auditable.
 
 ## Current release stage
 
-The current line is v0.5 pre-alpha. It is suitable for controlled testing with
+The current line is v0.6 pre-alpha. It is suitable for controlled testing with
 small real leagues, not broad public distribution. The product is manual-first:
 league management and scoring work offline, while BOWL.com sign-in is optional
 and used only for average verification.
@@ -80,6 +80,19 @@ Windows user profile in a schema-versioned SQLite database.
 - Navigate league → teams → players and player → teams/leagues.
 - Provide Back and Forward history.
 - Keep editing on explicit labeled actions rather than overloading double-click.
+
+### Management workspace
+
+- Keep one current league/tournament selection synchronized across management
+  and registration views.
+- Provide a league home work queue plus task-oriented Teams & roster, Scores &
+  history, Rules & setup, Player directory, and Leagues & seasons sections.
+- Refresh every open management window after a successful domain write.
+- Allow Registration and a selected management view to open in additional
+  windows with an independent league selection.
+- Prevent simultaneous score-entry dialogs for the same weekly score sheet.
+- Keep Average lookup in the main window until its UI state is separated from
+  the application shell.
 
 ## BOWL.com lookup requirements
 

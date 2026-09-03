@@ -23,6 +23,7 @@ from usbc_average_lookup.services.scoring import (
     ScoringStore,
     SessionStatus,
 )
+from usbc_average_lookup.workspace import LeagueWorkspaceContext, ScoreSheetEditLocks
 
 
 class ScoringDesk(ttk.Frame):
@@ -31,11 +32,16 @@ class ScoringDesk(ttk.Frame):
         parent: tk.Misc,
         store: RegistrationStore | None,
         status_callback: Callable[[str], None],
+        workspace_context: LeagueWorkspaceContext | None = None,
+        edit_locks: ScoreSheetEditLocks | None = None,
     ) -> None:
         super().__init__(parent, style="App.TFrame")
         self.registration_store = store
         self.scoring_store = ScoringStore(store) if store is not None else None
         self.status_callback = status_callback
+        self.workspace_context = workspace_context or LeagueWorkspaceContext()
+        self.edit_locks = edit_locks or ScoreSheetEditLocks()
+        self.edit_owner_id = f"scoring-{id(self)}"
         self.competition_var = tk.StringVar()
         self.session_var = tk.StringVar()
         self.team_filter_var = tk.StringVar(value="All teams")
@@ -44,6 +50,9 @@ class ScoringDesk(ttk.Frame):
         self.team_by_name: dict[str, Team] = {}
         self.current_sheet: list[ScoreLineView] = []
         self._build()
+        self._unsubscribe_context = self.workspace_context.subscribe(
+            self._workspace_competition_changed
+        )
 
     def _build(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -84,7 +93,7 @@ class ScoringDesk(ttk.Frame):
         )
         self.competition_box.grid(row=0, column=1, sticky="ew")
         self.competition_box.bind(
-            "<<ComboboxSelected>>", lambda _event: self._competition_changed()
+            "<<ComboboxSelected>>", lambda _event: self._competition_selected()
         )
         ttk.Label(selectors, text="Score sheet", style="Surface.TLabel").grid(
             row=0, column=2, sticky="w", padx=(14, 8)
@@ -239,8 +248,22 @@ class ScoringDesk(ttk.Frame):
         self.competition_box.configure(
             values=labels, state="readonly" if labels else tk.DISABLED
         )
-        if self.competition_var.get() not in self.competition_by_label:
+        preferred_id = self.workspace_context.competition_id
+        preferred_label = next(
+            (
+                label
+                for label, competition in self.competition_by_label.items()
+                if competition.id == preferred_id
+            ),
+            "",
+        )
+        if preferred_id:
+            self.competition_var.set(preferred_label)
+        elif self.competition_var.get() not in self.competition_by_label:
             self.competition_var.set(labels[0] if labels else "")
+            competition = self._competition()
+            if competition is not None:
+                self.workspace_context.select(competition.id)
         self._competition_changed()
 
     def _competition(self) -> Competition | None:
@@ -248,6 +271,24 @@ class ScoringDesk(ttk.Frame):
 
     def _session(self) -> LeagueSession | None:
         return self.session_by_label.get(self.session_var.get())
+
+    def _competition_selected(self) -> None:
+        competition = self._competition()
+        if competition is not None:
+            self.workspace_context.select(competition.id)
+        self._competition_changed()
+
+    def _workspace_competition_changed(self, competition_id: str) -> None:
+        label = next(
+            (
+                label
+                for label, competition in self.competition_by_label.items()
+                if competition.id == competition_id
+            ),
+            "",
+        )
+        self.competition_var.set(label)
+        self._competition_changed()
 
     def _competition_changed(self) -> None:
         competition = self._competition()
@@ -502,17 +543,27 @@ class ScoringDesk(ttk.Frame):
                 parent=self,
             )
             return
-        choice = ScoreEntryDialog(self, view).show()
-        if choice is None:
+        if not self.edit_locks.acquire(session.id, self.edit_owner_id):
+            messagebox.showinfo(
+                "Score sheet already open",
+                "This week's scores are being edited in another Bowling Manager window.",
+                parent=self,
+            )
             return
-        average, entries, reason = choice
         try:
-            scoring.save_line_scores(view.line.id, average, entries, reason)
-        except RegistrationDataError as error:
-            messagebox.showerror("Could not save scores", str(error), parent=self)
-            return
-        self._render_sheet()
-        self.status_callback(f"Saved scores for {view.line.player_name}")
+            choice = ScoreEntryDialog(self, view).show()
+            if choice is None:
+                return
+            average, entries, reason = choice
+            try:
+                scoring.save_line_scores(view.line.id, average, entries, reason)
+            except RegistrationDataError as error:
+                messagebox.showerror("Could not save scores", str(error), parent=self)
+                return
+            self._render_sheet()
+            self.status_callback(f"Saved scores for {view.line.player_name}")
+        finally:
+            self.edit_locks.release(session.id, self.edit_owner_id)
 
     def _add_score_player(self) -> None:
         session = self._session()
@@ -645,6 +696,7 @@ class ScoringDesk(ttk.Frame):
         if not label:
             return
         self.competition_var.set(label)
+        self.workspace_context.select(competition_id)
         self._competition_changed()
         if show_history:
             self.show_history(team_id)
@@ -678,6 +730,9 @@ class ScoringDesk(ttk.Frame):
         if label:
             self.session_var.set(label)
             self._session_changed()
+
+    def close(self) -> None:
+        self._unsubscribe_context()
 
 
 class NewSessionDialog(tk.Toplevel):

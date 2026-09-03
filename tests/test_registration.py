@@ -783,3 +783,15 @@ def test_default_store_discovers_and_migrates_legacy_json(tmp_path, monkeypatch)
     assert store.path == data_folder / "bowling-manager.db"
     assert store.path.read_bytes().startswith(b"SQLite format 3\x00")
     assert (data_folder / "registration-data.pre-sqlite-backup.json").exists()
+
+
+def test_store_change_listener_runs_after_successful_save(tmp_path) -> None:
+    store = RegistrationStore(tmp_path / "registration.db")
+    notifications: list[str] = []
+    unsubscribe = store.add_change_listener(lambda: notifications.append("saved"))
+
+    store.add_competition("Monday Misfits", "2026-27", CompetitionKind.LEAGUE)
+    unsubscribe()
+    store.add_competition("Tuesday Twisters", "2026-27", CompetitionKind.LEAGUE)
+
+    assert notifications == ["saved"]

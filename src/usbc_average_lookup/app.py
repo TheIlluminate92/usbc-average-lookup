@@ -32,6 +32,7 @@ from usbc_average_lookup.services.registration import (
     RegistrationDataError,
     RegistrationStore,
 )
+from usbc_average_lookup.workspace import LeagueWorkspaceContext, ScoreSheetEditLocks
 
 COLORS = {
     "navy": "#0C2744",
@@ -74,8 +75,17 @@ class AverageLookupApp(tk.Tk):
         except RegistrationDataError as error:
             self.registration_store = None
             self.registration_data_error = str(error)
+        self.workspace_context = LeagueWorkspaceContext()
+        self.score_edit_locks = ScoreSheetEditLocks()
+        self.detached_desks: dict[tk.Toplevel, RegistrationDesk] = {}
+        self._refresh_pending = False
         self._configure_style()
         self._build_ui()
+        self._unsubscribe_store = (
+            self.registration_store.add_change_listener(self._store_changed)
+            if self.registration_store is not None
+            else None
+        )
         self._render_results()
         if self.registration_data_error:
             self.after(
@@ -122,6 +132,12 @@ class AverageLookupApp(tk.Tk):
             padding=(12, 7),
         )
         style.configure(
+            "ToolbarStatus.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["muted"],
+            padding=(6, 4),
+        )
+        style.configure(
             "TButton",
             background=COLORS["surface_raised"],
             foreground=COLORS["text"],
@@ -129,6 +145,20 @@ class AverageLookupApp(tk.Tk):
             padding=(12, 8),
         )
         style.map("TButton", background=[("active", COLORS["navy_soft"])])
+        style.configure(
+            "Toolbar.TButton",
+            background=COLORS["surface_raised"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["line"],
+            padding=(9, 5),
+        )
+        style.configure(
+            "Toolbar.TMenubutton",
+            background=COLORS["surface_raised"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["line"],
+            padding=(9, 5),
+        )
         style.configure(
             "Primary.TButton",
             background=COLORS["navy_soft"],
@@ -183,6 +213,23 @@ class AverageLookupApp(tk.Tk):
             foreground=[("selected", COLORS["text"])],
         )
         style.configure(
+            "Workspace.TNotebook",
+            background=COLORS["canvas"],
+            borderwidth=0,
+            tabmargins=(10, 7, 0, 0),
+        )
+        style.configure(
+            "Workspace.TNotebook.Tab",
+            background=COLORS["surface"],
+            foreground=COLORS["muted"],
+            padding=(22, 10),
+        )
+        style.map(
+            "Workspace.TNotebook.Tab",
+            background=[("selected", COLORS["navy_soft"])],
+            foreground=[("selected", COLORS["text"])],
+        )
+        style.configure(
             "Treeview",
             background=COLORS["surface"],
             fieldbackground=COLORS["surface"],
@@ -211,45 +258,66 @@ class AverageLookupApp(tk.Tk):
         )
 
     def _build_ui(self) -> None:
-        header = ttk.Frame(self, style="Surface.TFrame", padding=(28, 20, 28, 16))
+        header = ttk.Frame(self, style="Surface.TFrame", padding=(14, 8))
         header.pack(fill=tk.X)
         header.columnconfigure(0, weight=1)
-        ttk.Label(header, text="Bowling Manager", style="Title.TLabel").grid(
-            row=0, column=0, sticky="w"
-        )
         ttk.Label(
             header,
-            text="Leagues, tournaments, teams, and verified averages.",
-            style="Subtitle.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
-        self.auth_status = ttk.Label(header, text="Not signed in", style="Status.TLabel")
-        self.auth_status.grid(row=0, column=1, rowspan=2, padx=(18, 0), sticky="e")
+            text="Bowling Manager",
+            style="Surface.TLabel",
+            font=("Segoe UI", 12, "bold"),
+        ).grid(
+            row=0, column=0, sticky="w"
+        )
+        self.workspace_menu = tk.Menu(self, tearoff=False)
+        self.workspace_menu.add_command(
+            label="Registration", command=self._open_registration_window
+        )
+        self.workspace_menu.add_command(
+            label="Current management view", command=self._open_management_window
+        )
+        self.new_window_button = ttk.Menubutton(
+            header,
+            text="+ New window",
+            menu=self.workspace_menu,
+            style="Toolbar.TMenubutton",
+        )
+        self.new_window_button.grid(row=0, column=1, padx=(12, 0), sticky="e")
+        self.auth_status = ttk.Label(
+            header, text="BOWL.com: signed out", style="ToolbarStatus.TLabel"
+        )
+        self.auth_status.grid(row=0, column=2, padx=(14, 0), sticky="e")
         self.sign_in_button = ttk.Button(
             header,
             text="Sign in to BOWL.com",
             command=self._start_sign_in,
-            style="Primary.TButton",
+            style="Toolbar.TButton",
         )
-        self.sign_in_button.grid(row=0, column=2, rowspan=2, padx=(10, 0), sticky="e")
+        self.sign_in_button.grid(row=0, column=3, padx=(7, 0), sticky="e")
         self.sign_out_button = ttk.Button(
             header,
             text="Sign out",
             command=self._sign_out,
             state=tk.DISABLED,
+            style="Toolbar.TButton",
         )
-        self.sign_out_button.grid(row=0, column=3, rowspan=2, padx=(8, 0), sticky="e")
+        self.sign_out_button.grid(row=0, column=4, padx=(7, 0), sticky="e")
 
-        self.workspace = ttk.Notebook(self)
+        self.workspace = ttk.Notebook(self, style="Workspace.TNotebook")
         self.workspace.pack(fill=tk.BOTH, expand=True)
-        lookup_workspace = ttk.Frame(self.workspace, style="App.TFrame")
-        league_workspace = ttk.Frame(self.workspace, style="App.TFrame")
-        registration_workspace = ttk.Frame(self.workspace, style="App.TFrame")
-        self.workspace.add(registration_workspace, text="Registration")
-        self.workspace.add(league_workspace, text="League Manager")
-        self.workspace.add(lookup_workspace, text="Average lookup")
+        self.lookup_workspace = ttk.Frame(self.workspace, style="App.TFrame")
+        self.league_workspace = ttk.Frame(self.workspace, style="App.TFrame")
+        self.registration_workspace = ttk.Frame(self.workspace, style="App.TFrame")
+        self.workspace.add(self.registration_workspace, text="Registration")
+        self.workspace.add(self.league_workspace, text="League Manager")
+        self.workspace.add(self.lookup_workspace, text="Average lookup")
+        self.workspace.bind(
+            "<<NotebookTabChanged>>", lambda _event: self._workspace_tab_changed()
+        )
+        self.workspace.bind("<Button-3>", self._show_workspace_tab_menu)
 
         main = ttk.Frame(
-            lookup_workspace, style="App.TFrame", padding=(28, 20, 28, 24)
+            self.lookup_workspace, style="App.TFrame", padding=(28, 20, 28, 24)
         )
         main.pack(fill=tk.BOTH, expand=True)
         main.columnconfigure(0, weight=1)
@@ -341,16 +409,136 @@ class AverageLookupApp(tk.Tk):
         self.fix_button.pack(side=tk.RIGHT, padx=(0, 8))
 
         self.registration_desk = RegistrationDesk(
-            league_workspace,
+            self.league_workspace,
             self.registration_store,
             lambda: self.api,
             self._set_status,
-            registration_parent=registration_workspace,
+            registration_parent=self.registration_workspace,
+            workspace_context=self.workspace_context,
+            open_registration_callback=self._show_registration,
+            detach_callback=self._open_management_window,
+            score_edit_locks=self.score_edit_locks,
         )
         self.registration_desk.pack(fill=tk.BOTH, expand=True)
 
     def _set_status(self, text: str) -> None:
         self.auth_status.configure(text=text)
+
+    def _workspace_tab_changed(self) -> None:
+        selected = self.workspace.select()
+        label = self.workspace.tab(selected, "text") if selected else "Bowling Manager"
+        self.title(f"{label} — Bowling Manager")
+
+    def _show_workspace_tab_menu(self, event: tk.Event) -> None:
+        try:
+            index = self.workspace.index(f"@{event.x},{event.y}")
+        except tk.TclError:
+            return
+        self.workspace.select(index)
+        label = str(self.workspace.tab(index, "text"))
+        menu = tk.Menu(self, tearoff=False)
+        if label == "Registration":
+            menu.add_command(
+                label="Open Registration in new window",
+                command=self._open_registration_window,
+            )
+        elif label == "League Manager":
+            menu.add_command(
+                label="Open current management view in new window",
+                command=self._open_current_workspace,
+            )
+        else:
+            menu.add_command(
+                label="Average lookup stays in the main window", state=tk.DISABLED
+            )
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _show_registration(self) -> None:
+        self.workspace.select(self.registration_workspace)
+
+    def _open_current_workspace(self) -> None:
+        selected = self.workspace.select()
+        if selected == str(self.registration_workspace):
+            self._open_registration_window()
+        elif selected == str(self.league_workspace):
+            selected_tab = self.registration_desk.section_tabs.select()
+            section = (
+                str(self.registration_desk.section_tabs.tab(selected_tab, "text"))
+                if selected_tab
+                else ""
+            )
+            self._open_management_window(section)
+
+    def _open_registration_window(self) -> None:
+        window = tk.Toplevel(self)
+        window.title("Registration — Bowling Manager")
+        window.geometry("1100x720")
+        window.minsize(860, 580)
+        window.configure(background=COLORS["canvas"])
+        registration_host = ttk.Frame(window, style="App.TFrame")
+        registration_host.pack(fill=tk.BOTH, expand=True)
+        hidden_management_host = ttk.Frame(window, style="App.TFrame")
+        context = LeagueWorkspaceContext(self.workspace_context.competition_id)
+        desk = RegistrationDesk(
+            hidden_management_host,
+            self.registration_store,
+            lambda: self.api,
+            self._set_status,
+            registration_parent=registration_host,
+            workspace_context=context,
+            detach_callback=self._open_management_window,
+            score_edit_locks=self.score_edit_locks,
+        )
+        self._register_detached_window(window, desk)
+
+    def _open_management_window(self, section: str = "") -> None:
+        window = tk.Toplevel(self)
+        window.title("League Manager — Bowling Manager")
+        window.geometry("1180x760")
+        window.minsize(900, 620)
+        window.configure(background=COLORS["canvas"])
+        hidden_registration_host = ttk.Frame(window, style="App.TFrame")
+        context = LeagueWorkspaceContext(self.workspace_context.competition_id)
+        desk = RegistrationDesk(
+            window,
+            self.registration_store,
+            lambda: self.api,
+            self._set_status,
+            registration_parent=hidden_registration_host,
+            workspace_context=context,
+            open_registration_callback=self._open_registration_window,
+            detach_callback=self._open_management_window,
+            score_edit_locks=self.score_edit_locks,
+        )
+        desk.pack(fill=tk.BOTH, expand=True, padx=14, pady=14)
+        desk.select_section(section)
+        self._register_detached_window(window, desk)
+
+    def _register_detached_window(
+        self, window: tk.Toplevel, desk: RegistrationDesk
+    ) -> None:
+        self.detached_desks[window] = desk
+
+        def close_window() -> None:
+            detached = self.detached_desks.pop(window, None)
+            if detached is not None:
+                detached.close()
+            window.destroy()
+
+        window.protocol("WM_DELETE_WINDOW", close_window)
+
+    def _store_changed(self) -> None:
+        if self._refresh_pending:
+            return
+        self._refresh_pending = True
+        self.after_idle(self._refresh_open_desks)
+
+    def _refresh_open_desks(self) -> None:
+        self._refresh_pending = False
+        self.registration_desk.refresh()
+        for window, desk in tuple(self.detached_desks.items()):
+            if window.winfo_exists():
+                desk.refresh()
 
     def _make_result_table(self, parent: ttk.Frame) -> ttk.Treeview:
         parent.columnconfigure(0, weight=1)
@@ -385,7 +573,7 @@ class AverageLookupApp(tk.Tk):
         self.signing_in = True
         self.sign_in_button.configure(state=tk.DISABLED)
         self.sign_out_button.configure(state=tk.DISABLED)
-        self.auth_status.configure(text="Finish signing in…")
+        self.auth_status.configure(text="BOWL.com: finish signing in…")
         Thread(target=self._sign_in_worker, daemon=True).start()
 
     def _sign_in_worker(self) -> None:
@@ -403,11 +591,11 @@ class AverageLookupApp(tk.Tk):
         self.signing_in = False
         self.auth_session = session
         self.api = HttpBowlApi(lambda: self.auth_session.bearer_token)
-        self.auth_status.configure(text="Signed in — ready")
+        self.auth_status.configure(text="BOWL.com: ready")
         self.sign_in_button.configure(text="Sign in again", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.NORMAL)
         self._update_action_states()
-        self.registration_desk.refresh_auth_state()
+        self._refresh_desk_auth_states()
 
     def _sign_in_failed(self, message: str) -> None:
         self._restore_sign_in_controls()
@@ -420,7 +608,7 @@ class AverageLookupApp(tk.Tk):
         self.signing_in = False
         signed_in = self.api is not None
         self.auth_status.configure(
-            text="Signed in — ready" if signed_in else "Not signed in"
+            text="BOWL.com: ready" if signed_in else "BOWL.com: signed out"
         )
         self.sign_in_button.configure(
             text="Sign in again" if signed_in else "Sign in to BOWL.com",
@@ -428,19 +616,30 @@ class AverageLookupApp(tk.Tk):
         )
         self.sign_out_button.configure(state=tk.NORMAL if signed_in else tk.DISABLED)
         self._update_action_states()
+        self._refresh_desk_auth_states()
+
+    def _refresh_desk_auth_states(self) -> None:
         self.registration_desk.refresh_auth_state()
+        for desk in self.detached_desks.values():
+            desk.refresh_auth_state()
 
     def _sign_out(self) -> None:
         self.authenticator.sign_out()
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)
         self.api = None
-        self.auth_status.configure(text="Not signed in")
+        self.auth_status.configure(text="BOWL.com: signed out")
         self.sign_in_button.configure(text="Sign in to BOWL.com", state=tk.NORMAL)
         self.sign_out_button.configure(state=tk.DISABLED)
         self._update_action_states()
-        self.registration_desk.refresh_auth_state()
+        self._refresh_desk_auth_states()
 
     def _close_app(self) -> None:
+        if self._unsubscribe_store is not None:
+            self._unsubscribe_store()
+        for window, desk in tuple(self.detached_desks.items()):
+            desk.close()
+            window.destroy()
+        self.detached_desks.clear()
         self.registration_desk.close()
         self.authenticator.sign_out()
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)

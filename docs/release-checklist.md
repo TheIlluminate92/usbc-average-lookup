@@ -20,8 +20,16 @@ database copy used.
 
 - Extract the ZIP into a new empty folder and start the executable from the
   extracted folder.
-- Confirm the main window opens on Registration, followed by League Manager
-  and Average lookup.
+- Confirm the compact browser-style strip opens on Registration, followed by
+  League Manager and Average lookup.
+- Open Registration and each League Manager section in another window. Change
+  data in one window and verify every open view refreshes.
+- Keep two management windows on different leagues and verify their selections
+  remain independent.
+- Open a score-entry dialog, try the same week in another window, and verify the
+  second edit is blocked until the first dialog closes.
+- Confirm Average lookup remains in the main window and is not falsely offered
+  as detachable.
 - Confirm the build does not require Python to be installed.
 - Confirm existing schema-version 3 data opens unchanged.
 - Upgrade a copy of each older supported SQLite schema and verify an adjacent

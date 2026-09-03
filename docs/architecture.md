@@ -10,7 +10,13 @@ score history.
 ```text
 Tkinter application
   |
+  +-- compact browser-style workspace shell
+  |     +-- Registration / League Manager / Average lookup
+  |     +-- additional synchronized Registration or management windows
+  |
   +-- League Manager
+  |     +-- shared LeagueWorkspaceContext
+  |     +-- league home and rules/setup
   |     +-- leagues / seasons / tournaments
   |     +-- permanent players and season pools
   |     +-- competition teams and rosters
@@ -40,16 +46,23 @@ Tkinter application
 
 ## UI composition
 
-`AverageLookupApp` is the application shell. It owns authentication state and
-the three top-level notebooks:
+`AverageLookupApp` is the application shell. It owns authentication state, the
+compact workspace strip, and the three top-level workspaces:
 
 - Registration
 - League Manager
 - Average lookup
 
-`RegistrationDesk` controls the separate Registration workspace and the four
-League Manager tabs. Sharing the controller keeps all roster and competition
-views synchronized after one domain write.
+`RegistrationDesk` controls the separate Registration workspace and the six
+League Manager sections. `LeagueWorkspaceContext` propagates one selected
+competition across Registration, Teams, Scores, Rules, and League home.
+
+Additional windows construct another desk against the same store but receive
+an independent workspace context. `RegistrationStore` change listeners schedule
+refreshes for every open desk after a committed write. `ScoreSheetEditLocks`
+prevents two score-entry dialogs from editing one weekly session concurrently.
+Average lookup remains owned by the main application shell and is not currently
+detachable.
 
 `ScoringDesk` is mounted inside League Manager. `RelationshipBrowser` opens as
 a separate navigation window and holds its own Back/Forward history.

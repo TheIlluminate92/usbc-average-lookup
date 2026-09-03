@@ -5,11 +5,23 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
-- Made Registration the first and default top-level workspace.
-- Reconciled all GitHub documentation with the current v0.5 application.
-- Added a full operator user guide.
-- Documented current limits, local-data/privacy boundaries, database backup and
-  migration behavior, release checks, and the planned matchup/standings layer.
+## v0.6.0-alpha.1 — 2026-09-02
+
+- Replaced the oversized header with compact browser-style workspace chrome.
+- Kept Registration first and added a New window menu plus tab context menus.
+- Added one persistent league/tournament context shared by registration, team,
+  scoring, overview, and rules views.
+- Added League home and Rules & setup management views.
+- Renamed management sections around operator tasks instead of storage types.
+- Added synchronized Registration and League Manager windows with independent
+  league selections.
+- Prevented two windows from opening score-entry dialogs for the same week at
+  the same time.
+- Added store change notifications so every open management view refreshes
+  after a successful write.
+- Kept the SQLite schema at version 3.
+- Reconciled all GitHub documentation with the current application and added a
+  full operator user guide.
 
 ## v0.5.0-alpha.2 — 2026-09-02
 
