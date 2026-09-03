@@ -11,8 +11,8 @@ from usbc_average_lookup.services.standings import StandingsStore
 from usbc_average_lookup.workspace import LeagueWorkspaceContext
 
 
-@pytest.mark.parametrize("kind", [CompetitionKind.LEAGUE, CompetitionKind.TOURNAMENT])
-def test_real_widgets_open_linked_scores_and_standings(tmp_path, kind):
+@pytest.fixture(scope="module")
+def tk_root():
     try:
         root = tk.Tk()
     except tk.TclError as error:
@@ -20,6 +20,13 @@ def test_real_widgets_open_linked_scores_and_standings(tmp_path, kind):
             raise
         pytest.skip(f"Local Tk runtime unavailable: {error}")
     root.withdraw()
+    yield root
+    root.destroy()
+
+
+@pytest.mark.parametrize("kind", [CompetitionKind.LEAGUE, CompetitionKind.TOURNAMENT])
+def test_real_widgets_open_linked_scores_and_standings(tmp_path, kind, tk_root):
+    root = tk_root
     errors = []
     root.report_callback_exception = lambda *args: errors.append(args)
     desk = None
@@ -53,4 +60,4 @@ def test_real_widgets_open_linked_scores_and_standings(tmp_path, kind):
     finally:
         if desk is not None:
             desk.close()
-        root.destroy()
+            desk.destroy()
