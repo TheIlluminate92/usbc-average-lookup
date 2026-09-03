@@ -26,6 +26,28 @@ from usbc_average_lookup.services.scoring import (
 from usbc_average_lookup.workspace import LeagueWorkspaceContext, ScoreSheetEditLocks
 
 
+def _correction_reason_required(
+    view: ScoreLineView,
+    entering_average: int,
+    entries: list[tuple[GameStatus, int | None]],
+) -> bool:
+    for old_game, (new_status, new_score) in zip(
+        view.games, entries, strict=True
+    ):
+        if old_game.status is GameStatus.NOT_ENTERED:
+            continue
+        if view.line.entering_average != entering_average:
+            return True
+        if old_game.status is not new_status:
+            return True
+        if (
+            new_status is GameStatus.BOWLED
+            and old_game.scratch_score != new_score
+        ):
+            return True
+    return False
+
+
 class ScoringDesk(ttk.Frame):
     def __init__(
         self,
@@ -805,7 +827,7 @@ class ScoreEntryDialog(tk.Toplevel):
             int, list[tuple[GameStatus, int | None]], str
         ] | None = None
         self.title(f"Enter scores — {view.line.player_name}")
-        height = 330 + len(view.games) * 42
+        height = 360 + len(view.games) * 42
         self.geometry(f"590x{height}")
         self.resizable(False, False)
         self.transient(parent)
@@ -869,12 +891,26 @@ class ScoreEntryDialog(tk.Toplevel):
             style="Muted.TLabel",
         ).grid(row=reason_row, column=0, columnspan=3, sticky="w", pady=(14, 4))
         self.reason_var = tk.StringVar()
-        ttk.Entry(content, textvariable=self.reason_var).grid(
+        self.reason_entry = ttk.Entry(content, textvariable=self.reason_var)
+        self.reason_entry.grid(
             row=reason_row + 1, column=0, columnspan=3, sticky="ew"
+        )
+        self.validation_var = tk.StringVar()
+        ttk.Label(
+            content,
+            textvariable=self.validation_var,
+            style="Muted.TLabel",
+            foreground="#FF9999",
+        ).grid(
+            row=reason_row + 2,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(6, 0),
         )
         buttons = ttk.Frame(content, style="App.TFrame")
         buttons.grid(
-            row=reason_row + 2, column=0, columnspan=3, sticky="e", pady=(20, 0)
+            row=reason_row + 3, column=0, columnspan=3, sticky="e", pady=(14, 0)
         )
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
         ttk.Button(
@@ -901,6 +937,16 @@ class ScoreEntryDialog(tk.Toplevel):
                 "Averages and scratch scores must be whole numbers.",
                 parent=self,
             )
+            return
+        if (
+            _correction_reason_required(self.view, average, entries)
+            and not self.reason_var.get().strip()
+        ):
+            self.validation_var.set(
+                "Enter a correction reason before saving changed results."
+            )
+            self.reason_entry.focus_set()
+            self.bell()
             return
         self.choice = (average, entries, self.reason_var.get())
         self.destroy()

@@ -78,6 +78,9 @@ class AverageLookupApp(tk.Tk):
         self.workspace_context = LeagueWorkspaceContext()
         self.score_edit_locks = ScoreSheetEditLocks()
         self.detached_desks: dict[tk.Toplevel, RegistrationDesk] = {}
+        self.workspace_tab_desks: dict[ttk.Frame, RegistrationDesk] = {}
+        self.workspace_tab_kinds: dict[ttk.Frame, str] = {}
+        self.workspace_tab_unsubscribers: dict[ttk.Frame, Callable[[], None]] = {}
         self._refresh_pending = False
         self._configure_style()
         self._build_ui()
@@ -271,14 +274,24 @@ class AverageLookupApp(tk.Tk):
         )
         self.workspace_menu = tk.Menu(self, tearoff=False)
         self.workspace_menu.add_command(
-            label="Registration", command=self._open_registration_window
+            label="Registration tab", command=self._open_registration_tab
         )
         self.workspace_menu.add_command(
-            label="Current management view", command=self._open_management_window
+            label="Current management view tab",
+            command=self._open_current_workspace_tab,
+        )
+        self.workspace_menu.add_separator()
+        self.workspace_menu.add_command(
+            label="Registration in separate window",
+            command=self._open_registration_window,
+        )
+        self.workspace_menu.add_command(
+            label="Current management view in separate window",
+            command=self._open_management_window,
         )
         self.new_window_button = ttk.Menubutton(
             header,
-            text="+ New window",
+            text="+ New tab",
             menu=self.workspace_menu,
             style="Toolbar.TMenubutton",
         )
@@ -311,10 +324,15 @@ class AverageLookupApp(tk.Tk):
         self.workspace.add(self.registration_workspace, text="Registration")
         self.workspace.add(self.league_workspace, text="League Manager")
         self.workspace.add(self.lookup_workspace, text="Average lookup")
+        self.workspace.enable_traversal()
         self.workspace.bind(
             "<<NotebookTabChanged>>", lambda _event: self._workspace_tab_changed()
         )
+        self.workspace.bind("<Button-1>", self._workspace_tab_clicked, add=True)
+        self.workspace.bind("<Button-2>", self._workspace_tab_middle_clicked)
         self.workspace.bind("<Button-3>", self._show_workspace_tab_menu)
+        self.bind("<Control-t>", self._new_tab_shortcut)
+        self.bind("<Control-w>", self._close_tab_shortcut)
 
         main = ttk.Frame(
             self.lookup_workspace, style="App.TFrame", padding=(28, 20, 28, 24)
@@ -416,7 +434,9 @@ class AverageLookupApp(tk.Tk):
             registration_parent=self.registration_workspace,
             workspace_context=self.workspace_context,
             open_registration_callback=self._show_registration,
-            detach_callback=self._open_management_window,
+            detach_callback=lambda section: self._open_management_tab(
+                section, self.workspace_context.competition_id
+            ),
             score_edit_locks=self.score_edit_locks,
         )
         self.registration_desk.pack(fill=tk.BOTH, expand=True)
@@ -435,17 +455,31 @@ class AverageLookupApp(tk.Tk):
         except tk.TclError:
             return
         self.workspace.select(index)
+        page = self._workspace_page(index)
         label = str(self.workspace.tab(index, "text"))
         menu = tk.Menu(self, tearoff=False)
-        if label == "Registration":
+        if page in self.workspace_tab_desks:
             menu.add_command(
-                label="Open Registration in new window",
-                command=self._open_registration_window,
+                label="Close tab", command=lambda: self._close_workspace_tab(page)
+            )
+        elif label == "Registration":
+            menu.add_command(
+                label="Open Registration in new tab",
+                command=self._open_registration_tab,
+            )
+            menu.add_command(
+                label="Open in separate window", command=self._open_registration_window
             )
         elif label == "League Manager":
             menu.add_command(
-                label="Open current management view in new window",
-                command=self._open_current_workspace,
+                label="Open current management view in new tab",
+                command=self._open_current_workspace_tab,
+            )
+            menu.add_command(
+                label="Open in separate window",
+                command=lambda: self._open_management_window(
+                    self._current_management_section()
+                ),
             )
         else:
             menu.add_command(
@@ -453,21 +487,192 @@ class AverageLookupApp(tk.Tk):
             )
         menu.tk_popup(event.x_root, event.y_root)
 
+    def _workspace_page(self, index: int) -> ttk.Frame:
+        return self.nametowidget(self.workspace.tabs()[index])
+
+    def _workspace_tab_clicked(self, event: tk.Event) -> str | None:
+        try:
+            index = self.workspace.index(f"@{event.x},{event.y}")
+            page = self._workspace_page(index)
+        except (IndexError, KeyError, tk.TclError):
+            return None
+        if page in self.workspace_tab_desks and self._near_tab_right_edge(
+            index, event.x, event.y
+        ):
+            self.after_idle(self._close_workspace_tab, page)
+            return "break"
+        return None
+
+    def _near_tab_right_edge(self, index: int, x: int, y: int) -> bool:
+        for offset in range(1, 29):
+            try:
+                if self.workspace.index(f"@{x + offset},{y}") != index:
+                    return True
+            except tk.TclError:
+                return True
+        return False
+
+    def _workspace_tab_middle_clicked(self, event: tk.Event) -> str | None:
+        try:
+            index = self.workspace.index(f"@{event.x},{event.y}")
+            page = self._workspace_page(index)
+        except (IndexError, KeyError, tk.TclError):
+            return None
+        if page in self.workspace_tab_desks:
+            self._close_workspace_tab(page)
+            return "break"
+        return None
+
+    def _new_tab_shortcut(self, _event: tk.Event) -> str:
+        self._open_current_workspace_tab()
+        return "break"
+
+    def _close_tab_shortcut(self, _event: tk.Event) -> str | None:
+        selected = self.workspace.select()
+        if not selected:
+            return None
+        page = self.nametowidget(selected)
+        if page in self.workspace_tab_desks:
+            self._close_workspace_tab(page)
+            return "break"
+        return None
+
     def _show_registration(self) -> None:
         self.workspace.select(self.registration_workspace)
 
-    def _open_current_workspace(self) -> None:
+    def _current_management_section(self) -> str:
+        selected_tab = self.registration_desk.section_tabs.select()
+        return (
+            str(self.registration_desk.section_tabs.tab(selected_tab, "text"))
+            if selected_tab
+            else "League home"
+        )
+
+    def _open_current_workspace_tab(self) -> None:
         selected = self.workspace.select()
         if selected == str(self.registration_workspace):
-            self._open_registration_window()
+            self._open_registration_tab()
         elif selected == str(self.league_workspace):
-            selected_tab = self.registration_desk.section_tabs.select()
-            section = (
-                str(self.registration_desk.section_tabs.tab(selected_tab, "text"))
-                if selected_tab
-                else ""
+            self._open_management_tab(self._current_management_section())
+        elif selected:
+            page = self.nametowidget(selected)
+            desk = self.workspace_tab_desks.get(page)
+            if desk is None:
+                self._open_registration_tab()
+            elif self.workspace_tab_kinds.get(page) == "registration":
+                self._open_registration_tab()
+            else:
+                current_tab = desk.section_tabs.select()
+                section = (
+                    str(desk.section_tabs.tab(current_tab, "text"))
+                    if current_tab
+                    else "League home"
+                )
+                self._open_management_tab(
+                    section, desk.workspace_context.competition_id
+                )
+
+    def _open_registration_tab(self) -> None:
+        page = ttk.Frame(self.workspace, style="App.TFrame")
+        hidden_management_host = ttk.Frame(page, style="App.TFrame")
+        context = LeagueWorkspaceContext(self.workspace_context.competition_id)
+        desk = RegistrationDesk(
+            hidden_management_host,
+            self.registration_store,
+            lambda: self.api,
+            self._set_status,
+            registration_parent=page,
+            workspace_context=context,
+            detach_callback=lambda section: self._open_management_tab(
+                section, context.competition_id
+            ),
+            score_edit_locks=self.score_edit_locks,
+        )
+        self.workspace_tab_desks[page] = desk
+        self.workspace_tab_kinds[page] = "registration"
+        self.workspace.add(page, text="Registration  ×")
+        self.workspace.select(page)
+
+    def _open_management_tab(
+        self, section: str = "", competition_id: str = ""
+    ) -> None:
+        page = ttk.Frame(self.workspace, style="App.TFrame")
+        hidden_registration_host = ttk.Frame(page, style="App.TFrame")
+        context = LeagueWorkspaceContext(
+            competition_id or self.workspace_context.competition_id
+        )
+        desk = RegistrationDesk(
+            page,
+            self.registration_store,
+            lambda: self.api,
+            self._set_status,
+            registration_parent=hidden_registration_host,
+            workspace_context=context,
+            open_registration_callback=self._open_registration_tab,
+            detach_callback=lambda next_section: self._open_management_tab(
+                next_section, context.competition_id
+            ),
+            score_edit_locks=self.score_edit_locks,
+        )
+        desk.pack(fill=tk.BOTH, expand=True)
+        desk.select_section(section or "League home")
+        self.workspace_tab_desks[page] = desk
+        self.workspace_tab_kinds[page] = "management"
+        self.workspace.add(page, text="League Manager  ×")
+        desk.section_tabs.bind(
+            "<<NotebookTabChanged>>",
+            lambda _event, selected_page=page: self._update_workspace_tab_title(
+                selected_page
+            ),
+            add=True,
+        )
+        self.workspace_tab_unsubscribers[page] = context.subscribe(
+            lambda _competition_id, selected_page=page: self.after_idle(
+                self._update_workspace_tab_title, selected_page
             )
-            self._open_management_window(section)
+        )
+        self._update_workspace_tab_title(page)
+        self.workspace.select(page)
+
+    def _update_workspace_tab_title(self, page: ttk.Frame) -> None:
+        desk = self.workspace_tab_desks.get(page)
+        if desk is None or not page.winfo_exists():
+            return
+        selected = desk.section_tabs.select()
+        section = (
+            str(desk.section_tabs.tab(selected, "text"))
+            if selected
+            else "League home"
+        )
+        competition = next(
+            (
+                item
+                for item in (
+                    self.registration_store.competitions
+                    if self.registration_store
+                    else []
+                )
+                if item.id == desk.workspace_context.competition_id
+            ),
+            None,
+        )
+        prefix = competition.name if competition is not None else "League"
+        title = f"{prefix} · {section}"
+        if len(title) > 38:
+            title = title[:35].rstrip() + "…"
+        self.workspace.tab(page, text=f"{title}  ×")
+
+    def _close_workspace_tab(self, page: ttk.Frame) -> None:
+        unsubscribe = self.workspace_tab_unsubscribers.pop(page, None)
+        if unsubscribe is not None:
+            unsubscribe()
+        desk = self.workspace_tab_desks.pop(page, None)
+        self.workspace_tab_kinds.pop(page, None)
+        if desk is not None:
+            desk.close()
+        if page.winfo_exists():
+            self.workspace.forget(page)
+            page.destroy()
 
     def _open_registration_window(self) -> None:
         window = tk.Toplevel(self)
@@ -486,7 +691,9 @@ class AverageLookupApp(tk.Tk):
             self._set_status,
             registration_parent=registration_host,
             workspace_context=context,
-            detach_callback=self._open_management_window,
+            detach_callback=lambda section: self._open_management_tab(
+                section, context.competition_id
+            ),
             score_edit_locks=self.score_edit_locks,
             reattach_callback=lambda section, competition_id: self._reattach_detached(
                 window, section, competition_id
@@ -509,8 +716,10 @@ class AverageLookupApp(tk.Tk):
             self._set_status,
             registration_parent=hidden_registration_host,
             workspace_context=context,
-            open_registration_callback=self._open_registration_window,
-            detach_callback=self._open_management_window,
+            open_registration_callback=self._open_registration_tab,
+            detach_callback=lambda next_section: self._open_management_tab(
+                next_section, context.competition_id
+            ),
             score_edit_locks=self.score_edit_locks,
             reattach_callback=lambda selected_section, competition_id: (
                 self._reattach_detached(window, selected_section, competition_id)
@@ -558,6 +767,11 @@ class AverageLookupApp(tk.Tk):
     def _refresh_open_desks(self) -> None:
         self._refresh_pending = False
         self.registration_desk.refresh()
+        for page, desk in tuple(self.workspace_tab_desks.items()):
+            if page.winfo_exists():
+                desk.refresh()
+                if self.workspace_tab_kinds.get(page) == "management":
+                    self._update_workspace_tab_title(page)
         for window, desk in tuple(self.detached_desks.items()):
             if window.winfo_exists():
                 desk.refresh()
@@ -642,6 +856,8 @@ class AverageLookupApp(tk.Tk):
 
     def _refresh_desk_auth_states(self) -> None:
         self.registration_desk.refresh_auth_state()
+        for desk in self.workspace_tab_desks.values():
+            desk.refresh_auth_state()
         for desk in self.detached_desks.values():
             desk.refresh_auth_state()
 
@@ -658,6 +874,8 @@ class AverageLookupApp(tk.Tk):
     def _close_app(self) -> None:
         if self._unsubscribe_store is not None:
             self._unsubscribe_store()
+        for page in tuple(self.workspace_tab_desks):
+            self._close_workspace_tab(page)
         for window, desk in tuple(self.detached_desks.items()):
             desk.close()
             window.destroy()

@@ -108,7 +108,7 @@ class RegistrationDesk(ttk.Frame):
         self.open_registration_button.grid(row=0, column=2, padx=(10, 0))
         self.detach_button = ttk.Button(
             management_context,
-            text="Open view in new window",
+            text="Open view in new tab",
             command=self._detach_current_section,
             state=tk.NORMAL if self.detach_callback else tk.DISABLED,
         )

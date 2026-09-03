@@ -30,3 +30,17 @@ def test_late_issue_fix_cannot_write_into_replaced_roster() -> None:
 
     assert app.bowlers == []
     assert app.results == []
+
+
+def test_dynamic_tab_close_hit_area_tracks_the_tab_right_edge() -> None:
+    class Notebook:
+        @staticmethod
+        def index(position: str) -> int:
+            x = int(position.removeprefix("@").split(",", 1)[0])
+            return 2 if x < 100 else 3
+
+    app = AverageLookupApp.__new__(AverageLookupApp)
+    app.workspace = Notebook()
+
+    assert app._near_tab_right_edge(2, 75, 10)
+    assert not app._near_tab_right_edge(2, 50, 10)

@@ -35,9 +35,11 @@ extracted program folder does not copy league data.
 ## Current application
 
 The compact browser-style strip opens on Registration and has three top-level
-workspaces. Use **+ New window**, right-click a top-level tab, or use **Open
-view in new window** inside League Manager to work side by side. A detached
-view can return its current section and league selection to the main window.
+workspaces. Use **+ New tab**, right-click a top-level tab, or use **Open view
+in new tab** inside League Manager to work side by side. Extra tabs keep their
+own league and section, show a close `×`, and can also be closed with a middle
+click or their right-click menu. Separate windows remain available from the
+New tab menu when they are useful.
 
 - **Registration** supports fast single-player entry, whole-team entry, and
   one-step registration into multiple leagues with a separate team assignment

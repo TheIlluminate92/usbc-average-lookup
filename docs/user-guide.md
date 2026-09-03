@@ -21,7 +21,7 @@ League data is stored separately from the application folder:
 
 Moving or replacing the program folder does not move or erase that database.
 
-## Main navigation and extra windows
+## Main navigation, tabs, and extra windows
 
 The compact top strip works like a browser and opens on **Registration**:
 
@@ -30,11 +30,17 @@ The compact top strip works like a browser and opens on **Registration**:
   historical seasons.
 - **Average lookup** — BOWL.com lookup from a roster file or one player.
 
-Use **+ New window** to open another Registration window or the current League
+Use **+ New tab** to open another Registration tab or the current League
 Manager view. You can also right-click Registration or League Manager, or use
-**Open view in new window** inside League Manager. Each management window may
-remain on a different league. All windows refresh from the same database;
-closing an extra window does not close the main application.
+**Open view in new tab** inside League Manager. Each management tab may remain
+on a different league. Close an extra tab with its `×`, a middle click, or its
+right-click menu. Separate windows remain available under **+ New tab** when a
+second monitor or side-by-side layout is preferable. All tabs and windows
+refresh from the same database.
+
+The familiar **Ctrl+T** shortcut duplicates the current working view in a new
+tab, and **Ctrl+W** closes the selected extra tab. The three permanent tabs are
+not closed by Ctrl+W.
 
 Choose **Return to main window** to bring a detached Registration view or its
 current League Manager section and selected league back to the main window.
@@ -228,6 +234,10 @@ read-only until reopened.
   reason.
 - Removing a row with saved scores requires a reason.
 - Reopening a final week requires a reason.
+
+If a correction reason is missing, the score editor remains open and shows the
+requirement beneath the reason field. **Cancel** always remains available and
+closes the editor without saving.
 
 Open **Change log** to see before/after values and the reason. Open **History**
 to review all league weeks or filter to one team. League and Team management

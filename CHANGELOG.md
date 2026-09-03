@@ -11,6 +11,11 @@ database/UI changes that are not yet stable public contracts.
   regulars and substitutes into a double-click roster window.
 - Replaced League home's Register bowler shortcut with a primary Create team
   action.
+- Made extra workspaces browser-like in-app tabs with close controls,
+  middle-click/right-click closing, independent league context, and optional
+  separate windows.
+- Kept score correction dialogs open when a required reason is missing and
+  added an inline validation footer without removing Cancel.
 
 ## v0.6.0-alpha.2 — 2026-09-02
 

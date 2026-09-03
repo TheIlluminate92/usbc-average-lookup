@@ -22,10 +22,12 @@ database copy used.
   extracted folder.
 - Confirm the compact browser-style strip opens on Registration, followed by
   League Manager and Average lookup.
-- Open Registration and each League Manager section in another window. Change
-  data in one window and verify every open view refreshes.
-- Keep two management windows on different leagues and verify their selections
-  remain independent.
+- Open Registration and each League Manager section in another tab. Change
+  data in one tab and verify every open view refreshes.
+- Keep two management tabs on different leagues and verify their selections
+  remain independent. Close them with the `×`, middle click, and right-click
+  menu.
+- Repeat the shared-refresh check with an optional separate window.
 - Return a detached Registration view and a detached management section to the
   main window; verify the section and league context are restored.
 - Open a score-entry dialog, try the same week in another window, and verify the
@@ -153,6 +155,8 @@ database copy used.
 - Finalize a complete week and verify it is read-only.
 - Reopen with a reason, correct a score with a reason, re-finalize, and inspect
   every change-log field.
+- Attempt a saved-score correction without a reason; confirm the editor remains
+  open, shows inline guidance, blocks Save, and still permits Cancel.
 - Open the same history from Scores, League management, and Team management.
 
 ## 11. Persistence and backup

@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from usbc_average_lookup.models import LookupResult, LookupStatus
+from usbc_average_lookup.scoring_ui import _correction_reason_required
 from usbc_average_lookup.services.average_rules import AverageRounding
 from usbc_average_lookup.services.registration import (
     CompetitionKind,
@@ -121,6 +122,41 @@ def test_vacancies_are_saved_for_every_game(tmp_path) -> None:
     assert [game.status for game in vacancy.games] == [GameStatus.VACANCY] * 3
     assert [game.scratch_score for game in vacancy.games] == [120, 120, 120]
     assert [game.pins_counted for game in vacancy.games] == [192, 192, 192]
+
+
+def test_score_editor_requires_reason_only_for_saved_result_changes(tmp_path) -> None:
+    registrations, league, _team, _player, _substitute = league_with_roster(tmp_path)
+    scoring = ScoringStore(registrations)
+    session = scoring.create_session(league.id, 1)
+    view = scoring.score_sheet(session.id)[0]
+    first_entries = [
+        (GameStatus.BOWLED, 150),
+        (GameStatus.BOWLED, 160),
+        (GameStatus.BOWLED, 170),
+    ]
+
+    assert not _correction_reason_required(
+        view, view.line.entering_average, first_entries
+    )
+
+    scoring.save_line_scores(view.line.id, view.line.entering_average, first_entries)
+    saved = scoring.score_sheet(session.id)[0]
+
+    assert not _correction_reason_required(
+        saved, saved.line.entering_average, first_entries
+    )
+    assert _correction_reason_required(
+        saved,
+        saved.line.entering_average,
+        [
+            (GameStatus.BOWLED, 151),
+            (GameStatus.BOWLED, 160),
+            (GameStatus.BOWLED, 170),
+        ],
+    )
+    assert _correction_reason_required(
+        saved, saved.line.entering_average + 1, first_entries
+    )
 
 
 def test_score_correction_requires_reason_and_keeps_change_log(tmp_path) -> None:
