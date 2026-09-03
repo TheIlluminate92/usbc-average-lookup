@@ -18,7 +18,7 @@ The repository and executable still use the historical name
 ## Download
 
 The current portable Windows test build is
-[v0.6.0-alpha.1](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.6.0-alpha.1).
+[v0.6.0-alpha.2](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.6.0-alpha.2).
 Download `USBC-Average-Lookup-Windows.zip`, extract the entire folder, and run
 `USBC-Average-Lookup.exe`.
 
@@ -36,7 +36,8 @@ extracted program folder does not copy league data.
 
 The compact browser-style strip opens on Registration and has three top-level
 workspaces. Use **+ New window**, right-click a top-level tab, or use **Open
-view in new window** inside League Manager to work side by side.
+view in new window** inside League Manager to work side by side. A detached
+view can return its current section and league selection to the main window.
 
 - **Registration** supports fast single-player entry, whole-team entry, and
   one-step registration into multiple leagues with a separate team assignment

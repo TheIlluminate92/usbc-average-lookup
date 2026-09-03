@@ -26,6 +26,8 @@ database copy used.
   data in one window and verify every open view refreshes.
 - Keep two management windows on different leagues and verify their selections
   remain independent.
+- Return a detached Registration view and a detached management section to the
+  main window; verify the section and league context are restored.
 - Open a score-entry dialog, try the same week in another window, and verify the
   second edit is blocked until the first dialog closes.
 - Confirm Average lookup remains in the main window and is not falsely offered

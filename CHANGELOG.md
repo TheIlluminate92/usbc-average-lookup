@@ -5,6 +5,13 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+## v0.6.0-alpha.2 — 2026-09-02
+
+- Added **Return to main window** to detached Registration and League Manager
+  views.
+- Reattaching restores the detached view's selected management section and
+  league/tournament context in the main window.
+
 ## v0.6.0-alpha.1 — 2026-09-02
 
 - Replaced the oversized header with compact browser-style workspace chrome.

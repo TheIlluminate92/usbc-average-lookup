@@ -36,6 +36,9 @@ Manager view. You can also right-click Registration or League Manager, or use
 remain on a different league. All windows refresh from the same database;
 closing an extra window does not close the main application.
 
+Choose **Return to main window** to bring a detached Registration view or its
+current League Manager section and selected league back to the main window.
+
 Average lookup remains in the main window. If a weekly score-entry dialog is
 already open in one window, another window cannot edit that same score sheet
 until the dialog closes.

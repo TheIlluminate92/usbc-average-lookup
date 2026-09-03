@@ -488,6 +488,9 @@ class AverageLookupApp(tk.Tk):
             workspace_context=context,
             detach_callback=self._open_management_window,
             score_edit_locks=self.score_edit_locks,
+            reattach_callback=lambda section, competition_id: self._reattach_detached(
+                window, section, competition_id
+            ),
         )
         self._register_detached_window(window, desk)
 
@@ -509,6 +512,9 @@ class AverageLookupApp(tk.Tk):
             open_registration_callback=self._open_registration_window,
             detach_callback=self._open_management_window,
             score_edit_locks=self.score_edit_locks,
+            reattach_callback=lambda selected_section, competition_id: (
+                self._reattach_detached(window, selected_section, competition_id)
+            ),
         )
         desk.pack(fill=tk.BOTH, expand=True, padx=14, pady=14)
         desk.select_section(section)
@@ -519,13 +525,29 @@ class AverageLookupApp(tk.Tk):
     ) -> None:
         self.detached_desks[window] = desk
 
-        def close_window() -> None:
-            detached = self.detached_desks.pop(window, None)
-            if detached is not None:
-                detached.close()
-            window.destroy()
+        window.protocol("WM_DELETE_WINDOW", lambda: self._close_detached_window(window))
 
-        window.protocol("WM_DELETE_WINDOW", close_window)
+    def _reattach_detached(
+        self, window: tk.Toplevel, section: str, competition_id: str
+    ) -> None:
+        if competition_id:
+            self.workspace_context.select(competition_id)
+        if section == "Registration":
+            self.workspace.select(self.registration_workspace)
+        else:
+            self.registration_desk.select_section(section)
+            self.workspace.select(self.league_workspace)
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        self._close_detached_window(window)
+
+    def _close_detached_window(self, window: tk.Toplevel) -> None:
+        detached = self.detached_desks.pop(window, None)
+        if detached is not None:
+            detached.close()
+        if window.winfo_exists():
+            window.destroy()
 
     def _store_changed(self) -> None:
         if self._refresh_pending:

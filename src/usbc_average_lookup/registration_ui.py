@@ -46,6 +46,7 @@ class RegistrationDesk(ttk.Frame):
         open_registration_callback: Callable[[], None] | None = None,
         detach_callback: Callable[[str], None] | None = None,
         score_edit_locks: ScoreSheetEditLocks | None = None,
+        reattach_callback: Callable[[str, str], None] | None = None,
     ) -> None:
         super().__init__(parent, style="App.TFrame", padding=(28, 20, 28, 24))
         self.store = store
@@ -55,6 +56,7 @@ class RegistrationDesk(ttk.Frame):
         self.open_registration_callback = open_registration_callback
         self.detach_callback = detach_callback
         self.score_edit_locks = score_edit_locks or ScoreSheetEditLocks()
+        self.reattach_callback = reattach_callback
         self.competition_by_label: dict[str, Competition] = {}
         self.team_by_label: dict[str, str] = {}
         self.lookup_results: dict[str, LookupResult] = {}
@@ -110,6 +112,14 @@ class RegistrationDesk(ttk.Frame):
             state=tk.NORMAL if self.detach_callback else tk.DISABLED,
         )
         self.detach_button.grid(row=0, column=3, padx=(8, 0))
+        self.reattach_button = ttk.Button(
+            management_context,
+            text="Return to main window",
+            command=self._reattach_current_section,
+            state=tk.NORMAL if self.reattach_callback else tk.DISABLED,
+        )
+        if self.reattach_callback is not None:
+            self.reattach_button.grid(row=0, column=4, padx=(8, 0))
 
         self.section_tabs = ttk.Notebook(self)
         self.section_tabs.grid(row=1, column=0, sticky="nsew")
@@ -170,6 +180,14 @@ class RegistrationDesk(ttk.Frame):
             command=self._new_competition,
             style="Primary.TButton",
         ).grid(row=0, column=1, rowspan=2, sticky="e")
+        if self.reattach_callback is not None:
+            ttk.Button(
+                heading,
+                text="Return to main window",
+                command=lambda: self.reattach_callback(
+                    "Registration", self.workspace_context.competition_id
+                ),
+            ).grid(row=0, column=2, rowspan=2, sticky="e", padx=(8, 0))
 
         selector = ttk.Frame(registration_tab, style="Surface.TFrame", padding=14)
         selector.grid(row=1, column=0, sticky="ew", pady=(18, 12))
@@ -972,6 +990,13 @@ class RegistrationDesk(ttk.Frame):
         selected = self.section_tabs.select()
         section = self.section_tabs.tab(selected, "text") if selected else ""
         self.detach_callback(str(section))
+
+    def _reattach_current_section(self) -> None:
+        if self.reattach_callback is None:
+            return
+        selected = self.section_tabs.select()
+        section = self.section_tabs.tab(selected, "text") if selected else "League home"
+        self.reattach_callback(str(section), self.workspace_context.competition_id)
 
     def select_section(self, section: str) -> None:
         for tab_id in self.section_tabs.tabs():
