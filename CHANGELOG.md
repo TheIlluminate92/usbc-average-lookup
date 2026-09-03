@@ -5,6 +5,11 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+- Added right-click Open in new tab and Pop out into separate window actions
+  to every League Manager subtab while preserving its selected league.
+- Reduced the Scores & history controls from three rows to two and grouped
+  week controls separately from score-sheet row actions.
+
 ## v0.6.0-alpha.4 — 2026-09-03
 
 - Expanded Scores & history by removing its duplicate league selector and

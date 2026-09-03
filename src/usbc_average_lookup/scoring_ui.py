@@ -96,9 +96,12 @@ class ScoringDesk(ttk.Frame):
             row=0, column=1, sticky="e", padx=(0, 8)
         )
         self.session_box = ttk.Combobox(
-            toolbar, textvariable=self.session_var, state="disabled"
+            toolbar,
+            textvariable=self.session_var,
+            state="disabled",
+            width=34,
         )
-        self.session_box.grid(row=0, column=2, sticky="ew")
+        self.session_box.grid(row=0, column=2, sticky="w")
         self.session_box.bind(
             "<<ComboboxSelected>>", lambda _event: self._session_changed()
         )
@@ -143,22 +146,24 @@ class ScoringDesk(ttk.Frame):
         self.session_status_label.grid(
             row=1, column=2, sticky="w", padx=(12, 12), pady=(7, 0)
         )
+        row_actions = ttk.Frame(toolbar, style="Surface.TFrame")
+        row_actions.grid(
+            row=1, column=3, columnspan=4, sticky="e", pady=(7, 0)
+        )
         self.history_button = ttk.Button(
-            toolbar,
-            text="History & corrections",
+            row_actions,
+            text="History",
             command=self.show_history,
             state=tk.DISABLED,
         )
-        self.history_button.grid(row=1, column=3, padx=(8, 0), pady=(7, 0))
-        row_actions = ttk.Frame(toolbar, style="Surface.TFrame")
-        row_actions.grid(row=2, column=0, columnspan=6, sticky="e", pady=(7, 0))
+        self.history_button.pack(side=tk.LEFT)
         self.add_player_button = ttk.Button(
             row_actions,
             text="Add player / substitute",
             command=self._add_score_player,
             state=tk.DISABLED,
         )
-        self.add_player_button.pack(side=tk.LEFT)
+        self.add_player_button.pack(side=tk.LEFT, padx=(8, 0))
         self.vacancy_button = ttk.Button(
             row_actions,
             text="Add vacancy",

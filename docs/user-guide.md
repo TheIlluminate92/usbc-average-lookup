@@ -36,6 +36,11 @@ different league. Right-click an extra tab to move it into a separate window
 or close it; its `×` and middle-click also close it. All tabs and windows
 refresh from the same database.
 
+Every League Manager subtab also has a right-click menu. Use it to open League
+home, Teams & roster, Scores & history, Rules & setup, Player directory, or All
+leagues in another top-level tab or a separate window. The new view keeps the
+league currently selected in the workspace bar.
+
 The familiar **Ctrl+T** shortcut duplicates the current working view in a new
 tab, and **Ctrl+W** closes the selected extra tab. The three permanent tabs are
 not closed by Ctrl+W.

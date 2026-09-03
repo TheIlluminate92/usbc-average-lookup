@@ -45,6 +45,7 @@ class RegistrationDesk(ttk.Frame):
         workspace_context: LeagueWorkspaceContext | None = None,
         open_registration_callback: Callable[[], None] | None = None,
         detach_callback: Callable[[str], None] | None = None,
+        popout_callback: Callable[[str, str], None] | None = None,
         score_edit_locks: ScoreSheetEditLocks | None = None,
         reattach_callback: Callable[[str, str], None] | None = None,
     ) -> None:
@@ -55,6 +56,7 @@ class RegistrationDesk(ttk.Frame):
         self.workspace_context = workspace_context or LeagueWorkspaceContext()
         self.open_registration_callback = open_registration_callback
         self.detach_callback = detach_callback
+        self.popout_callback = popout_callback
         self.score_edit_locks = score_edit_locks or ScoreSheetEditLocks()
         self.reattach_callback = reattach_callback
         self.competition_by_label: dict[str, Competition] = {}
@@ -117,6 +119,7 @@ class RegistrationDesk(ttk.Frame):
 
         self.section_tabs = ttk.Notebook(self)
         self.section_tabs.grid(row=1, column=0, sticky="nsew")
+        self.section_tabs.bind("<Button-3>", self._show_section_tab_menu)
         registration_tab = ttk.Frame(
             self.registration_parent or self.section_tabs,
             style="App.TFrame",
@@ -849,6 +852,30 @@ class RegistrationDesk(ttk.Frame):
         selected = self.section_tabs.select()
         section = self.section_tabs.tab(selected, "text") if selected else ""
         self.detach_callback(str(section))
+
+    def _show_section_tab_menu(self, event: tk.Event) -> None:
+        if self.detach_callback is None and self.popout_callback is None:
+            return
+        try:
+            index = self.section_tabs.index(f"@{event.x},{event.y}")
+        except tk.TclError:
+            return
+        self.section_tabs.select(index)
+        section = str(self.section_tabs.tab(index, "text"))
+        menu = tk.Menu(self, tearoff=False)
+        if self.detach_callback is not None:
+            menu.add_command(
+                label="Open in new tab",
+                command=lambda: self.detach_callback(section),
+            )
+        if self.popout_callback is not None:
+            menu.add_command(
+                label="Pop out into separate window",
+                command=lambda: self.popout_callback(
+                    section, self.workspace_context.competition_id
+                ),
+            )
+        menu.tk_popup(event.x_root, event.y_root)
 
     def _reattach_current_section(self) -> None:
         if self.reattach_callback is None:

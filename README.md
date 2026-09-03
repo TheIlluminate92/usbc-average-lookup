@@ -38,7 +38,9 @@ The compact browser-style strip opens on Registration and has three top-level
 workspaces. Right-click Registration or League Manager to open another tab or
 pop the current view into a separate window. Extra tabs keep their own league
 and section, show a close `×`, and can be moved into a window or closed from
-their right-click menu. Middle-click also closes an extra tab.
+their right-click menu. Inside League Manager, right-click League home, Teams,
+Scores, Rules, Player directory, or All leagues to open that exact section in
+another tab or window. Middle-click also closes an extra top-level tab.
 
 - **Registration** supports fast single-player entry, whole-team entry, and
   one-step registration into multiple leagues with a separate team assignment

@@ -29,6 +29,8 @@ database copy used.
   menu.
 - Right-click an extra tab, pop it into a separate window, and verify its
   selected league and management section are preserved.
+- Right-click each League Manager subtab and verify both Open in new tab and
+  Pop out into separate window preserve the selected section and league.
 - Repeat the shared-refresh check with the separate window.
 - Return a detached Registration view and a detached management section to the
   main window; verify the section and league context are restored.

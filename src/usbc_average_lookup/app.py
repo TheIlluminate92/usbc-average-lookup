@@ -413,6 +413,7 @@ class AverageLookupApp(tk.Tk):
             detach_callback=lambda section: self._open_management_tab(
                 section, self.workspace_context.competition_id
             ),
+            popout_callback=self._open_management_window,
             score_edit_locks=self.score_edit_locks,
         )
         self.registration_desk.pack(fill=tk.BOTH, expand=True)
@@ -568,6 +569,7 @@ class AverageLookupApp(tk.Tk):
             detach_callback=lambda section: self._open_management_tab(
                 section, context.competition_id
             ),
+            popout_callback=self._open_management_window,
             score_edit_locks=self.score_edit_locks,
         )
         self.workspace_tab_desks[page] = desk
@@ -594,6 +596,7 @@ class AverageLookupApp(tk.Tk):
             detach_callback=lambda next_section: self._open_management_tab(
                 next_section, context.competition_id
             ),
+            popout_callback=self._open_management_window,
             score_edit_locks=self.score_edit_locks,
         )
         desk.pack(fill=tk.BOTH, expand=True)
@@ -695,6 +698,7 @@ class AverageLookupApp(tk.Tk):
             detach_callback=lambda section: self._open_management_tab(
                 section, context.competition_id
             ),
+            popout_callback=self._open_management_window,
             score_edit_locks=self.score_edit_locks,
             reattach_callback=lambda section, competition_id: self._reattach_detached(
                 window, section, competition_id
@@ -725,6 +729,7 @@ class AverageLookupApp(tk.Tk):
             detach_callback=lambda next_section: self._open_management_tab(
                 next_section, context.competition_id
             ),
+            popout_callback=self._open_management_window,
             score_edit_locks=self.score_edit_locks,
             reattach_callback=lambda selected_section, competition_id: (
                 self._reattach_detached(window, selected_section, competition_id)

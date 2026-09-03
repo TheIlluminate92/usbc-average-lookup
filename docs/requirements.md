@@ -90,6 +90,8 @@ Windows user profile in a schema-versioned SQLite database.
 - Refresh every open management window after a successful domain write.
 - Allow Registration and a selected management view to open in additional
   windows with an independent league selection.
+- Provide right-click new-tab and separate-window actions on every management
+  section tab while preserving its selected league.
 - Allow a detached view to return its current section and league selection to
   the main window.
 - Prevent simultaneous score-entry dialogs for the same weekly score sheet.
