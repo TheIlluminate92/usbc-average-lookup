@@ -78,9 +78,9 @@ The change log retains:
 
 ## History
 
-History is accessible from:
+The combined score-sheet and correction history is accessible from:
 
-- Scores → History;
+- Scores → History & corrections;
 - All leagues → Score history;
 - Teams → Score history.
 

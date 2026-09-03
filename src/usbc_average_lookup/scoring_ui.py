@@ -145,18 +145,11 @@ class ScoringDesk(ttk.Frame):
         )
         self.history_button = ttk.Button(
             toolbar,
-            text="History",
+            text="History & corrections",
             command=self.show_history,
             state=tk.DISABLED,
         )
         self.history_button.grid(row=1, column=3, padx=(8, 0), pady=(7, 0))
-        self.log_button = ttk.Button(
-            toolbar,
-            text="Change log",
-            command=self._show_change_log,
-            state=tk.DISABLED,
-        )
-        self.log_button.grid(row=1, column=4, padx=(8, 0), pady=(7, 0))
         row_actions = ttk.Frame(toolbar, style="Surface.TFrame")
         row_actions.grid(row=2, column=0, columnspan=6, sticky="e", pady=(7, 0))
         self.add_player_button = ttk.Button(
@@ -493,7 +486,6 @@ class ScoringDesk(ttk.Frame):
         self.final_button.configure(
             state=tk.NORMAL if editable_session else tk.DISABLED
         )
-        self.log_button.configure(state=tk.NORMAL if has_session else tk.DISABLED)
         self.history_button.configure(
             state=tk.NORMAL if competition is not None else tk.DISABLED
         )
@@ -681,13 +673,6 @@ class ScoringDesk(ttk.Frame):
             messagebox.showerror("Could not update score sheet", str(error), parent=self)
             return
         self._competition_changed()
-
-    def _show_change_log(self) -> None:
-        session = self._session()
-        scoring = self.scoring_store
-        if session is None or scoring is None:
-            return
-        ChangeLogDialog(self, session, scoring.change_log(session.id))
 
     def select_competition(
         self,
@@ -1231,22 +1216,34 @@ class LeagueHistoryDialog(tk.Toplevel):
         self.scoring = scoring
         self.teams = teams
         self.choice: str | None = None
-        self.title(f"Score history — {competition.display_name}")
-        self.geometry("980x540")
+        self.title(f"History & corrections — {competition.display_name}")
+        self.geometry("1040x620")
         self.transient(parent)
         self.grab_set()
-        content = ttk.Frame(self, style="App.TFrame", padding=22)
+        content = ttk.Frame(self, style="App.TFrame", padding=16)
         content.pack(fill=tk.BOTH, expand=True)
         content.columnconfigure(0, weight=1)
-        content.rowconfigure(2, weight=1)
+        content.rowconfigure(1, weight=1)
         ttk.Label(
             content,
-            text=f"{competition.display_name} score history",
+            text=f"{competition.display_name} history",
             style="Muted.TLabel",
-            font=("Segoe UI", 18, "bold"),
-        ).grid(row=0, column=0, columnspan=2, sticky="w")
-        filters = ttk.Frame(content, style="App.TFrame")
-        filters.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(14, 10))
+            font=("Segoe UI", 15, "bold"),
+        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+
+        self.notebook = ttk.Notebook(content)
+        self.notebook.grid(row=1, column=0, sticky="nsew")
+        history_tab = ttk.Frame(self.notebook, style="App.TFrame", padding=10)
+        corrections_tab = ttk.Frame(
+            self.notebook, style="App.TFrame", padding=10
+        )
+        self.notebook.add(history_tab, text="Score sheets")
+        self.notebook.add(corrections_tab, text="Corrections")
+
+        history_tab.columnconfigure(0, weight=1)
+        history_tab.rowconfigure(1, weight=1)
+        filters = ttk.Frame(history_tab, style="App.TFrame")
+        filters.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         filters.columnconfigure(1, weight=1)
         ttk.Label(filters, text="Team", style="Muted.TLabel").grid(
             row=0, column=0, sticky="w", padx=(0, 8)
@@ -1267,7 +1264,7 @@ class LeagueHistoryDialog(tk.Toplevel):
         self.summary_label = ttk.Label(filters, text="", style="Muted.TLabel")
         self.summary_label.grid(row=0, column=2, sticky="e", padx=(12, 0))
         self.table = ttk.Treeview(
-            content,
+            history_tab,
             columns=(
                 "week",
                 "date",
@@ -1294,13 +1291,54 @@ class LeagueHistoryDialog(tk.Toplevel):
         ):
             self.table.heading(column, text=label)
             self.table.column(column, width=width, anchor="w")
-        self.table.grid(row=2, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(content, orient=tk.VERTICAL, command=self.table.yview)
+        self.table.grid(row=1, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(
+            history_tab, orient=tk.VERTICAL, command=self.table.yview
+        )
         self.table.configure(yscrollcommand=scrollbar.set)
-        scrollbar.grid(row=2, column=1, sticky="ns")
+        scrollbar.grid(row=1, column=1, sticky="ns")
         self.table.bind("<Double-1>", lambda _event: self._accept())
+        self.table.bind(
+            "<<TreeviewSelect>>", lambda _event: self._render_corrections()
+        )
+
+        corrections_tab.columnconfigure(0, weight=1)
+        corrections_tab.rowconfigure(1, weight=1)
+        self.correction_summary_label = ttk.Label(
+            corrections_tab,
+            text="Select a score sheet to review its corrections.",
+            style="Muted.TLabel",
+        )
+        self.correction_summary_label.grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 8)
+        )
+        self.changes_table = ttk.Treeview(
+            corrections_tab,
+            columns=("when", "player", "team", "game", "before", "after", "reason"),
+            show="headings",
+        )
+        for column, label, width in (
+            ("when", "Changed", 145),
+            ("player", "Player", 145),
+            ("team", "Team", 125),
+            ("game", "Game", 55),
+            ("before", "Before", 100),
+            ("after", "After", 100),
+            ("reason", "Reason", 260),
+        ):
+            self.changes_table.heading(column, text=label)
+            self.changes_table.column(column, width=width, anchor="w")
+        self.changes_table.grid(row=1, column=0, sticky="nsew")
+        changes_scrollbar = ttk.Scrollbar(
+            corrections_tab,
+            orient=tk.VERTICAL,
+            command=self.changes_table.yview,
+        )
+        self.changes_table.configure(yscrollcommand=changes_scrollbar.set)
+        changes_scrollbar.grid(row=1, column=1, sticky="ns")
+
         buttons = ttk.Frame(content, style="App.TFrame")
-        buttons.grid(row=3, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        buttons.grid(row=2, column=0, sticky="e", pady=(10, 0))
         ttk.Button(buttons, text="Close", command=self.destroy).pack(side=tk.LEFT)
         ttk.Button(
             buttons,
@@ -1341,63 +1379,43 @@ class LeagueHistoryDialog(tk.Toplevel):
         self.summary_label.configure(
             text=f"{len(summaries)} week{'s' if len(summaries) != 1 else ''} • {team_label}"
         )
+        self._render_corrections()
 
-    def _accept(self) -> None:
+    def _render_corrections(self) -> None:
+        self.changes_table.delete(*self.changes_table.get_children())
         selected = self.table.selection()
         if not selected:
+            self.correction_summary_label.configure(
+                text="Select a score sheet to review its corrections."
+            )
             return
-        self.choice = selected[0]
-        self.destroy()
-
-    def show(self) -> str | None:
-        self.wait_window()
-        return self.choice
-
-
-class ChangeLogDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Misc, session: LeagueSession, changes: list) -> None:
-        super().__init__(parent)
-        self.title(f"Change log — {session.display_name}")
-        self.geometry("980x520")
-        self.transient(parent)
-        content = ttk.Frame(self, style="App.TFrame", padding=22)
-        content.pack(fill=tk.BOTH, expand=True)
-        content.columnconfigure(0, weight=1)
-        content.rowconfigure(1, weight=1)
-        ttk.Label(
-            content,
-            text=f"{session.display_name} change log",
-            style="Muted.TLabel",
-            font=("Segoe UI", 18, "bold"),
-        ).grid(row=0, column=0, sticky="w", pady=(0, 12))
-        table = ttk.Treeview(
-            content,
-            columns=("when", "player", "team", "game", "before", "after", "reason"),
-            show="headings",
+        session = self.scoring.get_session(selected[0])
+        changes = self.scoring.change_log(session.id)
+        selected_team = self.team_by_label.get(self.team_var.get())
+        if selected_team is not None:
+            changes = [
+                change
+                for change in changes
+                if not change.team_id or change.team_id == selected_team.id
+            ]
+        self.correction_summary_label.configure(
+            text=(
+                f"{session.display_name} • {len(changes)} correction"
+                f"{'s' if len(changes) != 1 else ''}"
+            )
         )
-        for column, label, width in (
-            ("when", "Changed", 145),
-            ("player", "Player", 145),
-            ("team", "Team", 125),
-            ("game", "Game", 55),
-            ("before", "Before", 100),
-            ("after", "After", 100),
-            ("reason", "Reason", 260),
-        ):
-            table.heading(column, text=label)
-            table.column(column, width=width, anchor="w")
-        table.grid(row=1, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(content, orient=tk.VERTICAL, command=table.yview)
-        table.configure(yscrollcommand=scrollbar.set)
-        scrollbar.grid(row=1, column=1, sticky="ns")
         for change in changes:
             before = _change_value(
-                change.old_status, change.old_scratch_score, change.old_pins_counted
+                change.old_status,
+                change.old_scratch_score,
+                change.old_pins_counted,
             )
             after = _change_value(
-                change.new_status, change.new_scratch_score, change.new_pins_counted
+                change.new_status,
+                change.new_scratch_score,
+                change.new_pins_counted,
             )
-            table.insert(
+            self.changes_table.insert(
                 "",
                 tk.END,
                 values=(
@@ -1411,10 +1429,22 @@ class ChangeLogDialog(tk.Toplevel):
                 ),
             )
         if not changes:
-            table.insert("", tk.END, values=("No corrections recorded", "", "", "", "", "", ""))
-        ttk.Button(content, text="Close", command=self.destroy).grid(
-            row=2, column=0, columnspan=2, sticky="e", pady=(14, 0)
-        )
+            self.changes_table.insert(
+                "",
+                tk.END,
+                values=("No corrections recorded", "", "", "", "", "", ""),
+            )
+
+    def _accept(self) -> None:
+        selected = self.table.selection()
+        if not selected:
+            return
+        self.choice = selected[0]
+        self.destroy()
+
+    def show(self) -> str | None:
+        self.wait_window()
+        return self.choice
 
 
 def _change_value(status: str, scratch: int | None, counted: int) -> str:

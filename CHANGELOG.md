@@ -13,6 +13,13 @@ database/UI changes that are not yet stable public contracts.
 - Removed the permanent New tab and Open view in new tab controls. Workspace
   tabs now expose new-tab, pop-out, and close actions from their right-click
   menu, including moving an extra tab into its own window.
+- Compacted every League Manager section and removed the duplicate league
+  selector from Teams & roster; the shared workspace selector is now the only
+  league selector in management.
+- Combined score-sheet history and the correction log into one window with
+  Score sheets and Corrections tabs.
+- Moved secondary team and season commands into More actions menus while
+  keeping the frequent create, roster, edit, and archive actions visible.
 
 ## v0.6.0-alpha.3 — 2026-09-03
 

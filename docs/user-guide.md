@@ -124,7 +124,8 @@ After a team assignment changes, the registration list, player history, team
 counts, league counts, and scoring selectors refresh together.
 
 Use **View relationships** in the roster window to explore the team's leagues
-and players. The separate rename button on the team list edits the team name.
+and players. Use **More actions** on the team list to rename the selected team
+or open its score history.
 
 ## Register one bowler
 
@@ -209,7 +210,7 @@ floor(max(handicap base - entering average, 0) × handicap percentage)
 2. Select **New week** and enter the week number, optional date, and label.
 3. The application copies active regular roster assignments into a permanent
    weekly snapshot.
-4. Use **Add player back / substitute** for a substitute, an alternate, or a
+4. Use **Add player / substitute** for a substitute, an alternate, or a
    regular row that was removed earlier. Choose which team the player bowled
    for that week.
 5. Use **Add vacancy** when required.
@@ -242,9 +243,11 @@ If a correction reason is missing, the score editor remains open and shows the
 requirement beneath the reason field. **Cancel** always remains available and
 closes the editor without saving.
 
-Open **Change log** to see before/after values and the reason. Open **History**
-to review all league weeks or filter to one team. League and Team management
-also provide direct score-history buttons.
+Open **History & corrections** to review every week or filter to one team. Use
+the **Corrections** tab in that window to see before/after values and reasons
+for the selected week. Double-click a week, or use **Open score sheet**, to
+return to it. Team and All leagues management also provide direct history
+actions.
 
 Weekly rows snapshot the player name, team name, role, entering average,
 handicap, and game count. Later roster moves or renames do not rewrite history.
@@ -331,7 +334,7 @@ the exact screen and steps.
 
 ### A score row was removed
 
-While the week is still Draft, select **Add player back / substitute**, choose
+While the week is still Draft, select **Add player / substitute**, choose
 the registered player and team, and add the row again. The original roster role
 is preserved.
 

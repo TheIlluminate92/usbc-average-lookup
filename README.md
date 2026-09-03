@@ -48,16 +48,18 @@ their right-click menu. Middle-click also closes an extra tab.
     provides a direct Create team action.
   - **Teams & roster** gives the team list the full workspace. Double-click a
     team to open its regulars, team substitutes, and league-wide substitute
-    pool in a separate roster window.
+    pool in a separate roster window. Secondary commands are under **More
+    actions**.
   - **Scores & history** stores permanent weekly score sheets, individual
-    games, calculated team totals, and correction history.
+    games, calculated team totals, and one combined history/corrections view.
   - **Rules & setup** keeps league details, average/handicap rules, scoring
     defaults, and the linked player pool together.
   - **Player directory** maintains one permanent identity per person and
     optional year/season player pools.
   - **All leagues** is the master list for creating, archiving, and revisiting
     league-season or tournament workspaces. **League home** is the dashboard
-    for whichever league is selected in the workspace bar.
+    for whichever league is selected in the workspace bar. Less-frequent
+    season commands are grouped under **More actions**.
 - **Average lookup** imports a roster or accepts one player, checks BOWL.com,
   resolves ambiguous matches, exports results, and can add the result list to
   the permanent player directory.
