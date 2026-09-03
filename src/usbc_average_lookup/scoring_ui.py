@@ -23,6 +23,7 @@ from usbc_average_lookup.services.scoring import (
     ScoringStore,
     SessionStatus,
 )
+from usbc_average_lookup.ui_helpers import ButtonHint
 from usbc_average_lookup.workspace import LeagueWorkspaceContext, ScoreSheetEditLocks
 
 
@@ -122,7 +123,7 @@ class ScoringDesk(ttk.Frame):
         self.final_button.grid(row=0, column=4, padx=(8, 0))
         self.settings_button = ttk.Button(
             toolbar,
-            text="Scoring rules",
+            text="Edit rules…",
             command=self._edit_settings,
             state=tk.DISABLED,
         )
@@ -153,14 +154,14 @@ class ScoringDesk(ttk.Frame):
         )
         self.history_button = ttk.Button(
             row_actions,
-            text="History",
+            text="History…",
             command=self.show_history,
             state=tk.DISABLED,
         )
         self.history_button.pack(side=tk.LEFT)
         self.add_player_button = ttk.Button(
             row_actions,
-            text="Add player / substitute",
+            text="Add bowler…",
             command=self._add_score_player,
             state=tk.DISABLED,
         )
@@ -179,6 +180,18 @@ class ScoringDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.remove_button.pack(side=tk.LEFT, padx=(8, 0))
+        ButtonHint(
+            self.add_player_button,
+            "Add a regular or substitute to this score sheet without changing the season roster.",
+        )
+        ButtonHint(
+            self.remove_button,
+            "Remove only this week's score row. Saved games require a reason.",
+        )
+        ButtonHint(
+            self.final_button,
+            "Finalize locks this week. Reopening it for corrections requires a reason.",
+        )
 
         self.score_panes = ttk.Panedwindow(self, orient=tk.VERTICAL)
         self.score_panes.grid(row=1, column=0, sticky="nsew")

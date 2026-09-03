@@ -56,7 +56,7 @@ compact workspace strip, and the three top-level workspaces:
 
 `RegistrationDesk` controls the separate Registration workspace and the seven
 League Manager sections. `LeagueWorkspaceContext` propagates one selected
-competition across Registration, Teams, Schedule, Scores, Rules, and League home.
+competition across Registration, Teams, Schedule, Scores, Rules, and Home.
 
 Additional windows construct another desk against the same store but receive
 an independent workspace context. `RegistrationStore` change listeners schedule

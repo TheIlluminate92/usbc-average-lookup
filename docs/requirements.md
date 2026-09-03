@@ -101,8 +101,8 @@ Windows user profile in a schema-versioned SQLite database.
 
 - Keep one current league/tournament selection synchronized across management
   and registration views.
-- Provide a league home work queue plus task-oriented Teams & roster, Scores &
-  history, Schedule & lanes, Rules & setup, Player directory, and All leagues
+- Provide a Home work queue plus task-oriented Teams, Scores,
+  Schedule, Rules, Players, and All leagues
   sections.
 - Refresh every open management window after a successful domain write.
 - Allow Registration and a selected management view to open in additional

@@ -3,6 +3,18 @@ from __future__ import annotations
 from collections.abc import Callable
 
 
+def management_section_label(section: str) -> str:
+    """Accept earlier display labels when restoring or opening a section."""
+    return {
+        "League home": "Home",
+        "Teams & roster": "Teams",
+        "Schedule & lanes": "Schedule",
+        "Scores & history": "Scores",
+        "Rules & setup": "Rules",
+        "Player directory": "Players",
+    }.get(section, section)
+
+
 class LeagueWorkspaceContext:
     """One selected league or tournament shared by related application views."""
 

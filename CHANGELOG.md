@@ -5,6 +5,18 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+## v0.7.0-alpha.2 — 2026-09-03
+
+- Shortened management tabs to Home, Teams, Schedule, Scores, Rules, Players,
+  and All leagues, preserving new-tab and pop-out navigation.
+- Clarified compact actions including Build schedule, Change lanes, Add bowler,
+  Roster, Register team, Choose leagues, and Add existing player.
+- Added hover and keyboard-focus hints to selected compact controls.
+- Kept withdrawal, pool removal, and score finalization explicit; withdrawal
+  labels distinguish leagues from tournaments.
+- Updated the user guide and release checklist; added navigation and hint tests.
+- No database migration: SQLite remains at schema version 4.
+
 ## v0.7.0-alpha.1 — 2026-09-03
 
 - Added configurable Round robin, Single elimination, and Custom/manual

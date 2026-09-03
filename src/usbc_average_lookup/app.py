@@ -437,7 +437,7 @@ class AverageLookupApp(tk.Tk):
         menu = tk.Menu(self, tearoff=False)
         if page in self.workspace_tab_desks:
             menu.add_command(
-                label="Pop out into separate window",
+                label="Pop out",
                 command=lambda: self._pop_out_workspace_tab(page),
             )
             menu.add_separator()
@@ -450,7 +450,7 @@ class AverageLookupApp(tk.Tk):
                 command=self._open_registration_tab,
             )
             menu.add_command(
-                label="Pop out into separate window",
+                label="Pop out",
                 command=self._open_registration_window,
             )
         elif label == "League Manager":
@@ -528,7 +528,7 @@ class AverageLookupApp(tk.Tk):
         return (
             str(self.registration_desk.section_tabs.tab(selected_tab, "text"))
             if selected_tab
-            else "League home"
+            else "Home"
         )
 
     def _open_current_workspace_tab(self) -> None:
@@ -549,7 +549,7 @@ class AverageLookupApp(tk.Tk):
                 section = (
                     str(desk.section_tabs.tab(current_tab, "text"))
                     if current_tab
-                    else "League home"
+                    else "Home"
                 )
                 self._open_management_tab(
                     section, desk.workspace_context.competition_id
@@ -600,7 +600,7 @@ class AverageLookupApp(tk.Tk):
             score_edit_locks=self.score_edit_locks,
         )
         desk.pack(fill=tk.BOTH, expand=True)
-        desk.select_section(section or "League home")
+        desk.select_section(section or "Home")
         self.workspace_tab_desks[page] = desk
         self.workspace_tab_kinds[page] = "management"
         self.workspace.add(page, text="League Manager  ×")
@@ -627,7 +627,7 @@ class AverageLookupApp(tk.Tk):
         section = (
             str(desk.section_tabs.tab(selected, "text"))
             if selected
-            else "League home"
+            else "Home"
         )
         competition = next(
             (
@@ -671,7 +671,7 @@ class AverageLookupApp(tk.Tk):
             section = (
                 str(desk.section_tabs.tab(selected, "text"))
                 if selected
-                else "League home"
+                else "Home"
             )
             self._open_management_window(section, competition_id)
         self._close_workspace_tab(page)

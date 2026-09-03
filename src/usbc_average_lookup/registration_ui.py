@@ -31,7 +31,12 @@ from usbc_average_lookup.services.registration import (
     RosterRole,
     Team,
 )
-from usbc_average_lookup.workspace import LeagueWorkspaceContext, ScoreSheetEditLocks
+from usbc_average_lookup.ui_helpers import ButtonHint
+from usbc_average_lookup.workspace import (
+    LeagueWorkspaceContext,
+    ScoreSheetEditLocks,
+    management_section_label,
+)
 
 LookupTask = tuple[BowlApi, str, InputBowler]
 
@@ -92,7 +97,7 @@ class RegistrationDesk(ttk.Frame):
         management_context.columnconfigure(1, weight=1)
         ttk.Label(
             management_context,
-            text="Current league workspace",
+            text="League / tournament",
             style="Surface.TLabel",
         ).grid(row=0, column=0, sticky="w", padx=(0, 10))
         self.workspace_competition_box = ttk.Combobox(
@@ -112,7 +117,7 @@ class RegistrationDesk(ttk.Frame):
         self.open_registration_button.grid(row=0, column=2, padx=(10, 0))
         self.reattach_button = ttk.Button(
             management_context,
-            text="Return to main window",
+            text="Return to main",
             command=self._reattach_current_section,
             state=tk.NORMAL if self.reattach_callback else tk.DISABLED,
         )
@@ -148,12 +153,12 @@ class RegistrationDesk(ttk.Frame):
         self.rules_tab = ttk.Frame(
             self.section_tabs, style="App.TFrame", padding=(12, 10, 12, 12)
         )
-        self.section_tabs.add(self.overview_tab, text="League home")
-        self.section_tabs.add(self.teams_tab, text="Teams & roster")
-        self.section_tabs.add(self.schedule_tab, text="Schedule & lanes")
-        self.section_tabs.add(self.scores_tab, text="Scores & history")
-        self.section_tabs.add(self.rules_tab, text="Rules & setup")
-        self.section_tabs.add(self.players_tab, text="Player directory")
+        self.section_tabs.add(self.overview_tab, text="Home")
+        self.section_tabs.add(self.teams_tab, text="Teams")
+        self.section_tabs.add(self.schedule_tab, text="Schedule")
+        self.section_tabs.add(self.scores_tab, text="Scores")
+        self.section_tabs.add(self.rules_tab, text="Rules")
+        self.section_tabs.add(self.players_tab, text="Players")
         self.section_tabs.add(self.competitions_tab, text="All leagues")
         if self.registration_parent is None:
             self.section_tabs.add(registration_tab, text="Registration")
@@ -186,7 +191,7 @@ class RegistrationDesk(ttk.Frame):
         if self.reattach_callback is not None:
             ttk.Button(
                 heading,
-                text="Return to main window",
+                text="Return to main",
                 command=lambda: self.reattach_callback(
                     "Registration", self.workspace_context.competition_id
                 ),
@@ -210,7 +215,7 @@ class RegistrationDesk(ttk.Frame):
         self.new_team_button = ttk.Button(selector, text="Add team", command=self._new_team)
         self.new_team_button.grid(row=0, column=2, padx=(10, 0))
         self.team_button = ttk.Button(
-            selector, text="Register whole team", command=self._register_team
+            selector, text="Register team…", command=self._register_team
         )
         self.team_button.grid(row=0, column=3, padx=(8, 0))
         self.check_all_button = ttk.Button(
@@ -250,7 +255,7 @@ class RegistrationDesk(ttk.Frame):
         self.add_button.grid(row=1, column=3, padx=(10, 0), pady=(5, 0))
         self.multi_add_button = ttk.Button(
             quick,
-            text="Multiple leagues…",
+            text="Choose leagues…",
             command=self._register_multiple,
         )
         self.multi_add_button.grid(row=1, column=4, padx=(8, 0), pady=(5, 0))
@@ -313,7 +318,7 @@ class RegistrationDesk(ttk.Frame):
             style="Muted.TLabel",
         ).pack(side=tk.LEFT)
         self.withdraw_button = ttk.Button(
-            footer, text="Withdraw selected", command=self._toggle_withdrawn, state=tk.DISABLED
+            footer, text="Withdraw from league", command=self._toggle_withdrawn, state=tk.DISABLED
         )
         self.withdraw_button.pack(side=tk.RIGHT)
         self.edit_button = ttk.Button(
@@ -345,6 +350,16 @@ class RegistrationDesk(ttk.Frame):
             edit_locks=self.score_edit_locks,
         )
         self.scoring_desk.pack(fill=tk.BOTH, expand=True)
+        for widget, hint in (
+            (self.multi_add_button, "Register in several leagues with a separate team for each."),
+            (self.team_button, "Enter a team name and paste its bowlers together."),
+            (self.team_roster_button, "Open this team's regulars and substitutes."),
+            (self.player_edit_button, "Edit the shared player record used by all leagues."),
+            (self.rules_edit_scoring_button, "Set average, handicap, blind and vacancy rules."),
+            (self.withdraw_button, "Withdraw or restore this entry; keep the player record."),
+            (self.player_pool_remove_button, "Remove from this pool only; keep the player record."),
+        ):
+            ButtonHint(widget, hint)
         self.section_tabs.bind(
             "<<NotebookTabChanged>>", lambda _event: self._refresh_active_workspaces()
         )
@@ -362,7 +377,7 @@ class RegistrationDesk(ttk.Frame):
         heading.columnconfigure(0, weight=1)
         self.workspace_title_label = ttk.Label(
             heading,
-            text="League home",
+            text="Home",
             style="Surface.TLabel",
             font=("Segoe UI", 15, "bold"),
         )
@@ -454,7 +469,7 @@ class RegistrationDesk(ttk.Frame):
         heading.columnconfigure(0, weight=1)
         ttk.Label(
             heading,
-            text="Rules & setup",
+            text="Rules",
             style="Surface.TLabel",
             font=("Segoe UI", 15, "bold"),
         ).grid(row=0, column=0, sticky="w")
@@ -465,14 +480,14 @@ class RegistrationDesk(ttk.Frame):
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.rules_edit_league_button = ttk.Button(
             heading,
-            text="Edit league details",
+            text="Edit details…",
             command=self._edit_context_competition,
             state=tk.DISABLED,
         )
         self.rules_edit_league_button.grid(row=0, column=1, rowspan=2, sticky="e")
         self.rules_edit_scoring_button = ttk.Button(
             heading,
-            text="Edit average & scoring rules",
+            text="Edit rules…",
             command=self._edit_context_rules,
             state=tk.DISABLED,
             style="Primary.TButton",
@@ -520,7 +535,7 @@ class RegistrationDesk(ttk.Frame):
         heading.columnconfigure(0, weight=1)
         ttk.Label(
             heading,
-            text="Player directory",
+            text="Players",
             style="Surface.TLabel",
             font=("Segoe UI", 15, "bold"),
         ).grid(row=0, column=0, sticky="w")
@@ -534,7 +549,7 @@ class RegistrationDesk(ttk.Frame):
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.player_edit_button = ttk.Button(
             heading,
-            text="Edit selected player",
+            text="Edit player…",
             command=self._edit_managed_player,
             state=tk.DISABLED,
         )
@@ -587,7 +602,7 @@ class RegistrationDesk(ttk.Frame):
         self.player_pool_add_button.pack(side=tk.LEFT, padx=(6, 0))
         self.player_pool_remove_button = ttk.Button(
             pool_actions,
-            text="Remove selected",
+            text="Remove from pool",
             command=self._remove_player_from_pool,
             state=tk.DISABLED,
         )
@@ -632,7 +647,7 @@ class RegistrationDesk(ttk.Frame):
         heading.columnconfigure(0, weight=1)
         ttk.Label(
             heading,
-            text="Teams & roster",
+            text="Teams",
             style="Surface.TLabel",
             font=("Segoe UI", 15, "bold"),
         ).grid(row=0, column=0, sticky="w")
@@ -648,7 +663,7 @@ class RegistrationDesk(ttk.Frame):
         self.team_add_button.grid(row=0, column=1, rowspan=2, sticky="e")
         self.team_roster_button = ttk.Button(
             heading,
-            text="Manage roster",
+            text="Roster…",
             command=self._open_selected_team_roster,
             state=tk.DISABLED,
         )
@@ -721,7 +736,7 @@ class RegistrationDesk(ttk.Frame):
             heading,
             text=(
                 "Master list for creating, archiving, and revisiting seasons. "
-                "Use League home for the selected league's day-to-day work."
+                "Use Home for the selected league's day-to-day work."
             ),
             style="Subtitle.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
@@ -798,8 +813,8 @@ class RegistrationDesk(ttk.Frame):
         self.competition_more_menu = tk.Menu(self, tearoff=False)
         for label, command in (
             ("Add team", self._add_team_to_managed_competition),
-            ("Copy existing team", self._copy_team_to_managed_competition),
-            ("Pull existing player", self._pull_player_into_managed_competition),
+            ("Copy team…", self._copy_team_to_managed_competition),
+            ("Add existing player…", self._pull_player_into_managed_competition),
             ("Register new player", self._add_player_to_managed_competition),
             ("Link player pool", self._link_competition_player_pool),
         ):
@@ -888,7 +903,7 @@ class RegistrationDesk(ttk.Frame):
             )
         if self.popout_callback is not None:
             menu.add_command(
-                label="Pop out into separate window",
+                label="Pop out",
                 command=lambda: self.popout_callback(
                     section, self.workspace_context.competition_id
                 ),
@@ -899,10 +914,11 @@ class RegistrationDesk(ttk.Frame):
         if self.reattach_callback is None:
             return
         selected = self.section_tabs.select()
-        section = self.section_tabs.tab(selected, "text") if selected else "League home"
+        section = self.section_tabs.tab(selected, "text") if selected else "Home"
         self.reattach_callback(str(section), self.workspace_context.competition_id)
 
     def select_section(self, section: str) -> None:
+        section = management_section_label(section)
         for tab_id in self.section_tabs.tabs():
             if self.section_tabs.tab(tab_id, "text") == section:
                 self.section_tabs.select(tab_id)
@@ -949,7 +965,7 @@ class RegistrationDesk(ttk.Frame):
         self.workspace_queue.delete(*self.workspace_queue.get_children())
         competition = self._current_competition()
         if self.store is None or competition is None:
-            self.workspace_title_label.configure(text="League home")
+            self.workspace_title_label.configure(text="Home")
             self.workspace_detail_label.configure(
                 text="Create or choose a league or tournament to begin."
             )
@@ -1546,8 +1562,8 @@ class RegistrationDesk(ttk.Frame):
         self.competition_more_button.configure(state=state)
         for label in (
             "Add team",
-            "Copy existing team",
-            "Pull existing player",
+            "Copy team…",
+            "Add existing player…",
             "Register new player",
             "Link player pool",
         ):
@@ -2165,8 +2181,18 @@ class RegistrationDesk(ttk.Frame):
         can_review = view is not None and self.api_provider() is not None
         self.review_button.configure(state=tk.NORMAL if can_review else tk.DISABLED)
         if view:
+            competition = self._current_competition()
+            competition_kind = (
+                "tournament"
+                if competition is not None and competition.kind is CompetitionKind.TOURNAMENT
+                else "league"
+            )
             self.withdraw_button.configure(
-                text="Restore selected" if view.registration.withdrawn else "Withdraw selected"
+                text=(
+                    "Restore registration"
+                    if view.registration.withdrawn
+                    else f"Withdraw from {competition_kind}"
+                )
             )
 
     def _review_selected(self) -> None:
@@ -2810,7 +2836,7 @@ class TeamCopyDialog(tk.Toplevel):
                 active_counts[registration.team_id] = (
                     active_counts.get(registration.team_id, 0) + 1
                 )
-        self.title("Copy existing team")
+        self.title("Copy team…")
         self.geometry("760x520")
         self.transient(parent)
         self.grab_set()

@@ -18,6 +18,12 @@ database copy used.
 
 ## 2. Clean install and upgrade
 
+- Verify Home, Teams, Schedule, Scores, Rules, Players, and All leagues open
+  correctly in the main window, new tabs, and popped-out windows.
+- Hover or keyboard-focus compact buttons and check that hints disappear on
+  leave, click, Escape, or focus change without stealing clicks or focus.
+- Check that Add existing player, registration, Remove from team, and Withdraw
+  from league remain distinct, with explicit scope in their labels.
 - Extract the ZIP into a new empty folder and start the executable from the
   extracted folder.
 - Confirm the compact browser-style strip opens on Registration, followed by
@@ -30,7 +36,7 @@ database copy used.
 - Right-click an extra tab, pop it into a separate window, and verify its
   selected league and management section are preserved.
 - Right-click each League Manager subtab and verify both Open in new tab and
-  Pop out into separate window preserve the selected section and league.
+  Pop out preserve the selected section and league.
 - Repeat the shared-refresh check with the separate window.
 - Return a detached Registration view and a detached management section to the
   main window; verify the section and league context are restored.

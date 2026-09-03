@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from usbc_average_lookup.app import AverageLookupApp
 from usbc_average_lookup.models import LookupResult, LookupStatus
 
@@ -66,7 +68,10 @@ def test_popping_out_registration_tab_preserves_league_context() -> None:
     app._close_workspace_tab.assert_called_once_with(page)
 
 
-def test_popping_out_management_tab_preserves_section_and_league() -> None:
+@pytest.mark.parametrize(
+    "section", ["Home", "Teams", "Schedule", "Scores", "Rules", "Players", "All leagues"]
+)
+def test_popping_out_management_tab_preserves_section_and_league(section: str) -> None:
     class Sections:
         @staticmethod
         def select() -> str:
@@ -74,7 +79,7 @@ def test_popping_out_management_tab_preserves_section_and_league() -> None:
 
         @staticmethod
         def tab(_selected: str, _option: str) -> str:
-            return "Scores & history"
+            return section
 
     app = AverageLookupApp.__new__(AverageLookupApp)
     page = object()
@@ -90,6 +95,6 @@ def test_popping_out_management_tab_preserves_section_and_league() -> None:
     app._pop_out_workspace_tab(page)
 
     app._open_management_window.assert_called_once_with(
-        "Scores & history", "league-3"
+        section, "league-3"
     )
     app._close_workspace_tab.assert_called_once_with(page)

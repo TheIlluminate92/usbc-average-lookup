@@ -18,7 +18,7 @@ The repository and executable still use the historical name
 ## Download
 
 The current portable Windows test build is
-[v0.7.0-alpha.1](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.7.0-alpha.1).
+[v0.7.0-alpha.2](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.7.0-alpha.2).
 Download `USBC-Average-Lookup-Windows.zip`, extract the entire folder, and run
 `USBC-Average-Lookup.exe`.
 
@@ -38,30 +38,30 @@ The compact browser-style strip opens on Registration and has three top-level
 workspaces. Right-click Registration or League Manager to open another tab or
 pop the current view into a separate window. Extra tabs keep their own league
 and section, show a close `×`, and can be moved into a window or closed from
-their right-click menu. Inside League Manager, right-click League home, Teams,
-Schedule, Scores, Rules, Player directory, or All leagues to open that exact section in
+their right-click menu. Inside League Manager, right-click Home, Teams,
+Schedule, Scores, Rules, Players, or All leagues to open that exact section in
 another tab or window. Middle-click also closes an extra top-level tab.
 
 - **Registration** supports fast single-player entry, whole-team entry, and
   one-step registration into multiple leagues with a separate team assignment
   for each.
 - **League Manager**
-  - **League home** summarizes the selected competition and its work queue and
+  - **Home** summarizes the selected competition and its work queue and
     provides a direct Create team action.
-  - **Teams & roster** gives the team list the full workspace. Double-click a
+  - **Teams** gives the team list the full workspace. Double-click a
     team to open its regulars, team substitutes, and league-wide substitute
     pool in a separate roster window. Secondary commands are under **More
     actions**.
-  - **Schedule & lanes** generates a complete round-robin rotation, keeps
+  - **Schedule** generates a complete round-robin rotation, keeps
     explicit weekly matchups and BYEs, and allows lane-pair corrections.
-  - **Scores & history** stores permanent weekly score sheets, individual
+  - **Scores** stores permanent weekly score sheets, individual
     games, calculated team totals, and one combined history/corrections view.
-  - **Rules & setup** keeps league details, average/handicap rules, scoring
+  - **Rules** keeps league details, average/handicap rules, scoring
     defaults, and the linked player pool together.
-  - **Player directory** maintains one permanent identity per person and
+  - **Players** maintains one permanent identity per person and
     optional year/season player pools.
   - **All leagues** is the master list for creating, archiving, and revisiting
-    league-season or tournament workspaces. **League home** is the dashboard
+    league-season or tournament workspaces. **Home** is the dashboard
     for whichever league is selected in the workspace bar. Less-frequent
     season commands are grouped under **More actions**.
 - **Average lookup** imports a roster or accepts one player, checks BOWL.com,
@@ -85,7 +85,7 @@ View relationships action. Editing remains on the clearly labeled buttons.
    transformation, handicap, blind, vacancy,
    and games-per-night settings.
 6. For a round-robin competition, generate the schedule and starting lane
-   block from **Schedule & lanes**.
+   block from **Schedule**.
 7. Create a weekly score sheet. Active regular rosters are snapshotted into
    that week.
 8. Add substitutes, vacancies, or a previously removed player; enter games;

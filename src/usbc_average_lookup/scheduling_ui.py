@@ -15,6 +15,7 @@ from usbc_average_lookup.services.scheduling import (
     CompetitionRound,
     ScheduleStore,
 )
+from usbc_average_lookup.ui_helpers import ButtonHint
 from usbc_average_lookup.workspace import LeagueWorkspaceContext
 
 
@@ -48,7 +49,7 @@ class ScheduleDesk(ttk.Frame):
         heading.columnconfigure(0, weight=1)
         self.title_label = ttk.Label(
             heading,
-            text="Schedule & lanes",
+            text="Schedule",
             style="Surface.TLabel",
             font=("Segoe UI", 15, "bold"),
         )
@@ -61,7 +62,7 @@ class ScheduleDesk(ttk.Frame):
         self.detail_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.generate_button = ttk.Button(
             heading,
-            text="Generate round robin",
+            text="Build schedule…",
             command=self._generate,
             state=tk.DISABLED,
             style="Primary.TButton",
@@ -85,11 +86,19 @@ class ScheduleDesk(ttk.Frame):
         )
         self.lane_button = ttk.Button(
             controls,
-            text="Change lane pair",
+            text="Change lanes…",
             command=self._change_lane,
             state=tk.DISABLED,
         )
         self.lane_button.grid(row=0, column=2, padx=(10, 0))
+        ButtonHint(
+            self.generate_button,
+            "Build a full round-robin cycle with rotating lane pairs and BYEs for odd team counts.",
+        )
+        ButtonHint(
+            self.lane_button,
+            "Choose a different lane pair for this matchup without changing its opponents.",
+        )
 
         table_frame = ttk.Frame(self, style="Surface.TFrame")
         table_frame.grid(row=2, column=0, sticky="nsew")
@@ -132,7 +141,7 @@ class ScheduleDesk(ttk.Frame):
     def refresh(self) -> None:
         competition = self._competition()
         if competition is None or self.schedule_store is None:
-            self.title_label.configure(text="Schedule & lanes")
+            self.title_label.configure(text="Schedule")
             self.detail_label.configure(text="Choose a league or tournament above.")
             self.generate_button.configure(state=tk.DISABLED)
             self.round_by_label = {}
@@ -249,7 +258,7 @@ class ScheduleDesk(ttk.Frame):
         if match is None or match.is_bye or self.schedule_store is None:
             return
         lane = simpledialog.askinteger(
-            "Change lane pair",
+            "Change lanes",
             f"Enter the first lane for {match.matchup}:",
             parent=self,
             initialvalue=match.lane_start or 1,

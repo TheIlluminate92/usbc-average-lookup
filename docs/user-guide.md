@@ -36,17 +36,23 @@ different league. Right-click an extra tab to move it into a separate window
 or close it; its `×` and middle-click also close it. All tabs and windows
 refresh from the same database.
 
-Every League Manager subtab also has a right-click menu. Use it to open League
-home, Teams & roster, Schedule & lanes, Scores & history, Rules & setup,
-Player directory, or All
-leagues in another top-level tab or a separate window. The new view keeps the
+Every League Manager subtab also has a right-click menu. Use it to open Home,
+Teams, Schedule, Scores, Rules, Players, or All leagues in another top-level
+tab or a separate window. The new view keeps the
 league currently selected in the workspace bar.
 
 The familiar **Ctrl+T** shortcut duplicates the current working view in a new
 tab, and **Ctrl+W** closes the selected extra tab. The three permanent tabs are
 not closed by Ctrl+W.
 
-Choose **Return to main window** to bring a detached Registration view or its
+The compact management sections are **Home**, **Teams**, **Schedule**,
+**Scores**, **Rules**, **Players**, and **All leagues**. An ellipsis on a button
+indicates that another dialog asks for details or a choice. Selected compact
+buttons offer hints when you hover or focus them with Tab. **Remove from team**
+changes a roster; **Withdraw from league** changes a registration. Neither
+deletes the permanent player record.
+
+Choose **Return to main** to bring a detached Registration view or its
 current League Manager section and selected league back to the main window.
 
 Average lookup remains in the main window. If a weekly score-entry dialog is
@@ -83,8 +89,8 @@ The other formats are saved for future schedule builders.
 ## Generate a round-robin schedule
 
 1. Create every participating team first.
-2. Open **Schedule & lanes**.
-3. Select **Generate round robin** and enter the first lane in the league's
+2. Open **Schedule**.
+3. Select **Build schedule…** and enter the first lane in the league's
    lane block.
 4. Review each week from the Week / round selector.
 
@@ -98,7 +104,7 @@ schedule that was already generated. Matchups are not yet connected to weekly
 score sheets or standings.
 
 Use **All leagues** when you need the master season list or want to create,
-archive, restore, or revisit a different league. Use **League home** for the
+archive, restore, or revisit a different league. Use **Home** for the
 day-to-day dashboard and shortcuts for the league selected in the workspace
 bar.
 
@@ -106,7 +112,7 @@ Double-click the league row to explore its teams and players.
 
 ## Permanent players and season pools
 
-Open **League Manager** and **Player directory**.
+Open **League Manager** and **Players**.
 
 The permanent player directory stores one reusable identity with a name and
 optional member ID. A player can participate in any number of league seasons
@@ -117,7 +123,7 @@ Pools can be copied forward and edited without changing the prior pool. Linking
 a pool to a league means registrations for that league are also included in the
 pool.
 
-Use **Edit selected player** to change the central identity. Identity changes
+Use **Edit player…** to change the central identity. Identity changes
 invalidate affected verified averages so they can be checked again.
 
 Double-click a player to see every related team and league. Use Back and
@@ -125,12 +131,12 @@ Forward inside the relationship browser to move through related records.
 
 ## Teams and rosters
 
-Open **League Manager** and **Teams & roster**. Choose the current league or
+Open **League Manager** and **Teams**. Choose the current league or
 tournament once in the shared workspace selector. Registration, Rules, Teams,
 Schedule, and Scores follow that selection.
 
-The main Teams & roster page is a full-size team list. Double-click a team, or
-select it and use **Manage roster**, to open that team's separate roster window.
+The main Teams page is a full-size team list. Double-click a team, or
+select it and use **Roster…**, to open that team's separate roster window.
 
 Each registration has one of two roles:
 
@@ -169,7 +175,7 @@ that needs review does not block entry of the next bowler.
 ## Register one bowler in several leagues
 
 1. Enter the name and optional member ID on **Registration**.
-2. Select **Multiple leagues…**.
+2. Select **Choose leagues…**.
 3. Use Ctrl-click to select every league or tournament the bowler is joining.
 4. Highlight each selected workspace and choose **Set team for highlighted
    league**.
@@ -185,7 +191,7 @@ planned.
 
 ## Register a whole team
 
-Use **Register whole team** on Registration. Choose or enter the team name and
+Use **Register team…** on Registration. Choose or enter the team name and
 paste a roster in any supported text form. The same parsing rules used by roster
 lookup apply here. If one entry is invalid or duplicates an existing
 registration, the whole team operation is rolled back.
@@ -205,9 +211,8 @@ name-search request retrieves only the first page of ten BOWL.com candidates.
 
 ## Configure league scoring
 
-Open **League Manager** and **Rules & setup**, then choose **Edit average &
-scoring rules**. The same settings button remains available in **Scores &
-history**.
+Open **League Manager** and **Rules**, then choose **Edit rules…**.
+The same settings button remains available in **Scores**.
 
 Current settings are:
 
@@ -233,11 +238,11 @@ floor(max(handicap base - entering average, 0) × handicap percentage)
 
 ## Create and enter a weekly score sheet
 
-1. Select the league workspace, then open **Scores & history**.
+1. Select the league workspace, then open **Scores**.
 2. Select **New week** and enter the week number, optional date, and label.
 3. The application copies active regular roster assignments into a permanent
    weekly snapshot.
-4. Use **Add player / substitute** for a substitute, an alternate, or a
+4. Use **Add bowler…** for a substitute, an alternate, or a
    regular row that was removed earlier. Choose which team the player bowled
    for that week.
 5. Use **Add vacancy** when required.
@@ -273,7 +278,7 @@ If a correction reason is missing, the score editor remains open and shows the
 requirement beneath the reason field. **Cancel** always remains available and
 closes the editor without saving.
 
-Open **History & corrections** to review every week or filter to one team. Use
+Open **History…** to review every week or filter to one team. Use
 the **Corrections** tab in that window to see before/after values and reasons
 for the selected week. Double-click a week, or use **Open score sheet**, to
 return to it. Team and All leagues management also provide direct history
@@ -364,7 +369,7 @@ the exact screen and steps.
 
 ### A score row was removed
 
-While the week is still Draft, select **Add player / substitute**, choose
+While the week is still Draft, select **Add bowler…**, choose
 the registered player and team, and add the row again. The original roster role
 is preserved.
 

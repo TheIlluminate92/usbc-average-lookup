@@ -110,7 +110,7 @@ therefore planned, not implemented.
 ## Implemented scheduling foundation
 
 Schema version 4 defines an explicit match rather than inferring it from score
-sheet or lane order. The Schedule & lanes workspace can generate a complete
+sheet or lane order. The Schedule workspace can generate a complete
 round-robin cycle from the current team list.
 
 Implemented records:
