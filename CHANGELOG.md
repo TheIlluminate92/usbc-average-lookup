@@ -5,6 +5,8 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+## v0.6.0-alpha.4 — 2026-09-03
+
 - Expanded Scores & history by removing its duplicate league selector and
   oversized heading, tightening the controls, and adding a draggable split
   between the score sheet and team totals.
