@@ -18,7 +18,7 @@ The repository and executable still use the historical name
 ## Download
 
 The current portable Windows test build is
-[v0.6.0-alpha.4](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.6.0-alpha.4).
+[v0.6.0-alpha.5](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.6.0-alpha.5).
 Download `USBC-Average-Lookup-Windows.zip`, extract the entire folder, and run
 `USBC-Average-Lookup.exe`.
 
