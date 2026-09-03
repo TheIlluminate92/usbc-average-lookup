@@ -18,7 +18,13 @@ The repository and executable still use the historical name
 ## Download
 
 The current portable Windows test build is
-[v0.7.0-alpha.3](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.7.0-alpha.3).
+[v0.7.0-alpha.4](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.7.0-alpha.4).
+
+Players and teams now have **More actions → Archive / restore** and guarded
+deletion. Only records with no attached registrations, pools, scores, history,
+or matchups can be deleted. Archive preserves history; use **Show archived** to
+restore. SQLite schema 6 automatically backs up older databases before upgrading.
+See the [focused bug-hunt report](docs/bug-hunt-0.7-alpha4.md) for coverage and limits.
 Download `USBC-Average-Lookup-Windows.zip`, extract the entire folder, and run
 `USBC-Average-Lookup.exe`.
 

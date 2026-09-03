@@ -5,6 +5,28 @@ change as the workflow is tested with real leagues.
 
 ## Install and start
 
+### Archive or delete players and teams
+
+Select a record under **Players** or **Teams**, then use **More actions**.
+**Archive / restore** hides archived records from active directories and new-use
+choices without erasing registrations, scores, standings, or correction history.
+Enable **Show archived**, select the record, and use the same action to restore it.
+Archive is not withdrawal from a league and does not rewrite existing score sheets.
+Archived players/teams are omitted when creating new score sheets; existing sheets
+remain editable under the usual finalization and correction rules.
+
+**Delete player…** or **Delete team…** permanently removes only an unused record,
+after confirmation. Registrations (including withdrawn ones), player-pool entries,
+score sheets, correction history, and scheduled matchups block deletion as applicable.
+Use Archive if blocked. A team belonging to a league can be deleted if it has no
+attached records; its parent league is not deleted. Cancel makes no changes.
+
+Old correction history may lack a recoverable player ID after a row was removed.
+For safety, such databases can block deletion even of an apparently unused player;
+archive remains available. The schema-6 upgrade creates a backup beside the database.
+
+### Start the portable application
+
 1. Download `USBC-Average-Lookup-Windows.zip` from the latest test release.
 2. Extract the complete `USBC-Average-Lookup` folder. Do not run the executable
    from inside the ZIP.

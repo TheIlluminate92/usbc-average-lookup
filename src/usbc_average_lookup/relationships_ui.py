@@ -122,7 +122,7 @@ class RelationshipBrowser(tk.Toplevel):
         competition = next(
             item for item in self.store.competitions if item.id == competition_id
         )
-        teams = self.store.list_teams(competition.id)
+        teams = self.store.list_teams(competition.id, include_archived=True)
         views = self.store.registration_views(competition.id)
         self.title_label.configure(text=competition.display_name)
         self.detail_label.configure(

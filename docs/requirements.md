@@ -2,6 +2,20 @@
 
 ## Product goal
 
+### Player and team lifecycle
+
+- Archive/restore players and teams without deleting their history or registrations.
+- Hide archived records from active directories and new roster/score-sheet choices;
+  offer Show archived and Restore. Keep historical score filters and standings intact.
+- Permit permanent deletion only for records without dependent registrations,
+  pool membership, scores, corrections, or scheduled matchups, as applicable.
+- Recheck dependencies atomically when deleting, even after UI confirmation.
+- Preserve stable player references in correction history after score rows are removed.
+- If older history cannot safely identify its player, prefer blocking deletion to
+  guessing from a name. No cascading removal of records to make deletion possible.
+
+### Core workflow
+
 Provide one nontechnical league operator with a local Windows application that
 can manage roughly four weekly leagues, changing seasonal rosters, occasional
 weekend tournaments, verified bowler averages, and permanent game-by-game

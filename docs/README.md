@@ -1,5 +1,8 @@
 # Documentation index
 
+- [0.7 alpha4 bug hunt](bug-hunt-0.7-alpha4.md) — fixes, regression coverage,
+  and remaining testing limits.
+
 - [User guide](user-guide.md) — installation, normal workflows, scoring,
   backups, and troubleshooting.
 - [Requirements and scope](requirements.md) — current product requirements,

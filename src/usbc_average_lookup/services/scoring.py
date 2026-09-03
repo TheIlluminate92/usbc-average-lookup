@@ -188,8 +188,10 @@ class ScoringStore:
             view
             for view in self.registrations.registration_views(competition.id)
             if not view.registration.withdrawn
+            and not view.bowler.archived
             and view.registration.roster_role is RosterRole.REGULAR
             and view.team is not None
+            and not view.team.archived
         ]
         order_by_team: dict[str, int] = {}
         try:
@@ -351,6 +353,8 @@ class ScoringStore:
         if team.competition_id != session.competition_id:
             raise RegistrationDataError("That team belongs to another league")
         bowler = self.registrations._bowler(registration.bowler_id)
+        if bowler.archived or team.archived:
+            raise RegistrationDataError("Restore the archived player/team before adding scores")
         average = self.registrations.competition_average(competition, registration) or 0
         handicap = self.registrations.competition_handicap(competition, average)
         try:
@@ -387,6 +391,8 @@ class ScoringStore:
         self._require_draft(session)
         competition = self.registrations._competition(session.competition_id)
         team = self.registrations._team(team_id)
+        if team.archived:
+            raise RegistrationDataError("Restore the archived team before adding a vacancy")
         if team.competition_id != session.competition_id:
             raise RegistrationDataError("That team belongs to another league")
         average = competition.vacancy_score
@@ -465,6 +471,10 @@ class ScoringStore:
                     )
                 connection.execute(
                     "DELETE FROM game_scores WHERE score_line_id = ?", (line.id,)
+                )
+                connection.execute(
+                    "UPDATE score_change_log SET bowler_id = ? WHERE score_line_id = ?",
+                    (line.bowler_id or "__vacancy__", line.id),
                 )
                 connection.execute("DELETE FROM score_lines WHERE id = ?", (line.id,))
                 self._touch_session(connection, session.id)
@@ -603,6 +613,10 @@ class ScoringStore:
                         ),
                     )
                 self._touch_session(connection, session.id)
+                connection.execute(
+                    "UPDATE score_change_log SET bowler_id = ? WHERE score_line_id = ?",
+                    (line.bowler_id or "__vacancy__", line.id),
+                )
                 connection.commit()
         except sqlite3.DatabaseError as error:
             raise RegistrationDataError(f"Scores could not be saved: {error}") from error

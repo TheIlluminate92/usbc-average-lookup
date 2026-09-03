@@ -87,6 +87,7 @@ class BowlerProfile:
     id: str
     name: str
     membership_id: str = ""
+    archived: bool = False
 
 
 @dataclass(slots=True)
@@ -108,6 +109,7 @@ class Team:
     id: str
     competition_id: str
     name: str
+    archived: bool = False
 
 
 @dataclass(slots=True)
@@ -178,7 +180,7 @@ def default_legacy_registration_path() -> Path:
 
 
 class RegistrationStore:
-    DATABASE_SCHEMA_VERSION = 5
+    DATABASE_SCHEMA_VERSION = 6
     LEGACY_SCHEMA_VERSIONS = {1, 2}
 
     def __init__(
@@ -227,9 +229,10 @@ class RegistrationStore:
                         id=row["id"],
                         name=row["name"],
                         membership_id=row["membership_id"],
+                        archived=bool(row["archived"]),
                     )
                     for row in connection.execute(
-                        "SELECT id, name, membership_id FROM bowlers"
+                        "SELECT id, name, membership_id, archived FROM bowlers"
                     )
                 ]
                 self.competitions = [
@@ -272,9 +275,10 @@ class RegistrationStore:
                         id=row["id"],
                         competition_id=row["competition_id"],
                         name=row["name"],
+                        archived=bool(row["archived"]),
                     )
                     for row in connection.execute(
-                        "SELECT id, competition_id, name FROM teams"
+                        "SELECT id, competition_id, name, archived FROM teams"
                     )
                 ]
                 self.player_pool_entries = [
@@ -347,9 +351,9 @@ class RegistrationStore:
                     ],
                 )
                 connection.executemany(
-                    "INSERT INTO bowlers (id, name, membership_id) VALUES (?, ?, ?)",
+                    "INSERT INTO bowlers (id, name, membership_id, archived) VALUES (?, ?, ?, ?)",
                     [
-                        (item.id, item.name, item.membership_id)
+                        (item.id, item.name, item.membership_id, int(item.archived))
                         for item in self.bowlers
                     ],
                 )
@@ -388,8 +392,9 @@ class RegistrationStore:
                     ],
                 )
                 connection.executemany(
-                    "INSERT INTO teams (id, competition_id, name) VALUES (?, ?, ?)",
-                    [(item.id, item.competition_id, item.name) for item in self.teams],
+                    "INSERT INTO teams (id, competition_id, name, archived) VALUES (?, ?, ?, ?)",
+                    [(item.id, item.competition_id, item.name, int(item.archived))
+                     for item in self.teams],
                 )
                 connection.executemany(
                     """
@@ -481,6 +486,30 @@ class RegistrationStore:
             )
         if version == self.DATABASE_SCHEMA_VERSION:
             return
+        if version == 5:
+            connection.execute("BEGIN IMMEDIATE")
+            for table in ("bowlers", "teams"):
+                columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                if "archived" not in columns:
+                    connection.execute(
+                        f"ALTER TABLE {table} ADD COLUMN archived INTEGER NOT NULL DEFAULT 0 "
+                        "CHECK (archived IN (0, 1))"
+                    )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(score_change_log)")}
+            if "bowler_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE score_change_log ADD COLUMN bowler_id TEXT NOT NULL DEFAULT ''"
+                )
+            connection.execute(
+                "UPDATE score_change_log SET bowler_id = COALESCE("
+                "(SELECT CASE WHEN bowler_id = '' THEN '__vacancy__' ELSE bowler_id END "
+                "FROM score_lines "
+                "WHERE id = score_change_log.score_line_id), '') "
+                "WHERE bowler_id = ''"
+            )
+            connection.execute("PRAGMA user_version = 6")
+            connection.commit()
+            return
         if version == 4:
             connection.executescript(
                 """
@@ -499,6 +528,7 @@ class RegistrationStore:
                 COMMIT;
                 """
             )
+            self._ensure_schema(connection)
             return
         if version == 3:
             competition_columns = {
@@ -1070,6 +1100,9 @@ class RegistrationStore:
                     if item.team_id == source_team_id and not item.withdrawn
                 ]
                 for source_registration in source_registrations:
+                    if self._bowler(source_registration.bowler_id).archived:
+                        skipped += 1
+                        continue
                     existing = next(
                         (
                             item
@@ -1367,11 +1400,97 @@ class RegistrationStore:
         ]
         self.save()
 
-    def list_teams(self, competition_id: str) -> list[Team]:
+    def list_teams(self, competition_id: str, *, include_archived: bool = False) -> list[Team]:
         return sorted(
-            (team for team in self.teams if team.competition_id == competition_id),
+            (team for team in self.teams if team.competition_id == competition_id
+             and (include_archived or not team.archived)),
             key=lambda item: _key(item.name),
         )
+
+    def set_player_archived(self, bowler_id: str, archived: bool) -> None:
+        self._set_entity_archived("bowlers", bowler_id, archived)
+
+    def set_team_archived(self, team_id: str, archived: bool) -> None:
+        self._set_entity_archived("teams", team_id, archived)
+
+    def _set_entity_archived(self, table: str, entity_id: str, archived: bool) -> None:
+        if table not in ("bowlers", "teams"):
+            raise RegistrationDataError("Unknown record type")
+        with closing(self._connect()) as connection:
+            with connection:
+                changed = connection.execute(
+                    f"UPDATE {table} SET archived = ? WHERE id = ?", (int(archived), entity_id)
+                ).rowcount
+                if not changed:
+                    raise RegistrationDataError("Record was not found")
+        self.load()
+        self._notify_change()
+
+    def deletion_blockers(self, kind: str, entity_id: str) -> list[str]:
+        with closing(self._connect()) as connection:
+            return self._deletion_blockers(connection, kind, entity_id)
+
+    @staticmethod
+    def _deletion_blockers(connection: sqlite3.Connection, kind: str, entity_id: str) -> list[str]:
+        if kind == "player":
+            checks = (
+                ("registrations", "SELECT 1 FROM registrations WHERE bowler_id = ?"),
+                ("season-pool entries", "SELECT 1 FROM player_pool_entries WHERE bowler_id = ?"),
+                ("score sheets", "SELECT 1 FROM score_lines WHERE bowler_id = ?"),
+                ("score history", "SELECT 1 FROM score_change_log WHERE bowler_id = ?"),
+            )
+        elif kind == "team":
+            checks = (
+                ("registrations", "SELECT 1 FROM registrations WHERE team_id = ?"),
+                ("score sheets", "SELECT 1 FROM score_lines WHERE team_id = ?"),
+                ("score history", "SELECT 1 FROM score_change_log WHERE team_id = ?"),
+                ("scheduled matchups", "SELECT 1 FROM competition_matches "
+                 "WHERE ? IN (left_team_id, right_team_id)"),
+            )
+        else:
+            raise RegistrationDataError("Unknown record type")
+        blockers = [label for label, query in checks
+                    if connection.execute(query + " LIMIT 1", (entity_id,)).fetchone()]
+        if kind == "player" and connection.execute(
+            "SELECT 1 FROM score_change_log WHERE bowler_id = '' AND player_name <> '' LIMIT 1"
+        ).fetchone():
+            blockers.append("legacy score history without player IDs (archive instead)")
+        return blockers
+
+    def delete_player(self, bowler_id: str) -> None:
+        self._delete_entity("player", bowler_id)
+
+    def delete_team(self, team_id: str) -> None:
+        self._delete_entity("team", team_id)
+
+    def _retire_merged_player(self, bowler: BowlerProfile) -> None:
+        # A resolved identity must not orphan earlier score snapshots or corrections.
+        with closing(self._connect()) as connection:
+            blockers = self._deletion_blockers(connection, "player", bowler.id)
+        if any("score" in blocker for blocker in blockers):
+            bowler.archived = True
+        else:
+            self.bowlers.remove(bowler)
+
+    def _delete_entity(self, kind: str, entity_id: str) -> None:
+        table = {"player": "bowlers", "team": "teams"}[kind]
+        try:
+            with closing(self._connect()) as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                found = connection.execute(
+                    f"SELECT 1 FROM {table} WHERE id = ?", (entity_id,)
+                ).fetchone()
+                if found is None:
+                    raise RegistrationDataError("Record was not found")
+                blockers = self._deletion_blockers(connection, kind, entity_id)
+                if blockers:
+                    raise RegistrationDataError("Cannot delete: " + ", ".join(blockers))
+                connection.execute(f"DELETE FROM {table} WHERE id = ?", (entity_id,))
+                connection.commit()
+        except sqlite3.DatabaseError as error:
+            raise RegistrationDataError(f"Could not delete {kind}: {error}") from error
+        self.load()
+        self._notify_change()
 
     def rename_team(self, team_id: str, name: str) -> None:
         team = self._team(team_id)
@@ -1491,7 +1610,7 @@ class RegistrationStore:
                     existing = next(
                         (
                             team
-                            for team in self.list_teams(competition.id)
+                            for team in self.list_teams(competition.id, include_archived=True)
                             if _key(team.name) == _key(clean_team_name)
                         ),
                         None,
@@ -1540,7 +1659,7 @@ class RegistrationStore:
             existing = next(
                 (
                     team
-                    for team in self.list_teams(competition_id)
+                    for team in self.list_teams(competition_id, include_archived=True)
                     if _key(team.name) == _key(team_name)
                 ),
                 None,
@@ -1696,7 +1815,7 @@ class RegistrationStore:
                 if pool_entry.bowler_id == current_bowler.id:
                     pool_entry.bowler_id = target.id
             self._deduplicate_pool_entries()
-            self.bowlers.remove(current_bowler)
+            self._retire_merged_player(current_bowler)
             return
 
         registration.bowler_id = target.id
@@ -1722,8 +1841,12 @@ class RegistrationStore:
         roster_role: RosterRole,
     ) -> None:
         registration = self._registration(registration_id)
+        if self._bowler(registration.bowler_id).archived and team_id != registration.team_id:
+            raise RegistrationDataError("Restore the archived player before assigning a team")
         if team_id:
             team = self._team(team_id)
+            if team.archived and team_id != registration.team_id:
+                raise RegistrationDataError("Restore the archived team before assigning players")
             if team.competition_id != registration.competition_id:
                 raise RegistrationDataError("That team belongs to another competition")
         registration.team_id = team_id
@@ -1742,8 +1865,12 @@ class RegistrationStore:
         current_bowler = self._bowler(registration.bowler_id)
         clean_name = _required(name, "Bowler name")
         clean_id = membership_id.strip()
+        if current_bowler.archived and team_id != registration.team_id:
+            raise RegistrationDataError("Restore the archived player before changing teams")
         if team_id:
             team = self._team(team_id)
+            if team.archived and team_id != registration.team_id:
+                raise RegistrationDataError("Restore the archived team before assigning players")
             if team.competition_id != registration.competition_id:
                 raise RegistrationDataError("That team belongs to another competition")
 
@@ -1761,6 +1888,10 @@ class RegistrationStore:
                 None,
             )
         if target is not None:
+            if target.archived:
+                raise RegistrationDataError(
+                    "Restore the archived player before using that identity"
+                )
             if any(
                 item.id != registration.id
                 and item.competition_id == registration.competition_id
@@ -1785,7 +1916,7 @@ class RegistrationStore:
                     if pool_entry.bowler_id == current_bowler.id:
                         pool_entry.bowler_id = target.id
                 self._deduplicate_pool_entries()
-                self.bowlers.remove(current_bowler)
+                self._retire_merged_player(current_bowler)
         else:
             identity_changed = (
                 _key(current_bowler.name) != _key(clean_name)
@@ -1822,9 +1953,13 @@ class RegistrationStore:
         clean_id = membership_id.strip()
         if team_id:
             team = self._team(team_id)
+            if team.archived:
+                raise RegistrationDataError("Restore the archived team before registration")
             if team.competition_id != competition_id:
                 raise RegistrationDataError("That team belongs to another competition")
         bowler = self._find_bowler(clean_name, clean_id)
+        if bowler is not None and bowler.archived:
+            raise RegistrationDataError("Restore the archived player before registration")
         if bowler is None:
             bowler = BowlerProfile(_new_id(), clean_name, clean_id)
             self.bowlers.append(bowler)

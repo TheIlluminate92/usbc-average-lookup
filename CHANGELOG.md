@@ -5,6 +5,22 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+## v0.7.0-alpha.4 — 2026-09-03
+
+- Added player/team Archive, Restore, Show archived, and confirmed Delete actions.
+- Blocked deletion when registrations, season-pool entries, score sheets, score
+  history, or scheduled matchups reference the record; recheck inside a transaction.
+- Added schema 6 with pre-upgrade backups, archive flags, and durable player IDs
+  in score correction history, including removed score rows.
+- Preserved old player profiles as archived when identity merges would otherwise
+  orphan historical score references.
+- Preserved player selection on refresh, enabled tournament history shortcuts,
+  and retained archived teams in historical score filters and standings.
+- Blocked archived players from new registrations/team changes and skipped them
+  when copying rosters. Archive does not withdraw existing registrations.
+- Added deletion, migration, archive/restore, real-widget, and 200-player regression
+  coverage. Live BOWL.com load testing and human usability testing remain separate.
+
 ## v0.7.0-alpha.3 — 2026-09-03
 
 - Connected schedule rounds to explicit, unique score-week links with Open scores.

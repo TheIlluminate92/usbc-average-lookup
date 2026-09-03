@@ -45,7 +45,11 @@ database copy used.
 - Confirm Average lookup remains in the main window and is not falsely offered
   as detachable.
 - Confirm the build does not require Python to be installed.
-- Confirm existing schema-version 3 data opens unchanged.
+- Confirm existing schema-version 3–5 data upgrades to schema 6 without data loss.
+- Delete a disposable unused player/team, cancel another delete, and verify linked
+  records cannot be deleted. Check withdrawn registrations and removed-row history.
+- Archive/restore a scored player/team; check Show archived, preserved standings,
+  score-history filters, restart persistence, and refresh in another open window.
 - Upgrade a copy of each older supported SQLite schema and verify an adjacent
   `schema-v*-backup.db` is created before the upgrade.
 - Start with only a supported `registration-data.json`; verify the imported

@@ -42,7 +42,7 @@ Tkinter application
   |     +-- league activities (client support only)
   |
   +-- RegistrationStore / ScheduleStore / ScoringStore / StandingsStore
-        +-- SQLite schema version 5
+        +-- SQLite schema version 6
 ```
 
 ## UI composition

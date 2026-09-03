@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tkinter as tk
 from collections.abc import Callable
 from queue import Queue
@@ -567,6 +568,17 @@ class RegistrationDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.player_edit_button.grid(row=0, column=1, rowspan=2, sticky="e")
+        self.player_more_menu = tk.Menu(self, tearoff=False)
+        self.player_more_menu.add_command(
+            label="Archive / restore", command=lambda: self._manage_entity("player", False)
+        )
+        self.player_more_menu.add_command(
+            label="Delete player…", command=lambda: self._manage_entity("player", True)
+        )
+        self.player_more_button = ttk.Menubutton(
+            heading, text="More actions", menu=self.player_more_menu, state=tk.DISABLED
+        )
+        self.player_more_button.grid(row=0, column=2, rowspan=2, padx=(8, 0))
 
         search = ttk.Frame(tab, style="Surface.TFrame", padding=14)
         search.grid(row=1, column=0, sticky="ew", pady=(10, 8))
@@ -582,6 +594,9 @@ class RegistrationDesk(ttk.Frame):
             search, text="0 players", style="Surface.TLabel"
         )
         self.player_count_label.grid(row=0, column=2, padx=(12, 0))
+        self.show_archived_players = tk.BooleanVar(value=False)
+        ttk.Checkbutton(search, text="Show archived", variable=self.show_archived_players,
+                        command=self._render_players).grid(row=0, column=3, padx=(8, 0))
         ttk.Label(search, text="Season pool", style="Surface.TLabel").grid(
             row=1, column=0, sticky="w", padx=(0, 10), pady=(10, 0)
         )
@@ -690,6 +705,16 @@ class RegistrationDesk(ttk.Frame):
         self.team_more_menu.add_command(
             label="Score history", command=self._show_managed_team_score_history
         )
+        self.team_more_menu.add_separator()
+        self.team_more_menu.add_command(
+            label="Archive / restore", command=lambda: self._manage_entity("team", False)
+        )
+        self.team_more_menu.add_command(
+            label="Delete team…", command=lambda: self._manage_entity("team", True)
+        )
+        self.show_archived_teams = tk.BooleanVar(value=False)
+        ttk.Checkbutton(heading, text="Show archived", variable=self.show_archived_teams,
+                        command=self._render_teams).grid(row=2, column=0, sticky="w")
         self.team_more_button = ttk.Menubutton(
             heading,
             text="More actions",
@@ -1176,6 +1201,7 @@ class RegistrationDesk(ttk.Frame):
         return self.player_pool_by_label.get(self.player_pool_var.get())
 
     def _render_players(self) -> None:
+        selected_id = self._selected_player_id()
         self.player_table.delete(*self.player_table.get_children())
         if self.store is None:
             self.player_count_label.configure(text="Player data unavailable")
@@ -1196,6 +1222,8 @@ class RegistrationDesk(ttk.Frame):
             )
         visible = []
         for bowler in sorted(self.store.bowlers, key=lambda item: item.name.casefold()):
+            if bowler.archived and not self.show_archived_players.get():
+                continue
             if pool_bowler_ids is not None and bowler.id not in pool_bowler_ids:
                 continue
             if query and query not in f"{bowler.name} {bowler.membership_id}".casefold():
@@ -1217,7 +1245,7 @@ class RegistrationDesk(ttk.Frame):
                 tk.END,
                 iid=bowler.id,
                 values=(
-                    bowler.name,
+                    bowler.name + (" (archived)" if bowler.archived else ""),
                     bowler.membership_id or "—",
                     len(registrations),
                     "; ".join(history) or "No registrations",
@@ -1226,6 +1254,8 @@ class RegistrationDesk(ttk.Frame):
         self.player_count_label.configure(
             text=f"{len(visible)} of {len(self.store.bowlers)} players"
         )
+        if selected_id and self.player_table.exists(selected_id):
+            self.player_table.selection_set(selected_id)
         self._update_player_actions()
 
     def _selected_player_id(self) -> str | None:
@@ -1233,6 +1263,9 @@ class RegistrationDesk(ttk.Frame):
         return selected[0] if selected else None
 
     def _update_player_actions(self) -> None:
+        self.player_more_button.configure(
+            state=tk.NORMAL if self._selected_player_id() else tk.DISABLED
+        )
         selected_pool = self._current_player_pool()
         self.player_edit_button.configure(
             state=tk.NORMAL if self._selected_player_id() else tk.DISABLED
@@ -1296,7 +1329,8 @@ class RegistrationDesk(ttk.Frame):
         if pool is None:
             return
         existing_ids = {item.id for item in self.store.pool_bowlers(pool.id)}
-        available = [item for item in self.store.bowlers if item.id not in existing_ids]
+        available = [item for item in self.store.bowlers
+                     if item.id not in existing_ids and not item.archived]
         bowler_id = PlayerPickerDialog(
             self, f"Add player to {pool.label}", available
         ).show()
@@ -1362,7 +1396,9 @@ class RegistrationDesk(ttk.Frame):
             )
             self._update_team_actions()
             return
-        teams = self.store.list_teams(competition.id)
+        teams = self.store.list_teams(
+            competition.id, include_archived=self.show_archived_teams.get()
+        )
         views = self.store.registration_views(competition.id)
         for team in teams:
             members = [view for view in views if view.registration.team_id == team.id]
@@ -1382,7 +1418,7 @@ class RegistrationDesk(ttk.Frame):
                 tk.END,
                 iid=team.id,
                 values=(
-                    team.name,
+                    team.name + (" (archived)" if team.archived else ""),
                     len(regulars),
                     len(substitutes),
                     len(members),
@@ -1407,6 +1443,48 @@ class RegistrationDesk(ttk.Frame):
         selected = self.team_management_table.selection()
         return selected[0] if selected else None
 
+    def _manage_entity(self, kind: str, delete: bool) -> None:
+        if self.store is None:
+            return
+        entity_id = (self._selected_player_id() if kind == "player"
+                     else self._selected_managed_team_id())
+        if not entity_id:
+            return
+        entity = self.store._bowler(entity_id) if kind == "player" else self.store._team(entity_id)
+        try:
+            if delete:
+                blockers = self.store.deletion_blockers(kind, entity_id)
+                if blockers:
+                    messagebox.showinfo(
+                        "Cannot delete", "Attached records: " + ", ".join(blockers)
+                        + ".\nArchive this record instead.", parent=self,
+                    )
+                    return
+                if not messagebox.askyesno(
+                    f"Delete {kind}", f"Permanently delete {entity.name}?\nThis cannot be undone.",
+                    parent=self,
+                ):
+                    return
+                action = self.store.delete_player if kind == "player" else self.store.delete_team
+                action(entity_id)
+                self.status_callback(f"Deleted {kind}: {entity.name}")
+            else:
+                archived = not entity.archived
+                verb = "Archive" if archived else "Restore"
+                if not messagebox.askyesno(
+                    f"{verb} {kind}", f"{verb} {entity.name}?\n"
+                    "Existing registrations, scores, and history will be kept.", parent=self,
+                ):
+                    return
+                action = (self.store.set_player_archived if kind == "player"
+                          else self.store.set_team_archived)
+                action(entity_id, archived)
+                self.status_callback(f"{verb}d {kind}: {entity.name}")
+        except (RegistrationDataError, OSError, sqlite3.DatabaseError) as error:
+            messagebox.showerror("Could not update record", str(error), parent=self)
+            return
+        self.refresh()
+
     def _update_team_actions(self) -> None:
         has_competition = self._team_management_competition() is not None
         self.team_add_button.configure(
@@ -1426,7 +1504,6 @@ class RegistrationDesk(ttk.Frame):
         history_state = (
             tk.NORMAL
             if competition is not None
-            and competition.kind is CompetitionKind.LEAGUE
             and selected_team
             else tk.DISABLED
         )
@@ -1585,7 +1662,7 @@ class RegistrationDesk(ttk.Frame):
             self.competition_more_menu.entryconfigure(label, state=active_state)
         history_state = (
             tk.NORMAL
-            if competition is not None and competition.kind is CompetitionKind.LEAGUE
+            if competition is not None
             else tk.DISABLED
         )
         self.competition_more_menu.entryconfigure(
@@ -1598,7 +1675,7 @@ class RegistrationDesk(ttk.Frame):
 
     def _show_selected_competition_score_history(self) -> None:
         competition = self._selected_managed_competition()
-        if competition is None or competition.kind is not CompetitionKind.LEAGUE:
+        if competition is None:
             return
         self.section_tabs.select(self.scores_tab)
         self.scoring_desk.select_competition(competition.id, show_history=True)
@@ -1608,7 +1685,6 @@ class RegistrationDesk(ttk.Frame):
         team_id = self._selected_managed_team_id()
         if (
             competition is None
-            or competition.kind is not CompetitionKind.LEAGUE
             or team_id is None
         ):
             return
@@ -1686,7 +1762,8 @@ class RegistrationDesk(ttk.Frame):
             view.bowler.id for view in self.store.registration_views(competition.id)
         }
         available = [
-            bowler for bowler in self.store.bowlers if bowler.id not in registered_ids
+            bowler for bowler in self.store.bowlers
+            if bowler.id not in registered_ids and not bowler.archived
         ]
         if not available:
             messagebox.showinfo(
@@ -2600,6 +2677,7 @@ class TeamRosterWindow(tk.Toplevel):
         available = [
             bowler
             for bowler in self.store.bowlers
+            if not bowler.archived
             if not (
                 (view := view_by_bowler_id.get(bowler.id))
                 and view.registration.team_id == team_id

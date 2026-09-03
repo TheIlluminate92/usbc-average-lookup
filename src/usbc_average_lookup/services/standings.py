@@ -295,7 +295,8 @@ class StandingsStore:
     def standings(self, competition_id: str) -> list[TeamStanding]:
         rules = self.rules(competition_id)
         entries = {
-            t.id: TeamStanding(t.id, t.name) for t in self.registrations.list_teams(competition_id)
+            t.id: TeamStanding(t.id, t.name)
+            for t in self.registrations.list_teams(competition_id, include_archived=True)
         }
         for round_ in self.schedules.list_rounds(competition_id):
             self._round_results(round_.id, entries)

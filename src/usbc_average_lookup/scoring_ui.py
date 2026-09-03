@@ -350,7 +350,7 @@ class ScoringDesk(ttk.Frame):
         session = self._session()
         competition = self._competition()
         teams = (
-            self.registration_store.list_teams(competition.id)
+            self.registration_store.list_teams(competition.id, include_archived=True)
             if self.registration_store is not None and competition is not None
             else []
         )
@@ -773,7 +773,7 @@ class ScoringDesk(ttk.Frame):
             self,
             competition,
             scoring,
-            store.list_teams(competition.id),
+            store.list_teams(competition.id, include_archived=True),
             team_id,
         ).show()
         if selected_session_id is None:

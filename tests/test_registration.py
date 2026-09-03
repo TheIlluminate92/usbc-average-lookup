@@ -672,7 +672,7 @@ def test_registration_database_is_versioned_sqlite(tmp_path) -> None:
         ).fetchone()
         integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
 
-        assert version == 5
+        assert version == 6
     assert competition == ("Open", "2027", "Tournament")
     assert integrity == "ok"
 

@@ -174,7 +174,7 @@ def test_schema_four_backup_preserves_scores(tmp_path):
     assert ScoringStore(upgraded).get_session(week.id) == week
     assert ScheduleStore(upgraded).list_rounds(league.id) == rounds
     with sqlite3.connect(upgraded.path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 

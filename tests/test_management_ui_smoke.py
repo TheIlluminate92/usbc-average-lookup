@@ -4,7 +4,11 @@ import tkinter as tk
 import pytest
 
 from usbc_average_lookup.registration_ui import RegistrationDesk
-from usbc_average_lookup.services.registration import CompetitionKind, RegistrationStore
+from usbc_average_lookup.services.registration import (
+    BowlerProfile,
+    CompetitionKind,
+    RegistrationStore,
+)
 from usbc_average_lookup.services.scheduling import ScheduleStore
 from usbc_average_lookup.services.scoring import GameStatus, ScoringStore
 from usbc_average_lookup.services.standings import StandingsStore
@@ -25,7 +29,7 @@ def tk_root():
 
 
 @pytest.mark.parametrize("kind", [CompetitionKind.LEAGUE, CompetitionKind.TOURNAMENT])
-def test_real_widgets_open_linked_scores_and_standings(tmp_path, kind, tk_root):
+def test_real_widgets_open_linked_scores_and_standings(tmp_path, kind, tk_root, monkeypatch):
     root = tk_root
     errors = []
     root.report_callback_exception = lambda *args: errors.append(args)
@@ -56,6 +60,51 @@ def test_real_widgets_open_linked_scores_and_standings(tmp_path, kind, tk_root):
         root.update()
         assert len(desk.standings_desk.table.get_children()) == 2
         assert desk.schedule_desk.score_button.cget("text") == "Open scores"
+        notices = []
+        monkeypatch.setattr("usbc_average_lookup.registration_ui.messagebox.showinfo",
+                            lambda *args, **kwargs: notices.append(args))
+        monkeypatch.setattr("usbc_average_lookup.registration_ui.messagebox.askyesno",
+                            lambda *args, **kwargs: True)
+        player_id = store.bowlers[0].id
+        desk.player_table.selection_set(player_id)
+        desk.refresh()
+        assert desk.player_table.selection() == (player_id,)
+        desk._manage_entity("player", delete=True)
+        assert notices and store._bowler(player_id)
+        desk._manage_entity("player", delete=False)
+        assert not desk.player_table.exists(player_id)
+        desk.show_archived_players.set(True)
+        desk.refresh()
+        desk.player_table.selection_set(player_id)
+        desk._manage_entity("player", delete=False)
+        assert not store._bowler(player_id).archived
+        team_id = store.teams[0].id
+        desk.team_management_table.selection_set(team_id)
+        desk._manage_entity("team", delete=False)
+        assert not desk.team_management_table.exists(team_id)
+        desk.show_archived_teams.set(True)
+        desk.refresh()
+        desk.team_management_table.selection_set(team_id)
+        desk._manage_entity("team", delete=False)
+        assert not store._team(team_id).archived
+        empty = BowlerProfile("unused", "Unused")
+        store.bowlers.append(empty)
+        store.save()
+        desk.refresh()
+        desk.player_table.selection_set(empty.id)
+        monkeypatch.setattr("usbc_average_lookup.registration_ui.messagebox.askyesno",
+                            lambda *args, **kwargs: False)
+        desk._manage_entity("player", delete=True)
+        assert store._bowler(empty.id)
+        monkeypatch.setattr("usbc_average_lookup.registration_ui.messagebox.askyesno",
+                            lambda *args, **kwargs: True)
+        desk._manage_entity("player", delete=True)
+        assert not desk.player_table.exists(empty.id)
+        empty_team = store.add_team(league.id, "Unused team")
+        desk.refresh()
+        desk.team_management_table.selection_set(empty_team.id)
+        desk._manage_entity("team", delete=True)
+        assert not desk.team_management_table.exists(empty_team.id)
         assert not errors
     finally:
         if desk is not None:
