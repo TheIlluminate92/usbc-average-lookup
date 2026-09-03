@@ -61,6 +61,54 @@ def test_roster_change_refreshes_every_dependent_view() -> None:
     ]
 
 
+def test_team_only_edit_keeps_resolved_lookup_status(tmp_path, monkeypatch) -> None:
+    store = RegistrationStore(tmp_path / "registration.db")
+    competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)
+    team = store.add_team(competition.id, "Pin Pals")
+    registration = store.register_bowler(competition.id, "David Brown")
+    store.apply_lookup_result(
+        registration.id,
+        LookupResult(
+            input_name="David Brown",
+            status=LookupStatus.INACTIVE_MEMBER,
+            membership_id="1234-567890",
+            average=181,
+            confirmed_inactive=True,
+        ),
+    )
+    view = store.registration_views(competition.id)[0]
+    desk = RegistrationDesk.__new__(RegistrationDesk)
+    desk.store = store
+    desk.team_by_label = {"Pin Pals": team.id}
+    desk._selected_view = lambda: view
+    desk._refresh_after_roster_change = lambda: None
+    desk.api_provider = object
+    lookups: list[InputBowler] = []
+    desk._start_lookup = lambda _registration_id, bowler: lookups.append(bowler)
+
+    class TeamOnlyEdit:
+        def show(self):
+            return (
+                view.bowler.name,
+                view.bowler.membership_id,
+                "Pin Pals",
+                view.registration.roster_role,
+            )
+
+    monkeypatch.setattr(
+        registration_ui,
+        "RegistrationEditDialog",
+        lambda *_args, **_kwargs: TeamOnlyEdit(),
+    )
+
+    desk._edit_selected()
+
+    updated = store.registration_views(competition.id)[0]
+    assert updated.team == team
+    assert updated.registration.verification is VerificationState.VERIFIED
+    assert lookups == []
+
+
 def test_starting_lookup_refreshes_team_roster_status(tmp_path) -> None:
     store = RegistrationStore(tmp_path / "registration.db")
     competition = store.add_competition("Monday", "2026-27", CompetitionKind.LEAGUE)

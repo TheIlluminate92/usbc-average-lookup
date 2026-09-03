@@ -2502,6 +2502,11 @@ class RegistrationDesk(ttk.Frame):
             return
         name, membership_id, team_label, roster_role = choice
         team_id = self.team_by_label.get(team_label, "")
+        identity_changed = (
+            name.strip().casefold() != view.bowler.name.strip().casefold()
+            or membership_id.strip().casefold()
+            != view.bowler.membership_id.strip().casefold()
+        )
         try:
             self.store.update_registration(
                 view.registration.id,
@@ -2514,7 +2519,7 @@ class RegistrationDesk(ttk.Frame):
             messagebox.showerror("Could not update bowler", str(error), parent=self)
             return
         self._refresh_after_roster_change()
-        if self.api_provider() is not None:
+        if identity_changed and self.api_provider() is not None:
             self._start_lookup(
                 view.registration.id, InputBowler(name, membership_id)
             )
