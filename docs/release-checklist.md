@@ -27,7 +27,9 @@ database copy used.
 - Keep two management tabs on different leagues and verify their selections
   remain independent. Close them with the `×`, middle click, and right-click
   menu.
-- Repeat the shared-refresh check with an optional separate window.
+- Right-click an extra tab, pop it into a separate window, and verify its
+  selected league and management section are preserved.
+- Repeat the shared-refresh check with the separate window.
 - Return a detached Registration view and a detached management section to the
   main window; verify the section and league context are restored.
 - Open a score-entry dialog, try the same week in another window, and verify the

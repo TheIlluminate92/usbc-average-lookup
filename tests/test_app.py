@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 from usbc_average_lookup.app import AverageLookupApp
 from usbc_average_lookup.models import LookupResult, LookupStatus
 
@@ -44,3 +47,49 @@ def test_dynamic_tab_close_hit_area_tracks_the_tab_right_edge() -> None:
 
     assert app._near_tab_right_edge(2, 75, 10)
     assert not app._near_tab_right_edge(2, 50, 10)
+
+
+def test_popping_out_registration_tab_preserves_league_context() -> None:
+    app = AverageLookupApp.__new__(AverageLookupApp)
+    page = object()
+    desk = SimpleNamespace(
+        workspace_context=SimpleNamespace(competition_id="league-2")
+    )
+    app.workspace_tab_desks = {page: desk}
+    app.workspace_tab_kinds = {page: "registration"}
+    app._open_registration_window = Mock()
+    app._close_workspace_tab = Mock()
+
+    app._pop_out_workspace_tab(page)
+
+    app._open_registration_window.assert_called_once_with("league-2")
+    app._close_workspace_tab.assert_called_once_with(page)
+
+
+def test_popping_out_management_tab_preserves_section_and_league() -> None:
+    class Sections:
+        @staticmethod
+        def select() -> str:
+            return "scores"
+
+        @staticmethod
+        def tab(_selected: str, _option: str) -> str:
+            return "Scores & history"
+
+    app = AverageLookupApp.__new__(AverageLookupApp)
+    page = object()
+    desk = SimpleNamespace(
+        workspace_context=SimpleNamespace(competition_id="league-3"),
+        section_tabs=Sections(),
+    )
+    app.workspace_tab_desks = {page: desk}
+    app.workspace_tab_kinds = {page: "management"}
+    app._open_management_window = Mock()
+    app._close_workspace_tab = Mock()
+
+    app._pop_out_workspace_tab(page)
+
+    app._open_management_window.assert_called_once_with(
+        "Scores & history", "league-3"
+    )
+    app._close_workspace_tab.assert_called_once_with(page)

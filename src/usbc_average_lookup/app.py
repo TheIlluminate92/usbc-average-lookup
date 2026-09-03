@@ -272,41 +272,17 @@ class AverageLookupApp(tk.Tk):
         ).grid(
             row=0, column=0, sticky="w"
         )
-        self.workspace_menu = tk.Menu(self, tearoff=False)
-        self.workspace_menu.add_command(
-            label="Registration tab", command=self._open_registration_tab
-        )
-        self.workspace_menu.add_command(
-            label="Current management view tab",
-            command=self._open_current_workspace_tab,
-        )
-        self.workspace_menu.add_separator()
-        self.workspace_menu.add_command(
-            label="Registration in separate window",
-            command=self._open_registration_window,
-        )
-        self.workspace_menu.add_command(
-            label="Current management view in separate window",
-            command=self._open_management_window,
-        )
-        self.new_window_button = ttk.Menubutton(
-            header,
-            text="+ New tab",
-            menu=self.workspace_menu,
-            style="Toolbar.TMenubutton",
-        )
-        self.new_window_button.grid(row=0, column=1, padx=(12, 0), sticky="e")
         self.auth_status = ttk.Label(
             header, text="BOWL.com: signed out", style="ToolbarStatus.TLabel"
         )
-        self.auth_status.grid(row=0, column=2, padx=(14, 0), sticky="e")
+        self.auth_status.grid(row=0, column=1, padx=(14, 0), sticky="e")
         self.sign_in_button = ttk.Button(
             header,
             text="Sign in to BOWL.com",
             command=self._start_sign_in,
             style="Toolbar.TButton",
         )
-        self.sign_in_button.grid(row=0, column=3, padx=(7, 0), sticky="e")
+        self.sign_in_button.grid(row=0, column=2, padx=(7, 0), sticky="e")
         self.sign_out_button = ttk.Button(
             header,
             text="Sign out",
@@ -314,7 +290,7 @@ class AverageLookupApp(tk.Tk):
             state=tk.DISABLED,
             style="Toolbar.TButton",
         )
-        self.sign_out_button.grid(row=0, column=4, padx=(7, 0), sticky="e")
+        self.sign_out_button.grid(row=0, column=3, padx=(7, 0), sticky="e")
 
         self.workspace = ttk.Notebook(self, style="Workspace.TNotebook")
         self.workspace.pack(fill=tk.BOTH, expand=True)
@@ -460,23 +436,29 @@ class AverageLookupApp(tk.Tk):
         menu = tk.Menu(self, tearoff=False)
         if page in self.workspace_tab_desks:
             menu.add_command(
+                label="Pop out into separate window",
+                command=lambda: self._pop_out_workspace_tab(page),
+            )
+            menu.add_separator()
+            menu.add_command(
                 label="Close tab", command=lambda: self._close_workspace_tab(page)
             )
         elif label == "Registration":
             menu.add_command(
-                label="Open Registration in new tab",
+                label="Open another Registration tab",
                 command=self._open_registration_tab,
             )
             menu.add_command(
-                label="Open in separate window", command=self._open_registration_window
+                label="Pop out into separate window",
+                command=self._open_registration_window,
             )
         elif label == "League Manager":
             menu.add_command(
-                label="Open current management view in new tab",
+                label="Open current view in another tab",
                 command=self._open_current_workspace_tab,
             )
             menu.add_command(
-                label="Open in separate window",
+                label="Pop out current view",
                 command=lambda: self._open_management_window(
                     self._current_management_section()
                 ),
@@ -674,7 +656,24 @@ class AverageLookupApp(tk.Tk):
             self.workspace.forget(page)
             page.destroy()
 
-    def _open_registration_window(self) -> None:
+    def _pop_out_workspace_tab(self, page: ttk.Frame) -> None:
+        desk = self.workspace_tab_desks.get(page)
+        if desk is None:
+            return
+        competition_id = desk.workspace_context.competition_id
+        if self.workspace_tab_kinds.get(page) == "registration":
+            self._open_registration_window(competition_id)
+        else:
+            selected = desk.section_tabs.select()
+            section = (
+                str(desk.section_tabs.tab(selected, "text"))
+                if selected
+                else "League home"
+            )
+            self._open_management_window(section, competition_id)
+        self._close_workspace_tab(page)
+
+    def _open_registration_window(self, competition_id: str = "") -> None:
         window = tk.Toplevel(self)
         window.title("Registration — Bowling Manager")
         window.geometry("1100x720")
@@ -683,7 +682,9 @@ class AverageLookupApp(tk.Tk):
         registration_host = ttk.Frame(window, style="App.TFrame")
         registration_host.pack(fill=tk.BOTH, expand=True)
         hidden_management_host = ttk.Frame(window, style="App.TFrame")
-        context = LeagueWorkspaceContext(self.workspace_context.competition_id)
+        context = LeagueWorkspaceContext(
+            competition_id or self.workspace_context.competition_id
+        )
         desk = RegistrationDesk(
             hidden_management_host,
             self.registration_store,
@@ -701,14 +702,18 @@ class AverageLookupApp(tk.Tk):
         )
         self._register_detached_window(window, desk)
 
-    def _open_management_window(self, section: str = "") -> None:
+    def _open_management_window(
+        self, section: str = "", competition_id: str = ""
+    ) -> None:
         window = tk.Toplevel(self)
         window.title("League Manager — Bowling Manager")
         window.geometry("1180x760")
         window.minsize(900, 620)
         window.configure(background=COLORS["canvas"])
         hidden_registration_host = ttk.Frame(window, style="App.TFrame")
-        context = LeagueWorkspaceContext(self.workspace_context.competition_id)
+        context = LeagueWorkspaceContext(
+            competition_id or self.workspace_context.competition_id
+        )
         desk = RegistrationDesk(
             window,
             self.registration_store,

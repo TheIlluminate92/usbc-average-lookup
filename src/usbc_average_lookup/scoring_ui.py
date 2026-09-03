@@ -78,130 +78,113 @@ class ScoringDesk(ttk.Frame):
 
     def _build(self) -> None:
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(3, weight=3)
-        self.rowconfigure(4, weight=1)
+        self.rowconfigure(1, weight=1)
 
-        heading = ttk.Frame(self, style="App.TFrame")
-        heading.grid(row=0, column=0, sticky="ew")
-        heading.columnconfigure(0, weight=1)
-        ttk.Label(
-            heading,
-            text="League Scores",
-            style="Muted.TLabel",
-            font=("Segoe UI", 20, "bold"),
-        ).grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            heading,
-            text="Permanent weekly score sheets with automatic team totals.",
-            style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
-        self.settings_button = ttk.Button(
-            heading,
-            text="League scoring settings",
-            command=self._edit_settings,
-            state=tk.DISABLED,
+        toolbar = ttk.Frame(self, style="Surface.TFrame", padding=(10, 8))
+        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        toolbar.columnconfigure(2, weight=1)
+        self.league_name_label = ttk.Label(
+            toolbar,
+            text="Choose a league above",
+            style="Surface.TLabel",
+            font=("Segoe UI", 11, "bold"),
         )
-        self.settings_button.grid(row=0, column=1, rowspan=2, sticky="e")
-
-        selectors = ttk.Frame(self, style="Surface.TFrame", padding=14)
-        selectors.grid(row=1, column=0, sticky="ew", pady=(18, 12))
-        selectors.columnconfigure(1, weight=1)
-        selectors.columnconfigure(3, weight=1)
-        ttk.Label(selectors, text="League season", style="Surface.TLabel").grid(
-            row=0, column=0, sticky="w", padx=(0, 8)
+        self.league_name_label.grid(
+            row=0, column=0, sticky="w", padx=(0, 16)
         )
-        self.competition_box = ttk.Combobox(
-            selectors, textvariable=self.competition_var, state="readonly"
-        )
-        self.competition_box.grid(row=0, column=1, sticky="ew")
-        self.competition_box.bind(
-            "<<ComboboxSelected>>", lambda _event: self._competition_selected()
-        )
-        ttk.Label(selectors, text="Score sheet", style="Surface.TLabel").grid(
-            row=0, column=2, sticky="w", padx=(14, 8)
+        ttk.Label(toolbar, text="Week", style="Surface.TLabel").grid(
+            row=0, column=1, sticky="e", padx=(0, 8)
         )
         self.session_box = ttk.Combobox(
-            selectors, textvariable=self.session_var, state="disabled"
+            toolbar, textvariable=self.session_var, state="disabled"
         )
-        self.session_box.grid(row=0, column=3, sticky="ew")
+        self.session_box.grid(row=0, column=2, sticky="ew")
         self.session_box.bind(
             "<<ComboboxSelected>>", lambda _event: self._session_changed()
         )
         self.new_session_button = ttk.Button(
-            selectors,
+            toolbar,
             text="New week",
             command=self._new_session,
             state=tk.DISABLED,
         )
-        self.new_session_button.grid(row=0, column=4, padx=(10, 0))
+        self.new_session_button.grid(row=0, column=3, padx=(8, 0))
         self.final_button = ttk.Button(
-            selectors,
+            toolbar,
             text="Finalize week",
             command=self._toggle_final,
             state=tk.DISABLED,
         )
-        self.final_button.grid(row=0, column=5, padx=(8, 0))
+        self.final_button.grid(row=0, column=4, padx=(8, 0))
+        self.settings_button = ttk.Button(
+            toolbar,
+            text="Scoring rules",
+            command=self._edit_settings,
+            state=tk.DISABLED,
+        )
+        self.settings_button.grid(row=0, column=5, padx=(8, 0))
 
-        actions = ttk.Frame(self, style="Surface.TFrame", padding=12)
-        actions.grid(row=2, column=0, sticky="ew", pady=(0, 12))
-        actions.columnconfigure(1, weight=1)
-        ttk.Label(actions, text="Show team", style="Surface.TLabel").grid(
-            row=0, column=0, sticky="w", padx=(0, 8)
+        ttk.Label(toolbar, text="Team", style="Surface.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(7, 0), padx=(0, 8)
         )
         self.team_filter_box = ttk.Combobox(
-            actions,
+            toolbar,
             textvariable=self.team_filter_var,
             state="disabled",
-            width=24,
+            width=18,
         )
-        self.team_filter_box.grid(row=0, column=1, sticky="w")
+        self.team_filter_box.grid(row=1, column=1, sticky="w", pady=(7, 0))
         self.team_filter_box.bind(
             "<<ComboboxSelected>>", lambda _event: self._render_sheet()
         )
         self.session_status_label = ttk.Label(
-            actions, text="Choose a league", style="Surface.TLabel"
+            toolbar, text="Choose a league", style="Surface.TLabel"
         )
         self.session_status_label.grid(
-            row=0, column=2, columnspan=3, sticky="w", padx=(12, 12)
+            row=1, column=2, sticky="w", padx=(12, 12), pady=(7, 0)
         )
-        self.log_button = ttk.Button(
-            actions,
-            text="Change log",
-            command=self._show_change_log,
-            state=tk.DISABLED,
-        )
-        self.log_button.grid(row=0, column=6)
         self.history_button = ttk.Button(
-            actions,
+            toolbar,
             text="History",
             command=self.show_history,
             state=tk.DISABLED,
         )
-        self.history_button.grid(row=0, column=5, padx=(8, 0))
-        self.remove_button = ttk.Button(
-            actions,
-            text="Remove row",
-            command=self._remove_selected,
+        self.history_button.grid(row=1, column=3, padx=(8, 0), pady=(7, 0))
+        self.log_button = ttk.Button(
+            toolbar,
+            text="Change log",
+            command=self._show_change_log,
             state=tk.DISABLED,
         )
-        self.remove_button.grid(row=1, column=4, pady=(8, 0))
+        self.log_button.grid(row=1, column=4, padx=(8, 0), pady=(7, 0))
+        row_actions = ttk.Frame(toolbar, style="Surface.TFrame")
+        row_actions.grid(row=2, column=0, columnspan=6, sticky="e", pady=(7, 0))
+        self.add_player_button = ttk.Button(
+            row_actions,
+            text="Add player / substitute",
+            command=self._add_score_player,
+            state=tk.DISABLED,
+        )
+        self.add_player_button.pack(side=tk.LEFT)
         self.vacancy_button = ttk.Button(
-            actions,
+            row_actions,
             text="Add vacancy",
             command=self._add_vacancy,
             state=tk.DISABLED,
         )
-        self.vacancy_button.grid(row=1, column=5, padx=(8, 0), pady=(8, 0))
-        self.add_player_button = ttk.Button(
-            actions,
-            text="Add player back / substitute",
-            command=self._add_score_player,
+        self.vacancy_button.pack(side=tk.LEFT, padx=(8, 0))
+        self.remove_button = ttk.Button(
+            row_actions,
+            text="Remove row",
+            command=self._remove_selected,
             state=tk.DISABLED,
         )
-        self.add_player_button.grid(row=1, column=6, padx=(8, 0), pady=(8, 0))
+        self.remove_button.pack(side=tk.LEFT, padx=(8, 0))
 
-        sheet_frame = ttk.Frame(self, style="Surface.TFrame")
-        sheet_frame.grid(row=3, column=0, sticky="nsew")
+        self.score_panes = ttk.Panedwindow(self, orient=tk.VERTICAL)
+        self.score_panes.grid(row=1, column=0, sticky="nsew")
+
+        sheet_frame = ttk.Frame(self.score_panes, style="Surface.TFrame")
         sheet_frame.columnconfigure(0, weight=1)
         sheet_frame.rowconfigure(0, weight=1)
         self.sheet_table = ttk.Treeview(sheet_frame, show="headings")
@@ -222,8 +205,9 @@ class ScoringDesk(ttk.Frame):
         )
         self.sheet_table.bind("<Double-1>", lambda _event: self._edit_selected())
 
-        totals_frame = ttk.Frame(self, style="Surface.TFrame", padding=(10, 8))
-        totals_frame.grid(row=4, column=0, sticky="nsew", pady=(12, 0))
+        totals_frame = ttk.Frame(
+            self.score_panes, style="Surface.TFrame", padding=(10, 8)
+        )
         totals_frame.columnconfigure(0, weight=1)
         totals_frame.rowconfigure(1, weight=1)
         ttk.Label(
@@ -238,6 +222,8 @@ class ScoringDesk(ttk.Frame):
         )
         self.totals_table.configure(yscrollcommand=totals_scroll.set)
         totals_scroll.grid(row=1, column=1, sticky="ns")
+        self.score_panes.add(sheet_frame, weight=4)
+        self.score_panes.add(totals_frame, weight=1)
 
         ttk.Label(
             self,
@@ -246,11 +232,11 @@ class ScoringDesk(ttk.Frame):
                 "reopened with a reason before corrections."
             ),
             style="Muted.TLabel",
-        ).grid(row=5, column=0, sticky="w", pady=(9, 0))
+        ).grid(row=2, column=0, sticky="w", pady=(7, 0))
 
     def refresh(self) -> None:
         if self.registration_store is None or self.scoring_store is None:
-            self.competition_box.configure(values=(), state=tk.DISABLED)
+            self.league_name_label.configure(text="League data unavailable")
             return
         leagues = sorted(
             (
@@ -267,9 +253,6 @@ class ScoringDesk(ttk.Frame):
             for competition in leagues
         }
         labels = list(self.competition_by_label)
-        self.competition_box.configure(
-            values=labels, state="readonly" if labels else tk.DISABLED
-        )
         preferred_id = self.workspace_context.competition_id
         preferred_label = next(
             (
@@ -314,6 +297,13 @@ class ScoringDesk(ttk.Frame):
 
     def _competition_changed(self) -> None:
         competition = self._competition()
+        self.league_name_label.configure(
+            text=(
+                competition.display_name
+                if competition is not None
+                else "Choose a league above"
+            )
+        )
         available = competition is not None and self.scoring_store is not None
         editable = available and not competition.archived
         self.settings_button.configure(state=tk.NORMAL if editable else tk.DISABLED)

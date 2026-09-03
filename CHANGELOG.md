@@ -5,6 +5,15 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+- Expanded Scores & history by removing its duplicate league selector and
+  oversized heading, tightening the controls, and adding a draggable split
+  between the score sheet and team totals.
+- Renamed Leagues & seasons to All leagues and clarified that it is the master
+  season list while League home is the dashboard for the selected league.
+- Removed the permanent New tab and Open view in new tab controls. Workspace
+  tabs now expose new-tab, pop-out, and close actions from their right-click
+  menu, including moving an extra tab into its own window.
+
 ## v0.6.0-alpha.3 — 2026-09-03
 
 - Preserved a resolved inactive-member result when only the player's team or

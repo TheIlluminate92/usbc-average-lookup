@@ -30,12 +30,10 @@ The compact top strip works like a browser and opens on **Registration**:
   historical seasons.
 - **Average lookup** — BOWL.com lookup from a roster file or one player.
 
-Use **+ New tab** to open another Registration tab or the current League
-Manager view. You can also right-click Registration or League Manager, or use
-**Open view in new tab** inside League Manager. Each management tab may remain
-on a different league. Close an extra tab with its `×`, a middle click, or its
-right-click menu. Separate windows remain available under **+ New tab** when a
-second monitor or side-by-side layout is preferable. All tabs and windows
+Right-click **Registration** or **League Manager** to open another tab or pop
+the current view into a separate window. Each management tab may remain on a
+different league. Right-click an extra tab to move it into a separate window
+or close it; its `×` and middle-click also close it. All tabs and windows
 refresh from the same database.
 
 The familiar **Ctrl+T** shortcut duplicates the current working view in a new
@@ -55,7 +53,7 @@ signed out.
 
 ## Create a league season or tournament
 
-1. Open **League Manager** and **Leagues & seasons**.
+1. Open **League Manager** and **All leagues**.
 2. Select **New league or tournament**.
 3. Enter the name, season/year, and type.
 
@@ -71,6 +69,11 @@ The screen also supports:
 - registering a new player or pulling one from the permanent directory;
 - linking a reusable player pool;
 - opening league score history.
+
+Use **All leagues** when you need the master season list or want to create,
+archive, restore, or revisit a different league. Use **League home** for the
+day-to-day dashboard and shortcuts for the league selected in the workspace
+bar.
 
 Double-click the league row to explore its teams and players.
 

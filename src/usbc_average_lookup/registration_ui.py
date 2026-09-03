@@ -106,13 +106,6 @@ class RegistrationDesk(ttk.Frame):
             command=self._open_registration,
         )
         self.open_registration_button.grid(row=0, column=2, padx=(10, 0))
-        self.detach_button = ttk.Button(
-            management_context,
-            text="Open view in new tab",
-            command=self._detach_current_section,
-            state=tk.NORMAL if self.detach_callback else tk.DISABLED,
-        )
-        self.detach_button.grid(row=0, column=3, padx=(8, 0))
         self.reattach_button = ttk.Button(
             management_context,
             text="Return to main window",
@@ -120,7 +113,7 @@ class RegistrationDesk(ttk.Frame):
             state=tk.NORMAL if self.reattach_callback else tk.DISABLED,
         )
         if self.reattach_callback is not None:
-            self.reattach_button.grid(row=0, column=4, padx=(8, 0))
+            self.reattach_button.grid(row=0, column=3, padx=(8, 0))
 
         self.section_tabs = ttk.Notebook(self)
         self.section_tabs.grid(row=1, column=0, sticky="nsew")
@@ -142,7 +135,7 @@ class RegistrationDesk(ttk.Frame):
             self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
         )
         self.scores_tab = ttk.Frame(
-            self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
+            self.section_tabs, style="App.TFrame", padding=(10, 8, 10, 10)
         )
         self.rules_tab = ttk.Frame(
             self.section_tabs, style="App.TFrame", padding=(22, 16, 22, 20)
@@ -152,7 +145,7 @@ class RegistrationDesk(ttk.Frame):
         self.section_tabs.add(self.scores_tab, text="Scores & history")
         self.section_tabs.add(self.rules_tab, text="Rules & setup")
         self.section_tabs.add(self.players_tab, text="Player directory")
-        self.section_tabs.add(self.competitions_tab, text="Leagues & seasons")
+        self.section_tabs.add(self.competitions_tab, text="All leagues")
         if self.registration_parent is None:
             self.section_tabs.add(registration_tab, text="Registration")
         else:
@@ -722,15 +715,15 @@ class RegistrationDesk(ttk.Frame):
         heading.columnconfigure(0, weight=1)
         ttk.Label(
             heading,
-            text="League & Tournament Management",
+            text="All Leagues & Tournaments",
             style="Muted.TLabel",
             font=("Segoe UI", 20, "bold"),
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
             heading,
             text=(
-                "Each league season remains an independent historical workspace. "
-                "Double-click one to explore its teams and players."
+                "Master list for creating, archiving, and revisiting seasons. "
+                "Use League home for the selected league's day-to-day work."
             ),
             style="Muted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))

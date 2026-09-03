@@ -35,11 +35,10 @@ extracted program folder does not copy league data.
 ## Current application
 
 The compact browser-style strip opens on Registration and has three top-level
-workspaces. Use **+ New tab**, right-click a top-level tab, or use **Open view
-in new tab** inside League Manager to work side by side. Extra tabs keep their
-own league and section, show a close `×`, and can also be closed with a middle
-click or their right-click menu. Separate windows remain available from the
-New tab menu when they are useful.
+workspaces. Right-click Registration or League Manager to open another tab or
+pop the current view into a separate window. Extra tabs keep their own league
+and section, show a close `×`, and can be moved into a window or closed from
+their right-click menu. Middle-click also closes an extra tab.
 
 - **Registration** supports fast single-player entry, whole-team entry, and
   one-step registration into multiple leagues with a separate team assignment
@@ -56,9 +55,9 @@ New tab menu when they are useful.
     defaults, and the linked player pool together.
   - **Player directory** maintains one permanent identity per person and
     optional year/season player pools.
-  - **Leagues & seasons** creates and archives league-season or tournament
-    workspaces, links player pools, manages teams and players, and opens score
-    history.
+  - **All leagues** is the master list for creating, archiving, and revisiting
+    league-season or tournament workspaces. **League home** is the dashboard
+    for whichever league is selected in the workspace bar.
 - **Average lookup** imports a roster or accepts one player, checks BOWL.com,
   resolves ambiguous matches, exports results, and can add the result list to
   the permanent player directory.
