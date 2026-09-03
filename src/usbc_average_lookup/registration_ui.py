@@ -67,6 +67,7 @@ class RegistrationDesk(ttk.Frame):
         self.name_var = tk.StringVar()
         self.member_id_var = tk.StringVar()
         self.quick_team_var = tk.StringVar(value="Unassigned")
+        self.team_roster_windows: dict[str, TeamRosterWindow] = {}
         self.registration_parent = registration_parent
         self._build()
         self._unsubscribe_context = self.workspace_context.subscribe(
@@ -361,19 +362,14 @@ class RegistrationDesk(ttk.Frame):
         self.workspace_detail_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
         overview_actions = ttk.Frame(heading, style="App.TFrame")
         overview_actions.grid(row=0, column=1, rowspan=2, sticky="e")
-        ttk.Button(
-            overview_actions,
-            text="Register bowler",
-            command=self._open_registration,
-            style="Primary.TButton",
-        ).pack(side=tk.LEFT)
         self.overview_add_team_button = ttk.Button(
             overview_actions,
-            text="Add team",
+            text="Create team",
             command=self._new_managed_team,
             state=tk.DISABLED,
+            style="Primary.TButton",
         )
-        self.overview_add_team_button.pack(side=tk.LEFT, padx=(8, 0))
+        self.overview_add_team_button.pack(side=tk.LEFT)
         ttk.Button(
             overview_actions,
             text="Open scores",
@@ -617,7 +613,6 @@ class RegistrationDesk(ttk.Frame):
         tab = self.teams_tab
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(2, weight=1)
-        tab.rowconfigure(3, weight=2)
         heading = ttk.Frame(tab, style="App.TFrame")
         heading.grid(row=0, column=0, sticky="ew")
         heading.columnconfigure(0, weight=1)
@@ -630,8 +625,8 @@ class RegistrationDesk(ttk.Frame):
         ttk.Label(
             heading,
             text=(
-                "Teams and rosters are filtered by league season or tournament. "
-                "Double-click a team to explore relationships."
+                "Teams are filtered by league season or tournament. "
+                "Double-click a team to manage its players and substitutes."
             ),
             style="Muted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
@@ -646,6 +641,15 @@ class RegistrationDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.team_rename_button.grid(row=0, column=2, rowspan=2, sticky="e", padx=(8, 0))
+        self.team_roster_button = ttk.Button(
+            heading,
+            text="Manage roster",
+            command=self._open_selected_team_roster,
+            state=tk.DISABLED,
+        )
+        self.team_roster_button.grid(
+            row=0, column=3, rowspan=2, sticky="e", padx=(8, 0)
+        )
         self.team_score_history_button = ttk.Button(
             heading,
             text="Score history",
@@ -653,7 +657,7 @@ class RegistrationDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.team_score_history_button.grid(
-            row=0, column=3, rowspan=2, sticky="e", padx=(8, 0)
+            row=0, column=4, rowspan=2, sticky="e", padx=(8, 0)
         )
 
         selector = ttk.Frame(tab, style="Surface.TFrame", padding=14)
@@ -685,7 +689,6 @@ class RegistrationDesk(ttk.Frame):
             frame,
             columns=("team", "regulars", "substitutes", "total"),
             show="headings",
-            height=5,
         )
         for column, label, width, stretch in (
             ("team", "Team", 220, True),
@@ -707,101 +710,8 @@ class RegistrationDesk(ttk.Frame):
             "<<TreeviewSelect>>", lambda _event: self._update_team_actions()
         )
         self.team_management_table.bind(
-            "<Double-1>", lambda _event: self._show_selected_team_relationships()
+            "<Double-1>", lambda _event: self._open_selected_team_roster()
         )
-
-        roster_frame = ttk.Frame(tab, style="Surface.TFrame", padding=(10, 8))
-        roster_frame.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
-        roster_frame.columnconfigure(0, weight=1)
-        roster_frame.rowconfigure(0, weight=1)
-        self.roster_tabs = ttk.Notebook(roster_frame)
-        self.roster_tabs.grid(row=0, column=0, sticky="nsew")
-        regular_tab = ttk.Frame(self.roster_tabs, style="Surface.TFrame")
-        substitute_tab = ttk.Frame(self.roster_tabs, style="Surface.TFrame")
-        league_substitute_tab = ttk.Frame(self.roster_tabs, style="Surface.TFrame")
-        self.roster_tabs.add(regular_tab, text="Regular roster")
-        self.roster_tabs.add(substitute_tab, text="Team substitutes")
-        self.roster_tabs.add(league_substitute_tab, text="League substitute pool")
-        self.team_regular_table = self._make_roster_management_table(regular_tab)
-        self.team_substitute_table = self._make_roster_management_table(substitute_tab)
-        self.league_substitute_table = self._make_roster_management_table(
-            league_substitute_tab
-        )
-        self.roster_tables = (
-            self.team_regular_table,
-            self.team_substitute_table,
-            self.league_substitute_table,
-        )
-        self.roster_tabs.bind(
-            "<<NotebookTabChanged>>", lambda _event: self._update_roster_actions()
-        )
-
-        roster_actions = ttk.Frame(tab, style="App.TFrame")
-        roster_actions.grid(row=4, column=0, sticky="ew", pady=(10, 0))
-        ttk.Label(
-            roster_actions,
-            text="Removing a player from a team keeps their league registration.",
-            style="Muted.TLabel",
-        ).pack(side=tk.LEFT)
-        self.roster_remove_button = ttk.Button(
-            roster_actions,
-            text="Remove from team",
-            command=self._remove_player_from_team,
-            state=tk.DISABLED,
-        )
-        self.roster_remove_button.pack(side=tk.RIGHT)
-        self.roster_role_button = ttk.Button(
-            roster_actions,
-            text="Change roster role",
-            command=self._toggle_roster_role,
-            state=tk.DISABLED,
-        )
-        self.roster_role_button.pack(side=tk.RIGHT, padx=(0, 8))
-        self.roster_existing_button = ttk.Button(
-            roster_actions,
-            text="Add existing player",
-            command=self._add_existing_player_to_team,
-            state=tk.DISABLED,
-        )
-        self.roster_existing_button.pack(side=tk.RIGHT, padx=(0, 8))
-        self.roster_new_button = ttk.Button(
-            roster_actions,
-            text="Register new player",
-            command=self._register_new_team_player,
-            state=tk.DISABLED,
-        )
-        self.roster_new_button.pack(side=tk.RIGHT, padx=(0, 8))
-
-    def _make_roster_management_table(self, parent: ttk.Frame) -> ttk.Treeview:
-        parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(0, weight=1)
-        table = ttk.Treeview(
-            parent,
-            columns=("name", "member_id", "team", "status"),
-            show="headings",
-            height=7,
-        )
-        for column, label, width, stretch in (
-            ("name", "Player", 220, True),
-            ("member_id", "Member ID", 125, False),
-            ("team", "Assignment", 190, True),
-            ("status", "Status", 180, True),
-        ):
-            table.heading(column, text=label)
-            table.column(
-                column, width=width, minwidth=75, stretch=stretch, anchor="w"
-            )
-        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=table.yview)
-        table.configure(yscrollcommand=scrollbar.set)
-        table.grid(row=0, column=0, sticky="nsew")
-        scrollbar.grid(row=0, column=1, sticky="ns")
-        table.bind(
-            "<<TreeviewSelect>>",
-            lambda _event, selected_table=table: self._roster_row_selected(
-                selected_table
-            ),
-        )
-        return table
 
     def _build_competitions_tab(self) -> None:
         tab = self.competitions_tab
@@ -1424,7 +1334,6 @@ class RegistrationDesk(ttk.Frame):
         competition = self._team_management_competition()
         if self.store is None or competition is None:
             self.team_count_label.configure(text="0 teams")
-            self._render_team_rosters()
             self._update_team_actions()
             return
         teams = self.store.list_teams(competition.id)
@@ -1461,62 +1370,7 @@ class RegistrationDesk(ttk.Frame):
             self.team_management_table.selection_set(teams[0].id)
             self.team_management_table.focus(teams[0].id)
         self.team_count_label.configure(text=f"{len(teams)} teams")
-        self._render_team_rosters()
         self._update_team_actions()
-
-    def _render_team_rosters(self) -> None:
-        for table in self.roster_tables:
-            table.delete(*table.get_children())
-        competition = self._team_management_competition()
-        team_id = self._selected_managed_team_id()
-        if self.store is None or competition is None:
-            self._update_roster_actions()
-            return
-        views = self.store.registration_views(competition.id)
-        groups = (
-            (
-                self.team_regular_table,
-                [
-                    view
-                    for view in views
-                    if view.registration.team_id == team_id
-                    and view.registration.roster_role is RosterRole.REGULAR
-                ],
-            ),
-            (
-                self.team_substitute_table,
-                [
-                    view
-                    for view in views
-                    if view.registration.team_id == team_id
-                    and view.registration.roster_role is RosterRole.SUBSTITUTE
-                ],
-            ),
-            (
-                self.league_substitute_table,
-                [
-                    view
-                    for view in views
-                    if not view.registration.team_id
-                    and view.registration.roster_role is RosterRole.SUBSTITUTE
-                ],
-            ),
-        )
-        for table, group in groups:
-            for view in group:
-                assignment = view.team.name if view.team else "League-wide substitute"
-                table.insert(
-                    "",
-                    tk.END,
-                    iid=view.registration.id,
-                    values=(
-                        view.bowler.name,
-                        view.bowler.membership_id or "—",
-                        assignment,
-                        view.status,
-                    ),
-                )
-        self._update_roster_actions()
 
     def _selected_managed_team_id(self) -> str | None:
         selected = self.team_management_table.selection()
@@ -1530,6 +1384,9 @@ class RegistrationDesk(ttk.Frame):
         self.team_rename_button.configure(
             state=tk.NORMAL if self._selected_managed_team_id() else tk.DISABLED
         )
+        self.team_roster_button.configure(
+            state=tk.NORMAL if self._selected_managed_team_id() else tk.DISABLED
+        )
         competition = self._team_management_competition()
         self.team_score_history_button.configure(
             state=(
@@ -1540,178 +1397,34 @@ class RegistrationDesk(ttk.Frame):
                 else tk.DISABLED
             )
         )
-        self._render_team_rosters()
 
-    def _active_roster_table(self) -> ttk.Treeview:
-        return self.roster_tables[self.roster_tabs.index(self.roster_tabs.select())]
-
-    def _selected_roster_view(self) -> RegistrationView | None:
-        if self.store is None:
-            return None
-        competition = self._team_management_competition()
-        if competition is None:
-            return None
-        selected = self._active_roster_table().selection()
-        if not selected:
-            return None
-        return next(
-            (
-                view
-                for view in self.store.registration_views(competition.id)
-                if view.registration.id == selected[0]
-            ),
-            None,
-        )
-
-    def _roster_row_selected(self, selected_table: ttk.Treeview) -> None:
-        if selected_table.selection():
-            for table in self.roster_tables:
-                if table is not selected_table:
-                    table.selection_remove(*table.selection())
-        self._update_roster_actions()
-
-    def _update_roster_actions(self) -> None:
-        has_team = self._selected_managed_team_id() is not None
-        view = self._selected_roster_view()
-        self.roster_existing_button.configure(
-            state=tk.NORMAL if has_team else tk.DISABLED
-        )
-        self.roster_new_button.configure(state=tk.NORMAL if has_team else tk.DISABLED)
-        self.roster_remove_button.configure(
-            state=tk.NORMAL if view is not None and view.team is not None else tk.DISABLED
-        )
-        self.roster_role_button.configure(
-            state=tk.NORMAL if view is not None else tk.DISABLED,
-            text=(
-                "Make substitute"
-                if view is not None
-                and view.registration.roster_role is RosterRole.REGULAR
-                else "Make regular"
-            ),
-        )
-
-    def _desired_roster_role(self) -> RosterRole:
-        return (
-            RosterRole.REGULAR
-            if self._active_roster_table() is self.team_regular_table
-            else RosterRole.SUBSTITUTE
-        )
-
-    def _remove_player_from_team(self) -> None:
-        if self.store is None:
-            return
-        view = self._selected_roster_view()
-        if view is None or view.team is None:
-            return
-        try:
-            self.store.assign_registration(
-                view.registration.id, "", view.registration.roster_role
-            )
-        except (OSError, RegistrationDataError) as error:
-            messagebox.showerror("Could not update roster", str(error), parent=self)
-            return
-        self._refresh_after_roster_change()
-
-    def _toggle_roster_role(self) -> None:
-        if self.store is None:
-            return
-        view = self._selected_roster_view()
-        if view is None:
-            return
-        role = (
-            RosterRole.SUBSTITUTE
-            if view.registration.roster_role is RosterRole.REGULAR
-            else RosterRole.REGULAR
-        )
-        try:
-            self.store.assign_registration(
-                view.registration.id, view.registration.team_id, role
-            )
-        except (OSError, RegistrationDataError) as error:
-            messagebox.showerror("Could not update roster", str(error), parent=self)
-            return
-        self._refresh_after_roster_change()
-
-    def _add_existing_player_to_team(self) -> None:
+    def _open_selected_team_roster(self) -> None:
         if self.store is None:
             return
         competition = self._team_management_competition()
         team_id = self._selected_managed_team_id()
         if competition is None or team_id is None:
             return
-        role = self._desired_roster_role()
-        destination_team_id = (
-            "" if self._active_roster_table() is self.league_substitute_table else team_id
-        )
-        views = self.store.registration_views(competition.id)
-        view_by_bowler_id = {view.bowler.id: view for view in views}
-        available = [
-            bowler
-            for bowler in self.store.bowlers
-            if not (
-                (view := view_by_bowler_id.get(bowler.id))
-                and view.registration.team_id == destination_team_id
-                and view.registration.roster_role is role
-            )
-        ]
-        if not available:
-            messagebox.showinfo(
-                "No players available",
-                "Every player is already assigned to this roster section.",
-                parent=self,
-            )
+        team = next((item for item in self.store.teams if item.id == team_id), None)
+        if team is None:
             return
-        bowler_id = LeagueDirectoryPlayerPickerDialog(
-            self, competition, available, view_by_bowler_id
-        ).show()
-        if bowler_id is None:
+        existing = self.team_roster_windows.get(team.id)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.focus_force()
             return
-        view = view_by_bowler_id.get(bowler_id)
-        if view is not None and view.team is not None and not messagebox.askyesno(
-            "Move player?",
-            f"{view.bowler.name} is currently on {view.team.name} in "
-            f"{competition.display_name}. Move them?",
-            parent=self,
-        ):
-            return
-        try:
-            if view is None:
-                self.store.register_existing_bowler(
-                    competition.id, bowler_id, destination_team_id, role
-                )
-            else:
-                self.store.assign_registration(
-                    view.registration.id, destination_team_id, role
-                )
-        except (OSError, RegistrationDataError) as error:
-            messagebox.showerror("Could not update roster", str(error), parent=self)
-            return
-        self._refresh_after_roster_change()
 
-    def _register_new_team_player(self) -> None:
-        if self.store is None:
-            return
-        competition = self._team_management_competition()
-        team_id = self._selected_managed_team_id()
-        if competition is None or team_id is None:
-            return
-        choice = LeaguePlayerDialog(
+        def closed() -> None:
+            self.team_roster_windows.pop(team.id, None)
+
+        self.team_roster_windows[team.id] = TeamRosterWindow(
             self,
-            self.store.list_teams(competition.id),
-            default_team_id=team_id,
-            default_role=self._desired_roster_role(),
-        ).show()
-        if choice is None:
-            return
-        name, membership_id, selected_team_id, role = choice
-        try:
-            self.store.register_bowler(
-                competition.id, name, membership_id, selected_team_id, role
-            )
-        except (OSError, RegistrationDataError) as error:
-            messagebox.showerror("Could not register player", str(error), parent=self)
-            return
-        self._refresh_after_roster_change()
+            self.store,
+            competition,
+            team,
+            self._refresh_after_roster_change,
+            closed,
+        )
 
     def _new_managed_team(self) -> None:
         if self.store is None:
@@ -2542,8 +2255,375 @@ class RegistrationDesk(ttk.Frame):
     def close(self) -> None:
         self._unsubscribe_context()
         self.scoring_desk.close()
+        for window in tuple(self.team_roster_windows.values()):
+            window.destroy()
         for _worker_number in range(2):
             self.lookup_queue.put(None)
+
+
+class TeamRosterWindow(tk.Toplevel):
+    def __init__(
+        self,
+        parent: tk.Misc,
+        store: RegistrationStore,
+        competition: Competition,
+        team: Team,
+        changed_callback: Callable[[], None],
+        closed_callback: Callable[[], None],
+    ) -> None:
+        super().__init__(parent)
+        self.store = store
+        self.competition = competition
+        self.team = team
+        self.changed_callback = changed_callback
+        self.closed_callback = closed_callback
+        self._closed = False
+        self._unsubscribe_store = self.store.add_change_listener(self._store_changed)
+        self.title(f"{team.name} roster")
+        self.geometry("900x620")
+        self.minsize(720, 460)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self._build()
+        self.refresh()
+
+    def _build(self) -> None:
+        content = ttk.Frame(self, style="App.TFrame", padding=22)
+        content.pack(fill=tk.BOTH, expand=True)
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
+
+        heading = ttk.Frame(content, style="App.TFrame")
+        heading.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        heading.columnconfigure(0, weight=1)
+        self.title_label = ttk.Label(
+            heading,
+            text=self.team.name,
+            style="Muted.TLabel",
+            font=("Segoe UI", 20, "bold"),
+        )
+        self.title_label.grid(row=0, column=0, sticky="w")
+        self.detail_label = ttk.Label(
+            heading,
+            text=self.competition.display_name,
+            style="Muted.TLabel",
+        )
+        self.detail_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ttk.Button(
+            heading,
+            text="View relationships",
+            command=self._show_team_relationships,
+        ).grid(row=0, column=1, rowspan=2, sticky="e")
+
+        self.roster_tabs = ttk.Notebook(content)
+        self.roster_tabs.grid(row=1, column=0, sticky="nsew")
+        regular_tab = ttk.Frame(self.roster_tabs, style="Surface.TFrame")
+        substitute_tab = ttk.Frame(self.roster_tabs, style="Surface.TFrame")
+        league_substitute_tab = ttk.Frame(self.roster_tabs, style="Surface.TFrame")
+        self.roster_tabs.add(regular_tab, text="Regular roster")
+        self.roster_tabs.add(substitute_tab, text="Team substitutes")
+        self.roster_tabs.add(league_substitute_tab, text="League substitute pool")
+        self.team_regular_table = self._make_table(regular_tab)
+        self.team_substitute_table = self._make_table(substitute_tab)
+        self.league_substitute_table = self._make_table(league_substitute_tab)
+        self.roster_tables = (
+            self.team_regular_table,
+            self.team_substitute_table,
+            self.league_substitute_table,
+        )
+        self.roster_tabs.bind(
+            "<<NotebookTabChanged>>", lambda _event: self._update_actions()
+        )
+
+        actions = ttk.Frame(content, style="App.TFrame")
+        actions.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        ttk.Label(
+            actions,
+            text="Removing a player from the team keeps their league registration.",
+            style="Muted.TLabel",
+        ).pack(anchor="w")
+        button_row = ttk.Frame(actions, style="App.TFrame")
+        button_row.pack(fill=tk.X, pady=(8, 0))
+        self.remove_button = ttk.Button(
+            button_row,
+            text="Remove from team",
+            command=self._remove_from_team,
+            state=tk.DISABLED,
+        )
+        self.remove_button.pack(side=tk.RIGHT)
+        self.role_button = ttk.Button(
+            button_row,
+            text="Change roster role",
+            command=self._toggle_role,
+            state=tk.DISABLED,
+        )
+        self.role_button.pack(side=tk.RIGHT, padx=(0, 8))
+        ttk.Button(
+            button_row,
+            text="Add existing player",
+            command=self._add_existing_player,
+        ).pack(side=tk.RIGHT, padx=(0, 8))
+        ttk.Button(
+            button_row,
+            text="Register new player",
+            command=self._register_new_player,
+        ).pack(side=tk.RIGHT, padx=(0, 8))
+
+    def _make_table(self, parent: ttk.Frame) -> ttk.Treeview:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        table = ttk.Treeview(
+            parent,
+            columns=("name", "member_id", "status"),
+            show="headings",
+        )
+        for column, label, width, stretch in (
+            ("name", "Player", 280, True),
+            ("member_id", "Member ID", 150, False),
+            ("status", "Status", 300, True),
+        ):
+            table.heading(column, text=label)
+            table.column(
+                column, width=width, minwidth=80, stretch=stretch, anchor="w"
+            )
+        scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=table.yview)
+        table.configure(yscrollcommand=scrollbar.set)
+        table.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        table.bind(
+            "<<TreeviewSelect>>",
+            lambda _event, selected_table=table: self._row_selected(selected_table),
+        )
+        table.bind("<Double-1>", lambda _event: self._show_player_relationships())
+        return table
+
+    def _store_changed(self) -> None:
+        if self.winfo_exists():
+            self.after_idle(self.refresh)
+
+    def refresh(self) -> None:
+        current_team = next(
+            (item for item in self.store.teams if item.id == self.team.id), None
+        )
+        if current_team is None:
+            self.destroy()
+            return
+        self.team = current_team
+        self.title(f"{self.team.name} roster")
+        self.title_label.configure(text=self.team.name)
+        self.detail_label.configure(text=self.competition.display_name)
+        for table in self.roster_tables:
+            table.delete(*table.get_children())
+        views = self.store.registration_views(self.competition.id)
+        groups = (
+            [
+                view
+                for view in views
+                if view.registration.team_id == self.team.id
+                and view.registration.roster_role is RosterRole.REGULAR
+            ],
+            [
+                view
+                for view in views
+                if view.registration.team_id == self.team.id
+                and view.registration.roster_role is RosterRole.SUBSTITUTE
+            ],
+            [
+                view
+                for view in views
+                if not view.registration.team_id
+                and view.registration.roster_role is RosterRole.SUBSTITUTE
+            ],
+        )
+        labels = ("Regular roster", "Team substitutes", "League substitute pool")
+        for index, (table, group, label) in enumerate(
+            zip(self.roster_tables, groups, labels, strict=True)
+        ):
+            for view in group:
+                table.insert(
+                    "",
+                    tk.END,
+                    iid=view.registration.id,
+                    values=(
+                        view.bowler.name,
+                        view.bowler.membership_id or "—",
+                        view.status,
+                    ),
+                )
+            self.roster_tabs.tab(index, text=f"{label} ({len(group)})")
+        self._update_actions()
+
+    def _active_table(self) -> ttk.Treeview:
+        return self.roster_tables[self.roster_tabs.index(self.roster_tabs.select())]
+
+    def _selected_view(self) -> RegistrationView | None:
+        selected = self._active_table().selection()
+        if not selected:
+            return None
+        return next(
+            (
+                view
+                for view in self.store.registration_views(self.competition.id)
+                if view.registration.id == selected[0]
+            ),
+            None,
+        )
+
+    def _row_selected(self, selected_table: ttk.Treeview) -> None:
+        if selected_table.selection():
+            for table in self.roster_tables:
+                if table is not selected_table:
+                    table.selection_remove(*table.selection())
+        self._update_actions()
+
+    def _update_actions(self) -> None:
+        view = self._selected_view()
+        self.remove_button.configure(
+            state=tk.NORMAL if view is not None and view.team is not None else tk.DISABLED
+        )
+        self.role_button.configure(
+            state=tk.NORMAL if view is not None else tk.DISABLED,
+            text=(
+                "Make substitute"
+                if view is not None
+                and view.registration.roster_role is RosterRole.REGULAR
+                else "Make regular"
+            ),
+        )
+
+    def _desired_role(self) -> RosterRole:
+        return (
+            RosterRole.REGULAR
+            if self._active_table() is self.team_regular_table
+            else RosterRole.SUBSTITUTE
+        )
+
+    def _destination_team_id(self) -> str:
+        return (
+            ""
+            if self._active_table() is self.league_substitute_table
+            else self.team.id
+        )
+
+    def _changed(self) -> None:
+        self.changed_callback()
+        self.refresh()
+
+    def _remove_from_team(self) -> None:
+        view = self._selected_view()
+        if view is None or view.team is None:
+            return
+        try:
+            self.store.assign_registration(
+                view.registration.id, "", view.registration.roster_role
+            )
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not update roster", str(error), parent=self)
+            return
+        self._changed()
+
+    def _toggle_role(self) -> None:
+        view = self._selected_view()
+        if view is None:
+            return
+        role = (
+            RosterRole.SUBSTITUTE
+            if view.registration.roster_role is RosterRole.REGULAR
+            else RosterRole.REGULAR
+        )
+        team_id = view.registration.team_id or (
+            self.team.id if role is RosterRole.REGULAR else ""
+        )
+        try:
+            self.store.assign_registration(view.registration.id, team_id, role)
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not update roster", str(error), parent=self)
+            return
+        self._changed()
+
+    def _add_existing_player(self) -> None:
+        role = self._desired_role()
+        team_id = self._destination_team_id()
+        views = self.store.registration_views(self.competition.id)
+        view_by_bowler_id = {view.bowler.id: view for view in views}
+        available = [
+            bowler
+            for bowler in self.store.bowlers
+            if not (
+                (view := view_by_bowler_id.get(bowler.id))
+                and view.registration.team_id == team_id
+                and view.registration.roster_role is role
+            )
+        ]
+        if not available:
+            messagebox.showinfo(
+                "No players available",
+                "Every player is already assigned to this roster section.",
+                parent=self,
+            )
+            return
+        bowler_id = LeagueDirectoryPlayerPickerDialog(
+            self, self.competition, available, view_by_bowler_id
+        ).show()
+        if bowler_id is None:
+            return
+        view = view_by_bowler_id.get(bowler_id)
+        if view is not None and view.team is not None and not messagebox.askyesno(
+            "Move player?",
+            f"{view.bowler.name} is currently on {view.team.name} in "
+            f"{self.competition.display_name}. Move them?",
+            parent=self,
+        ):
+            return
+        try:
+            if view is None:
+                self.store.register_existing_bowler(
+                    self.competition.id, bowler_id, team_id, role
+                )
+            else:
+                self.store.assign_registration(view.registration.id, team_id, role)
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not update roster", str(error), parent=self)
+            return
+        self._changed()
+
+    def _register_new_player(self) -> None:
+        choice = LeaguePlayerDialog(
+            self,
+            self.store.list_teams(self.competition.id),
+            default_team_id=self._destination_team_id(),
+            default_role=self._desired_role(),
+        ).show()
+        if choice is None:
+            return
+        name, membership_id, team_id, role = choice
+        try:
+            self.store.register_bowler(
+                self.competition.id, name, membership_id, team_id, role
+            )
+        except (OSError, RegistrationDataError) as error:
+            messagebox.showerror("Could not register player", str(error), parent=self)
+            return
+        self._changed()
+
+    def _show_team_relationships(self) -> None:
+        RelationshipBrowser(
+            self, self.store, EntityRef(EntityKind.TEAM, self.team.id)
+        )
+
+    def _show_player_relationships(self) -> None:
+        view = self._selected_view()
+        if view is None:
+            return
+        RelationshipBrowser(
+            self, self.store, EntityRef(EntityKind.PLAYER, view.bowler.id)
+        )
+
+    def destroy(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._unsubscribe_store()
+            self.closed_callback()
+        super().destroy()
 
 
 class PlayerPickerDialog(tk.Toplevel):

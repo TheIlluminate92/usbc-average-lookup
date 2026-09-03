@@ -43,9 +43,11 @@ view can return its current section and league selection to the main window.
   one-step registration into multiple leagues with a separate team assignment
   for each.
 - **League Manager**
-  - **League home** summarizes the selected competition and its work queue.
-  - **Teams & roster** manages regulars, team substitutes, and the league-wide
-    substitute pool in one master-detail view.
+  - **League home** summarizes the selected competition and its work queue and
+    provides a direct Create team action.
+  - **Teams & roster** gives the team list the full workspace. Double-click a
+    team to open its regulars, team substitutes, and league-wide substitute
+    pool in a separate roster window.
   - **Scores & history** stores permanent weekly score sheets, individual
     games, calculated team totals, and correction history.
   - **Rules & setup** keeps league details, average/handicap rules, scoring
@@ -59,8 +61,9 @@ view can return its current section and league selection to the main window.
   resolves ambiguous matches, exports results, and can add the result list to
   the permanent player directory.
 
-Double-click a league, team, or player in its management table to open the
-relationship browser. Editing remains on the clearly labeled edit buttons.
+Double-click a league or player in its management table to open the relationship
+browser. Double-click a team to manage its roster; that window has a separate
+View relationships action. Editing remains on the clearly labeled buttons.
 
 ## Typical workflow
 

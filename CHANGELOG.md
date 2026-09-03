@@ -5,6 +5,13 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+- Preserved a resolved inactive-member result when only the player's team or
+  roster role changes.
+- Expanded Teams & roster into a full-size team list and moved each team's
+  regulars and substitutes into a double-click roster window.
+- Replaced League home's Register bowler shortcut with a primary Create team
+  action.
+
 ## v0.6.0-alpha.2 — 2026-09-02
 
 - Added **Return to main window** to detached Registration and League Manager

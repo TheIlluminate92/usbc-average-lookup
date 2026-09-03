@@ -93,6 +93,9 @@ Open **League Manager** and **Teams & roster**. Choose the current league or
 tournament once in the shared workspace selector. Registration, Rules, Teams,
 and Scores follow that selection.
 
+The main Teams & roster page is a full-size team list. Double-click a team, or
+select it and use **Manage roster**, to open that team's separate roster window.
+
 Each registration has one of two roles:
 
 - **Regular** — normally copied into a new weekly league score sheet.
@@ -111,8 +114,8 @@ player from a team does not delete the league registration or permanent player.
 After a team assignment changes, the registration list, player history, team
 counts, league counts, and scoring selectors refresh together.
 
-Double-click a team to explore its leagues and players. The separate rename
-button edits the team name.
+Use **View relationships** in the roster window to explore the team's leagues
+and players. The separate rename button on the team list edits the team name.
 
 ## Register one bowler
 
