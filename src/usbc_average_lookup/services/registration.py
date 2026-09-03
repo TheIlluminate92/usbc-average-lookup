@@ -178,7 +178,7 @@ def default_legacy_registration_path() -> Path:
 
 
 class RegistrationStore:
-    DATABASE_SCHEMA_VERSION = 4
+    DATABASE_SCHEMA_VERSION = 5
     LEGACY_SCHEMA_VERSIONS = {1, 2}
 
     def __init__(
@@ -481,6 +481,25 @@ class RegistrationStore:
             )
         if version == self.DATABASE_SCHEMA_VERSION:
             return
+        if version == 4:
+            connection.executescript(
+                """
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS standing_rules (
+                    competition_id TEXT PRIMARY KEY,
+                    rules_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS round_score_links (
+                    round_id TEXT PRIMARY KEY REFERENCES competition_rounds(id),
+                    session_id TEXT NOT NULL UNIQUE REFERENCES league_sessions(id),
+                    rules_json TEXT NOT NULL,
+                    linked_at TEXT NOT NULL
+                );
+                PRAGMA user_version = 5;
+                COMMIT;
+                """
+            )
+            return
         if version == 3:
             competition_columns = {
                 row[1]
@@ -538,6 +557,7 @@ class RegistrationStore:
                 """
             )
             connection.commit()
+            self._ensure_schema(connection)
             return
         if version == 2:
             columns = {
@@ -870,6 +890,7 @@ class RegistrationStore:
             """
         )
         connection.commit()
+        self._ensure_schema(connection)
 
     def _migrate_legacy_json(self, legacy_path: Path) -> None:
         self._load_legacy_document(legacy_path)

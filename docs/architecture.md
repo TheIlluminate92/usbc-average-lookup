@@ -41,8 +41,8 @@ Tkinter application
   |     +-- composite averages
   |     +-- league activities (client support only)
   |
-  +-- RegistrationStore / ScheduleStore / ScoringStore
-        +-- SQLite schema version 4
+  +-- RegistrationStore / ScheduleStore / ScoringStore / StandingsStore
+        +-- SQLite schema version 5
 ```
 
 ## UI composition
@@ -177,7 +177,7 @@ candidate because raw league activities are not yet persisted.
 %LOCALAPPDATA%\Bowling Manager\bowling-manager.db
 ```
 
-Schema version 4 contains:
+Schema version 5 contains:
 
 - `metadata`
 - `player_pools`
@@ -192,6 +192,14 @@ Schema version 4 contains:
 - `score_change_log`
 - `competition_rounds`
 - `competition_matches`
+- `standing_rules` (current rules for new links and table ranking)
+- `round_score_links` (unique round/week link with immutable points-rule snapshot)
+
+`StandingsStore` derives results from finalized linked score sheets; standings
+are not independently writable totals. Draft/reopened weeks are excluded.
+Link/unlink changes are recorded in `score_change_log`, and score writes notify
+the shared store so open views refresh. Version-4 databases are automatically
+backed up before the additive version-5 migration.
 
 SQLite foreign keys are enabled on every connection. Tables use primary keys,
 uniqueness constraints, and state `CHECK` constraints. The store validates

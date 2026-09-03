@@ -100,8 +100,38 @@ rotate with the weekly matchups. Select or double-click a matchup to correct
 its lane pair; a duplicate lane pair in the same round is rejected.
 
 Schedules snapshot team names. Renaming a current team does not rewrite the
-schedule that was already generated. Matchups are not yet connected to weekly
-score sheets or standings.
+schedule that was already generated. Lane pairs cannot overlap.
+
+### Link scores and review standings
+
+1. In **Standings → Standings rules…**, confirm scratch or handicap comparison,
+   points per game and series, and tie handling. Defaults are one point per game,
+   one per series, split ties, and rank by series wins with shared tied places.
+2. In **Schedule**, choose a round and **Link scores…**. Choose an existing Draft
+   week or create the matching numbered week. Linking is explicit: week numbers
+   alone do not connect results. A week can belong to only one round in its league.
+3. **Open scores** takes you to that exact week. Enter and finalize the scores.
+   Each scheduled opponent must have at least one complete score row.
+4. **Schedule** shows matchup series totals and awarded points. **Standings**
+   shows accumulated team results and ranks; it can pop out like other subtabs.
+
+Series W/L/T compares the total series pins, independently of game points.
+Choose ranking by series wins, game wins, or points, with an optional scratch
+or handicap-pin tie breaker. Equal ranking values share a place (1, 1, 3).
+Only finalized linked matchups count. BYEs, forfeits, postponed/cancelled
+matches, and unfinished or unlinked weeks do not award wins or points.
+BYE scores are kept but excluded from these team standings totals.
+
+Reopening a score week removes its results from standings until finalized
+again. Corrections keep the existing reason/history workflow. If the wrong week
+was linked, reopen it, choose **Unlink…** in Schedule, and provide a reason.
+Unlinking keeps the scores and records the change in score history.
+
+Each link saves its points and comparison rules. Changing those rules only
+affects new links; ranking/tie-breaker choices apply immediately to the whole
+table. Link history includes the rule snapshot. All score-sheet rows count;
+legal-lineup rules, automatic forfeits, individual awards, and payouts are not
+implemented. Review these test standings against a hand-calculated recap.
 
 Use **All leagues** when you need the master season list or want to create,
 archive, restore, or revisit a different league. Use **Home** for the

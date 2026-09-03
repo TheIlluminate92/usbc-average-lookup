@@ -134,12 +134,16 @@ Requirements:
 Round robin generation currently guarantees one appearance per team per round,
 one meeting per pair over a complete cycle, rotating lane pairs, and explicit
 BYEs for odd team counts. An operator can correct a lane pair without changing
-the matchup. The next increment will connect rounds to score sheets and add
-manual matchup correction before points are calculated.
+the matchup. Schema version 5 now connects rounds to score sheets explicitly
+and derives finalized match results. Manual matchup corrections remain pending;
+an incorrectly linked week can be reopened and unlinked with a logged reason.
 
 ## Configurable points
 
-Point rules belong to the league season. Open decisions include:
+Implemented: league-level scratch/handicap comparison, game and series points,
+and split/no-point ties. Each linked round snapshots these rules. Table ranking
+can use series wins, game wins, or points with optional pinfall tie breakers.
+Open or future decisions include:
 
 - scratch or handicap comparison;
 - points per game;
@@ -155,7 +159,10 @@ pattern rather than overwrite the source silently.
 
 ## Standings
 
-Planned team standings:
+The first team standings tab implements series wins/losses/ties, game wins,
+combined game/series points, pinfall, and tied ranks. Only linked Final weeks
+count; reopening immediately excludes their results. BYEs and unsupported
+forfeit outcomes award nothing. Future extensions include:
 
 - wins, losses, and ties where applicable;
 - game and series points;

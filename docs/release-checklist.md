@@ -206,6 +206,21 @@ database copy used.
 - Release notes identify the build as pre-alpha/unofficial and link to the
   documentation.
 
+## 14. Matchup and standings regression pass
+
+- Upgrade a copy of a v4 database; confirm v4 backup, scores, and schedules survive.
+- Link a round to a Draft week; verify cross-league and duplicate links are rejected.
+- Open scores from Schedule and verify the exact week, including in a popped-out tab.
+- Hand-check game points, series points, ties, zero scores, and scratch/handicap results.
+- Verify no points for Draft/unlinked weeks, BYEs, or unsupported forfeit outcomes.
+- Attempt to finalize with a scheduled opponent missing; verify it is blocked.
+- Reopen/correct/finalize and watch Schedule and Standings refresh in other windows.
+- Change rules and verify existing links retain their points-rule snapshots.
+- Unlink with a reason; confirm scores remain and history records the change.
+- Verify tied ranks, pinfall tie breakers, and round-robin tournament scores.
+- Then run the full bug hunt: registration/identity carryover, team/league roster
+  changes, score history, popup lifecycle, refresh, and 200-bowler local workload.
+
 ## Release blockers
 
 Do not promote a build with:

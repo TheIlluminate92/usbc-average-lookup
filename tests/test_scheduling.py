@@ -157,7 +157,7 @@ def test_schema_three_database_is_backed_up_and_upgraded(tmp_path) -> None:
     assert upgraded.competitions[0].competition_format is CompetitionFormat.ROUND_ROBIN
     assert path.with_name("bowling-manager.schema-v3-backup.db").exists()
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
         assert connection.execute(
             "SELECT name FROM sqlite_master WHERE name = 'competition_matches'"
         ).fetchone()

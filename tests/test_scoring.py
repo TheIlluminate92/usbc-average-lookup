@@ -332,7 +332,7 @@ def test_schema_one_database_is_backed_up_and_upgraded(tmp_path) -> None:
     assert upgraded.competitions[0].games_per_session == 3
     assert path.with_name("bowling-manager.schema-v1-backup.db").exists()
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
         assert connection.execute(
             "SELECT name FROM sqlite_master WHERE name = 'score_change_log'"
         ).fetchone()
@@ -354,6 +354,6 @@ def test_schema_two_change_log_is_upgraded_with_team_identity(tmp_path) -> None:
             row[1]
             for row in connection.execute("PRAGMA table_info(score_change_log)")
         }
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
     assert "team_id" in columns
     assert path.with_name("bowling-manager.schema-v2-backup.db").exists()

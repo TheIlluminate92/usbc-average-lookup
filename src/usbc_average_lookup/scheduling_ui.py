@@ -15,6 +15,8 @@ from usbc_average_lookup.services.scheduling import (
     CompetitionRound,
     ScheduleStore,
 )
+from usbc_average_lookup.services.scoring import SessionStatus
+from usbc_average_lookup.services.standings import StandingsStore
 from usbc_average_lookup.ui_helpers import ButtonHint
 from usbc_average_lookup.workspace import LeagueWorkspaceContext
 
@@ -26,12 +28,15 @@ class ScheduleDesk(ttk.Frame):
         store: RegistrationStore | None,
         status_callback: Callable[[str], None],
         workspace_context: LeagueWorkspaceContext,
+        open_scores: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(parent, style="App.TFrame")
         self.registration_store = store
         self.schedule_store = ScheduleStore(store) if store is not None else None
         self.status_callback = status_callback
         self.workspace_context = workspace_context
+        self.open_scores = open_scores
+        self.standings_store = StandingsStore(store) if store else None
         self.round_var = tk.StringVar()
         self.round_by_label: dict[str, CompetitionRound] = {}
         self.matches: dict[str, CompetitionMatch] = {}
@@ -91,6 +96,10 @@ class ScheduleDesk(ttk.Frame):
             state=tk.DISABLED,
         )
         self.lane_button.grid(row=0, column=2, padx=(10, 0))
+        self.score_button = ttk.Button(controls, text="Link scores…", command=self._open_scores)
+        self.score_button.grid(row=0, column=3, padx=(8, 0))
+        self.unlink_button = ttk.Button(controls, text="Unlink…", command=self._unlink)
+        self.unlink_button.grid(row=0, column=4, padx=(8, 0))
         ButtonHint(
             self.generate_button,
             "Build a full round-robin cycle with rotating lane pairs and BYEs for odd team counts.",
@@ -106,14 +115,16 @@ class ScheduleDesk(ttk.Frame):
         table_frame.rowconfigure(0, weight=1)
         self.table = ttk.Treeview(
             table_frame,
-            columns=("lanes", "left", "right", "status"),
+            columns=("lanes", "left", "right", "status", "pins", "points"),
             show="headings",
         )
         for column, label, width, stretch in (
             ("lanes", "Lane pair", 110, False),
             ("left", "Team", 260, True),
             ("right", "Opponent", 260, True),
-            ("status", "Status", 130, False),
+            ("status", "Result", 210, True),
+            ("pins", "Series (left / right)", 145, False),
+            ("points", "Points (left / right)", 145, False),
         ):
             self.table.heading(column, text=label)
             self.table.column(
@@ -125,6 +136,9 @@ class ScheduleDesk(ttk.Frame):
         self.table.configure(yscrollcommand=scroll.set)
         self.table.grid(row=0, column=0, sticky="nsew")
         scroll.grid(row=0, column=1, sticky="ns")
+        horizontal = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.table.xview)
+        horizontal.grid(row=1, column=0, sticky="ew")
+        self.table.configure(xscrollcommand=horizontal.set)
         self.table.bind("<<TreeviewSelect>>", lambda _event: self._update_actions())
         self.table.bind("<Double-1>", lambda _event: self._change_lane())
 
@@ -132,7 +146,7 @@ class ScheduleDesk(ttk.Frame):
             self,
             text=(
                 "The schedule keeps matchups and lane pairs together. "
-                "Scores and standings will connect to these rounds next."
+                "Link a score week explicitly; only finalized scores count toward standings."
             ),
             style="Muted.TLabel",
         )
@@ -188,6 +202,9 @@ class ScheduleDesk(ttk.Frame):
             None,
         )
 
+    def close(self) -> None:
+        self._unsubscribe_context()
+
     def _round(self) -> CompetitionRound | None:
         return self.round_by_label.get(self.round_var.get())
 
@@ -200,7 +217,9 @@ class ScheduleDesk(ttk.Frame):
             return
         matches = self.schedule_store.list_matches(round_.id)
         self.matches = {match.id: match for match in matches}
+        results = {r.match_id: r for r in self.standings_store.round_results(round_.id)}
         for match in matches:
+            result = results[match.id]
             self.table.insert(
                 "",
                 tk.END,
@@ -209,7 +228,11 @@ class ScheduleDesk(ttk.Frame):
                     match.lane_pair,
                     match.left_team_name,
                     match.right_team_name or "BYE",
-                    match.status.value,
+                    result.status,
+                    (f"{result.left_total} / {result.right_total}"
+                     if result.left_total is not None else "—"),
+                    (f"{result.left_points} / {result.right_points}"
+                     if result.status == "Final" else "—"),
                 ),
             )
         self._update_actions()
@@ -223,6 +246,39 @@ class ScheduleDesk(ttk.Frame):
         self.lane_button.configure(
             state=tk.NORMAL if match is not None and not match.is_bye else tk.DISABLED
         )
+        round_ = self._round()
+        linked = (self.standings_store.linked_session(round_.id)
+                  if self.standings_store and round_ else None)
+        self.score_button.configure(
+            text="Open scores" if linked else "Link scores…",
+            state=tk.NORMAL if round_ and self.open_scores else tk.DISABLED,
+        )
+        self.unlink_button.configure(state=tk.NORMAL if linked else tk.DISABLED)
+
+    def _open_scores(self) -> None:
+        round_ = self._round()
+        if not round_ or not self.standings_store or not self.open_scores:
+            return
+        linked = self.standings_store.linked_session(round_.id)
+        if linked:
+            self.open_scores(linked)
+            return
+        LinkScoresDialog(self, self.standings_store, round_, self.open_scores)
+
+    def _unlink(self) -> None:
+        round_ = self._round()
+        if not round_ or not self.standings_store:
+            return
+        reason = simpledialog.askstring(
+            "Unlink scores", "Reason for unlinking this score week (scores are kept):", parent=self,
+        )
+        if reason is None:
+            return
+        try:
+            self.standings_store.unlink(round_.id, reason)
+        except RegistrationDataError as error:
+            messagebox.showerror("Could not unlink", str(error), parent=self)
+        self.refresh()
 
     def _generate(self) -> None:
         competition = self._competition()
@@ -273,3 +329,62 @@ class ScheduleDesk(ttk.Frame):
             return
         self.status_callback(f"Moved {match.matchup} to lanes {lane}–{lane + 1}")
         self._render_matches()
+
+
+class LinkScoresDialog(tk.Toplevel):
+    def __init__(self, parent: tk.Misc, store: StandingsStore, round_: CompetitionRound,
+                 open_scores: Callable[[str], None]) -> None:
+        super().__init__(parent)
+        self.title(f"Link scores — {round_.display_name}")
+        self.transient(parent.winfo_toplevel())
+        self.grab_set()
+        self.store, self.round, self.open_scores = store, round_, open_scores
+        sessions = store.scores.list_sessions(round_.competition_id)
+        self.sessions = {s.display_name: s for s in sessions if s.status is SessionStatus.DRAFT}
+        self.choice = tk.StringVar(value=next(iter(self.sessions), ""))
+        body = ttk.Frame(self, padding=16)
+        body.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(body, text="Choose an existing Draft score week:").pack(anchor="w")
+        ttk.Combobox(body, textvariable=self.choice, values=list(self.sessions),
+                     state="readonly", width=55).pack(fill=tk.X, pady=8)
+        ttk.Button(body, text="Link selected week", command=self._link).pack(fill=tk.X)
+        self.create = ttk.Button(body, text=f"Create and link week {round_.round_number}",
+                                 command=self._create)
+        self.create.pack(fill=tk.X, pady=8)
+        if any(s.week_number == round_.round_number for s in sessions):
+            self.create.configure(state=tk.DISABLED)
+        ttk.Label(body, wraplength=450, text=(
+            "Each week can belong to one round. Final weeks must be reopened first. "
+            "The current standings points rules will be saved with this link."
+        )).pack(pady=8)
+        self.error = ttk.Label(body, wraplength=450)
+        self.error.pack()
+        ttk.Button(body, text="Cancel", command=self.destroy).pack()
+        self.bind("<Escape>", lambda _event: self.destroy())
+
+    def _link(self) -> None:
+        session = self.sessions.get(self.choice.get())
+        if session:
+            self._finish(session.id)
+
+    def _create(self) -> None:
+        try:
+            session = self.store.scores.create_session(
+                self.round.competition_id, self.round.round_number, self.round.scheduled_on,
+            )
+        except RegistrationDataError as error:
+            self.error.configure(text=str(error))
+            return
+        self.sessions[session.display_name] = session
+        self.choice.set(session.display_name)
+        self.create.configure(state=tk.DISABLED)
+        self._finish(session.id)
+
+    def _finish(self, session_id: str) -> None:
+        try:
+            self.store.link(self.round.id, session_id)
+        except RegistrationDataError as error:
+            self.error.configure(text=str(error))
+            return
+        self.destroy()
+        self.open_scores(session_id)

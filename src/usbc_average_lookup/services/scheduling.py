@@ -242,7 +242,7 @@ class ScheduleStore:
                 duplicate = connection.execute(
                     """
                     SELECT 1 FROM competition_matches
-                    WHERE round_id = ? AND id <> ? AND lane_start = ?
+                    WHERE round_id = ? AND id <> ? AND ABS(lane_start - ?) < 2
                     """,
                     (row["round_id"], match_id, lane_start),
                 ).fetchone()

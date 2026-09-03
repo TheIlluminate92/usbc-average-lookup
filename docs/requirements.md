@@ -61,8 +61,13 @@ Windows user profile in a schema-versioned SQLite database.
 - Rotate lane pairs from a configurable first lane and allow an operator to
   correct a lane assignment.
 - Preserve scheduled team-name snapshots when the live roster is renamed.
-- Connect rounds to score sheets and implement elimination advancement in a
-  later 0.7 increment.
+- Explicitly link one Draft score week to one round in the same competition.
+- Derive team standings only from finalized linked scores, using snapshotted
+  game/series points, scratch/handicap comparison, and split or no-point ties.
+- Support ranking by series wins, game wins, or points with optional pinfall
+  tie breakers. BYEs and unsupported forfeit outcomes earn no points.
+- Keep elimination advancement, legal-lineup enforcement, and manual matchup
+  corrections for later increments.
 
 ### Teams and rosters
 
@@ -277,8 +282,7 @@ Windows user profile in a schema-versioned SQLite database.
 - Automatically choosing an ambiguous member.
 - Scraping rendered BOWL.com HTML.
 - Recalculating BOWL.com's Standard Composite from league rows.
-- Matchups, lane assignments, points, standings, and leaderboards until the
-  scoring foundation is validated.
+- Individual award leaderboards and automatic forfeit/legal-lineup decisions.
 
 ## Planned next layer
 
@@ -286,9 +290,9 @@ Windows user profile in a schema-versioned SQLite database.
    and up to 200 bowlers.
 2. Checkbox-style multi-league registration, remembered filters, and a more
    keyboard-friendly scoring grid.
-3. Match schedule, lane/pair assignments, configurable game/series points,
-   ties, forfeits, and position rounds.
-4. Standings and player/team leaderboards derived from finalized score sheets.
+3. Focused bug hunt on refresh, roster changes, corrections, links, standings,
+   and upgrades, followed by manual matchups, forfeits, and position rounds.
+4. Player award leaderboards derived from finalized score sheets.
 5. Persisted raw league activities and league-selectable prior-average sources.
 6. Recap-sheet import/export after representative files are available.
 

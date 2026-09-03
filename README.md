@@ -18,7 +18,7 @@ The repository and executable still use the historical name
 ## Download
 
 The current portable Windows test build is
-[v0.7.0-alpha.2](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.7.0-alpha.2).
+[v0.7.0-alpha.3](https://github.com/TheIlluminate92/usbc-average-lookup/releases/tag/v0.7.0-alpha.3).
 Download `USBC-Average-Lookup-Windows.zip`, extract the entire folder, and run
 `USBC-Average-Lookup.exe`.
 
@@ -56,6 +56,9 @@ another tab or window. Middle-click also closes an extra top-level tab.
     explicit weekly matchups and BYEs, and allows lane-pair corrections.
   - **Scores** stores permanent weekly score sheets, individual
     games, calculated team totals, and one combined history/corrections view.
+  - **Standings** ranks teams from explicitly linked, finalized match results.
+    Configure game/series points, scratch or handicap comparison, ties, and
+    ranking by series wins, game wins, or points.
   - **Rules** keeps league details, average/handicap rules, scoring
     defaults, and the linked player pool together.
   - **Players** maintains one permanent identity per person and
@@ -143,8 +146,13 @@ See the [user guide](docs/user-guide.md) for detailed operating instructions.
   screen.
 - Member name search follows the BOWL.com frontend's first page of ten results.
   For very common names, a membership ID is the reliable search path.
-- Schedules are not yet connected to score sheets, match results, points,
-  standings, leaderboards, or recap-sheet exports.
+- Link rounds to Draft score weeks explicitly from **Schedule → Link scores…**.
+  Existing Final weeks must be reopened before linking. BYEs, forfeits,
+  postponed/cancelled matches, and unlinked/Draft weeks award no points.
+- All score-sheet rows count. Legal-lineup limits, automatic forfeits,
+  position rounds, individual awards, and recap exports remain unimplemented.
+- Points rules are snapshotted when linking a round. Rule changes affect future
+  links; ranking and tie breakers apply to the entire standings table.
 - Single elimination and Custom/manual formats can be selected, but their
   schedule builders are not implemented yet.
 - There is no bracket, side-pot, payout, or other money-handling module.
@@ -287,8 +295,8 @@ docs/                     User, architecture, requirements, API, and release doc
    weekly schedule and occasional tournaments.
 2. Replace multi-selection gestures with clearer checkbox-style controls and
    make score entry more keyboard-friendly.
-3. Connect scheduled matchups to weekly scores, add configurable points, and
-   derive standings only from finalized score sheets.
+3. Run a focused bug hunt on cross-window refresh, roster changes, score
+   corrections, schedule links, standings, and schema upgrades before more features.
 4. Add single-elimination generation after round-robin scoring is verified.
 5. Retain raw league activities so a league can select prior-league or adjusted
    averages instead of only Standard Composite.

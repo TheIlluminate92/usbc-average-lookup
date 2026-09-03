@@ -31,6 +31,7 @@ from usbc_average_lookup.services.registration import (
     RosterRole,
     Team,
 )
+from usbc_average_lookup.standings_ui import StandingsDesk
 from usbc_average_lookup.ui_helpers import ButtonHint
 from usbc_average_lookup.workspace import (
     LeagueWorkspaceContext,
@@ -157,6 +158,10 @@ class RegistrationDesk(ttk.Frame):
         self.section_tabs.add(self.teams_tab, text="Teams")
         self.section_tabs.add(self.schedule_tab, text="Schedule")
         self.section_tabs.add(self.scores_tab, text="Scores")
+        self.standings_tab = ttk.Frame(
+            self.section_tabs, style="App.TFrame", padding=(10, 8, 10, 10)
+        )
+        self.section_tabs.add(self.standings_tab, text="Standings")
         self.section_tabs.add(self.rules_tab, text="Rules")
         self.section_tabs.add(self.players_tab, text="Players")
         self.section_tabs.add(self.competitions_tab, text="All leagues")
@@ -340,6 +345,7 @@ class RegistrationDesk(ttk.Frame):
             self.store,
             self.status_callback,
             workspace_context=self.workspace_context,
+            open_scores=self._open_scheduled_scores,
         )
         self.schedule_desk.pack(fill=tk.BOTH, expand=True)
         self.scoring_desk = ScoringDesk(
@@ -350,6 +356,8 @@ class RegistrationDesk(ttk.Frame):
             edit_locks=self.score_edit_locks,
         )
         self.scoring_desk.pack(fill=tk.BOTH, expand=True)
+        self.standings_desk = StandingsDesk(self.standings_tab, self.store, self.workspace_context)
+        self.standings_desk.pack(fill=tk.BOTH, expand=True)
         for widget, hint in (
             (self.multi_add_button, "Register in several leagues with a separate team for each."),
             (self.team_button, "Enter a team name and paste its bowlers together."),
@@ -367,6 +375,11 @@ class RegistrationDesk(ttk.Frame):
     def _refresh_active_workspaces(self) -> None:
         self.schedule_desk.refresh()
         self.scoring_desk.refresh()
+        self.standings_desk.refresh()
+
+    def _open_scheduled_scores(self, session_id: str) -> None:
+        self.select_section("Scores")
+        self.scoring_desk.open_session(session_id)
 
     def _build_overview_tab(self) -> None:
         tab = self.overview_tab
@@ -960,6 +973,8 @@ class RegistrationDesk(ttk.Frame):
         self.schedule_desk.refresh()
         self.scoring_desk.refresh()
         self._render_rules_summary()
+
+        self.standings_desk.refresh()
 
     def _render_workspace_overview(self) -> None:
         self.workspace_queue.delete(*self.workspace_queue.get_children())
@@ -2291,6 +2306,7 @@ class RegistrationDesk(ttk.Frame):
     def close(self) -> None:
         self._unsubscribe_context()
         self.scoring_desk.close()
+        self.schedule_desk.close()
         for window in tuple(self.team_roster_windows.values()):
             window.destroy()
         for _worker_number in range(2):

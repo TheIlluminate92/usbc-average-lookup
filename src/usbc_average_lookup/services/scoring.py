@@ -253,6 +253,7 @@ class ScoringStore:
             raise RegistrationDataError(f"Score sheet could not be created: {error}") from error
         except sqlite3.DatabaseError as error:
             raise RegistrationDataError(f"Score sheet could not be created: {error}") from error
+        self.registrations._notify_change()
         return session
 
     def session_history(
@@ -379,6 +380,7 @@ class ScoringStore:
             ) from error
         except sqlite3.DatabaseError as error:
             raise RegistrationDataError(f"Player could not be added: {error}") from error
+        self.registrations._notify_change()
 
     def add_vacancy(self, session_id: str, team_id: str) -> None:
         session = self.get_session(session_id)
@@ -414,6 +416,7 @@ class ScoringStore:
                 connection.commit()
         except sqlite3.DatabaseError as error:
             raise RegistrationDataError(f"Vacancy could not be added: {error}") from error
+        self.registrations._notify_change()
 
     def remove_line(self, line_id: str, reason: str = "") -> None:
         line, session = self._line_and_session(line_id)
@@ -468,6 +471,7 @@ class ScoringStore:
                 connection.commit()
         except sqlite3.DatabaseError as error:
             raise RegistrationDataError(f"Score-sheet row could not be removed: {error}") from error
+        self.registrations._notify_change()
 
     def save_line_scores(
         self,
@@ -602,6 +606,7 @@ class ScoringStore:
                 connection.commit()
         except sqlite3.DatabaseError as error:
             raise RegistrationDataError(f"Scores could not be saved: {error}") from error
+        self.registrations._notify_change()
 
     def team_totals(self, session_id: str) -> list[TeamGameTotals]:
         session = self.get_session(session_id)
@@ -640,7 +645,34 @@ class ScoringStore:
             raise RegistrationDataError(
                 f"{missing} game result{'s are' if missing != 1 else ' is'} still missing"
             )
+        with closing(self.registrations._connect()) as connection:
+            link = connection.execute(
+                "SELECT round_id FROM round_score_links WHERE session_id = ?", (session.id,)
+            ).fetchone()
+            if link:
+                matches = connection.execute(
+                    "SELECT left_team_id, right_team_id FROM competition_matches "
+                    "WHERE round_id = ?",
+                    (link[0],),
+                ).fetchall()
+                expected = {team for match in matches for team in match if team}
+                required = {team for match in matches if match[1] for team in match}
+                actual = {view.line.team_id for view in sheet}
+                if not required <= actual or not actual <= expected:
+                    raise RegistrationDataError(
+                        "Every scheduled opponent needs a score row; "
+                        "remove teams that are not in this round before finalizing"
+                    )
         self._set_session_status(session.id, SessionStatus.FINAL)
+
+    def linked_round_number(self, session_id: str) -> int | None:
+        with closing(self.registrations._connect()) as connection:
+            row = connection.execute(
+                "SELECT r.round_number FROM round_score_links l "
+                "JOIN competition_rounds r ON r.id = l.round_id WHERE l.session_id = ?",
+                (session_id,),
+            ).fetchone()
+        return row[0] if row else None
 
     def reopen_session(self, session_id: str, reason: str) -> None:
         session = self.get_session(session_id)
@@ -674,6 +706,7 @@ class ScoringStore:
                 connection.commit()
         except sqlite3.DatabaseError as error:
             raise RegistrationDataError(f"Score sheet could not be reopened: {error}") from error
+        self.registrations._notify_change()
 
     def change_log(self, session_id: str) -> list[ScoreChange]:
         self.get_session(session_id)
@@ -704,6 +737,7 @@ class ScoringStore:
                 connection.commit()
         except sqlite3.DatabaseError as error:
             raise RegistrationDataError(f"Score sheet could not be updated: {error}") from error
+        self.registrations._notify_change()
 
     def _insert_line(
         self,

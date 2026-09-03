@@ -69,7 +69,8 @@ def test_popping_out_registration_tab_preserves_league_context() -> None:
 
 
 @pytest.mark.parametrize(
-    "section", ["Home", "Teams", "Schedule", "Scores", "Rules", "Players", "All leagues"]
+    "section",
+    ["Home", "Teams", "Schedule", "Scores", "Standings", "Rules", "Players", "All leagues"],
 )
 def test_popping_out_management_tab_preserves_section_and_league(section: str) -> None:
     class Sections:

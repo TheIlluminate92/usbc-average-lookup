@@ -9,7 +9,6 @@ from tkinter import messagebox, simpledialog, ttk
 from usbc_average_lookup.services.average_rules import AverageRounding
 from usbc_average_lookup.services.registration import (
     Competition,
-    CompetitionKind,
     RegistrationDataError,
     RegistrationStore,
     RegistrationView,
@@ -254,7 +253,6 @@ class ScoringDesk(ttk.Frame):
             (
                 competition
                 for competition in self.registration_store.competitions
-                if competition.kind is CompetitionKind.LEAGUE
             ),
             key=lambda item: (item.season, item.name.casefold()),
             reverse=True,
@@ -285,6 +283,16 @@ class ScoringDesk(ttk.Frame):
 
     def _competition(self) -> Competition | None:
         return self.competition_by_label.get(self.competition_var.get())
+
+    def open_session(self, session_id: str) -> None:
+        if self.scoring_store is None:
+            return
+        session = self.scoring_store.get_session(session_id)
+        self.workspace_context.select(session.competition_id)
+        self.refresh()
+        self.session_var.set(session.display_name)
+        self.team_filter_var.set("All teams")
+        self._session_changed()
 
     def _session(self) -> LeagueSession | None:
         return self.session_by_label.get(self.session_var.get())
@@ -439,8 +447,10 @@ class ScoringDesk(ttk.Frame):
             for game in view.games
         )
         possible = len(self.current_sheet) * session.games_per_player
+        round_number = scoring.linked_round_number(session.id)
+        schedule_label = f"Round {round_number}" if round_number else "Not linked"
         self.session_status_label.configure(
-            text=f"{session.status.value} • {entered} of {possible} games entered"
+            text=f"{session.status.value} • {entered}/{possible} games entered • {schedule_label}"
         )
         self.final_button.configure(
             text="Reopen week" if session.status is SessionStatus.FINAL else "Finalize week"

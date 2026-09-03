@@ -5,6 +5,21 @@ database/UI changes that are not yet stable public contracts.
 
 ## Unreleased
 
+## v0.7.0-alpha.3 — 2026-09-03
+
+- Connected schedule rounds to explicit, unique score-week links with Open scores.
+- Added a pop-out-capable Standings tab with configurable scratch/handicap,
+  game/series points, ties, ranking, and pinfall tie breakers.
+- Snapshotted scoring rules per link and logged link/unlink history.
+- Excluded Draft, unlinked, BYE, postponed/cancelled, and unsupported forfeit
+  results; reopening and refinalizing scores recalculates standings.
+- Blocked finalization when a scheduled opponent has no score row.
+- Enabled round-robin tournament score sheets as well as league weeks.
+- Fixed overlapping lane-pair assignments and shared refresh after score writes.
+- Added schema version 5 with an automatic pre-upgrade version-4 backup.
+- Queued a focused bug hunt next; legal lineups, individual awards, elimination
+  advancement, and payouts remain deferred.
+
 ## v0.7.0-alpha.2 — 2026-09-03
 
 - Shortened management tabs to Home, Teams, Schedule, Scores, Rules, Players,
