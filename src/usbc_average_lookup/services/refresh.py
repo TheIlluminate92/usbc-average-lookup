@@ -14,6 +14,7 @@ from usbc_average_lookup.services.bowl_api import (
     AuthenticationExpiredError,
     BowlApi,
     BowlApiError,
+    IncompleteMemberSearchError,
     RateLimitedError,
 )
 from usbc_average_lookup.services.sanitize import sanitize
@@ -36,10 +37,17 @@ def refresh_one(
         if cancel.is_set():
             return RefreshEvent(bowler_id, "Cancelled")
         # Saved membership IDs always bypass name searching.
+        filters = {}
+        if not row["membership_id"]:
+            if row["search_state"]:
+                filters["state"] = row["search_state"]
+            if row["search_zip"]:
+                filters["zip_code"] = row["search_zip"]
         matches = list(
             api.search_members(
                 name="" if row["membership_id"] else row["display_name"],
                 membership_id=row["membership_id"] or "",
+                **filters,
             )
         )
         if cancel.is_set():
@@ -81,6 +89,10 @@ def refresh_one(
         if warning:
             database.save_status(canonical_id, "Partial refresh", note)
         return RefreshEvent(canonical_id, "Partial refresh" if warning else "Refreshed", note)
+    except IncompleteMemberSearchError as error:
+        note = f"Showing {len(error.members)} matches from an incomplete search. {error}"
+        database.save_status(bowler_id, "Choose member", note, error.members)
+        return RefreshEvent(bowler_id, "Choose member", note)
     except ApiCancelledError:
         return RefreshEvent(bowler_id, "Cancelled")
     except RateLimitedError as error:
