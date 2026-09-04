@@ -1,8 +1,8 @@
 """Desktop integration checks run with the real Tk widgets on Windows CI."""
 
-import gc
 import os
 import tkinter as tk
+from queue import Queue
 from threading import Event
 from time import monotonic, sleep
 
@@ -11,17 +11,20 @@ import pytest
 from usbc_average_lookup.database import BowlerDatabase
 from usbc_average_lookup.database_app import AverageLookupApp
 from usbc_average_lookup.models import CompositeAverage, InputBowler, Member
-from usbc_average_lookup.services.auth import AuthSession, AuthState, SignInCancelledError
+from usbc_average_lookup.services.auth import (
+    AuthSession,
+    AuthState,
+    SignInCancelledError,
+    WebViewAuthenticator,
+)
 from usbc_average_lookup.ui import DetailDialog, ExportDialog
 
 
-@pytest.fixture
-def app(tmp_path):
-    # Dispose previous Tk interpreter cycles before initializing another one.
-    # Collecting an old interpreter during Tcl's init.tcl load can close the
-    # new interpreter's file channel on Windows.
-    gc.collect()
-    db = BowlerDatabase(tmp_path / "ui.sqlite3")
+@pytest.fixture(scope="module")
+def desktop(tmp_path_factory):
+    # The real app uses one Tk interpreter per process. Reuse it here too;
+    # repeatedly tearing down Tcl on Windows can fail during its next startup.
+    db = BowlerDatabase(tmp_path_factory.mktemp("desktop") / "ui.sqlite3")
     try:
         window = AverageLookupApp(db)
     except tk.TclError as error:
@@ -29,8 +32,6 @@ def app(tmp_path):
             raise
         pytest.skip(f"Desktop Tk unavailable: {error}")
     window.withdraw()
-    errors = []
-    window.report_callback_exception = lambda *args: errors.append(args)
     yield window
     try:
         for callback in window.tk.call("after", "info"):
@@ -38,6 +39,34 @@ def app(tmp_path):
         window.destroy()
     except tk.TclError:
         pass
+
+
+@pytest.fixture
+def app(desktop, tmp_path):
+    window = desktop
+    window.database = BowlerDatabase(tmp_path / "ui.sqlite3")
+    window.authenticator = WebViewAuthenticator()
+    window.auth_session = AuthSession(AuthState.SIGNED_OUT)
+    window.auth_generation += 1
+    window.events = Queue()
+    window.cancel = Event()
+    window.signin_cancel = Event()
+    window.busy = window.signing_in = window.closing = False
+    window.query.set("")
+    window.filter.set("All")
+    window.sort_column, window.sort_reverse = "name", False
+    window.render()
+    errors = []
+    window.report_callback_exception = lambda *args: errors.append(args)
+    scaling = window.tk.call("tk", "scaling")
+    yield window
+    window.cancel.set()
+    window.signin_cancel.set()
+    for child in window.winfo_children():
+        if isinstance(child, tk.Toplevel):
+            child.destroy()
+    window.tk.call("tk", "scaling", scaling)
+    window.withdraw()
     assert not errors
 
 
