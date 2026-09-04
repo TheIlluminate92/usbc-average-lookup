@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
-from time import monotonic, sleep
+from threading import Event, Lock
+from time import monotonic
 
 import webview
 
@@ -18,6 +19,8 @@ def _send(payload: dict[str, str]) -> None:
 
 def run_private_sign_in(timeout_seconds: int) -> None:
     sent = False
+    closed = Event()
+    send_lock = Lock()
     window = webview.create_window(
         "Sign in to BOWL.com — Average Assistant",
         "https://webapps.bowl.com/USBCFindA/Home/Member",
@@ -29,10 +32,24 @@ def run_private_sign_in(timeout_seconds: int) -> None:
         text_select=True,
     )
 
-    def watch_for_session(target_window) -> None:
+    def finish(payload: dict[str, str]) -> bool:
         nonlocal sent
+        with send_lock:
+            if sent:
+                return False
+            _send(payload)
+            sent = True
+            return True
+
+    def window_closed(*_args) -> None:
+        closed.set()
+        finish({"error": "The sign-in window was closed"})
+
+    window.events.closed += window_closed
+
+    def watch_for_session(target_window) -> None:
         deadline = monotonic() + timeout_seconds
-        while monotonic() < deadline:
+        while monotonic() < deadline and not closed.is_set():
             try:
                 values = target_window.evaluate_js(
                     """(() => [
@@ -44,14 +61,12 @@ def run_private_sign_in(timeout_seconds: int) -> None:
             except Exception:
                 token = ""
             if token:
-                _send({"token": token})
-                sent = True
-                target_window.destroy()
+                if finish({"token": token}):
+                    target_window.destroy()
                 return
-            sleep(0.5)
-        _send({"error": "BOWL.com sign-in timed out"})
-        sent = True
-        target_window.destroy()
+            closed.wait(0.5)
+        if not closed.is_set() and finish({"error": "BOWL.com sign-in timed out"}):
+            target_window.destroy()
 
     try:
         webview.start(
@@ -60,10 +75,9 @@ def run_private_sign_in(timeout_seconds: int) -> None:
             gui="edgechromium",
             private_mode=True,
         )
-        if not sent:
-            _send({"error": "The sign-in window was closed"})
+        finish({"error": "The sign-in window was closed"})
     except Exception as error:
-        _send({"error": f"Could not open the private sign-in window: {error}"})
+        finish({"error": f"Could not open the private sign-in window: {error}"})
 
 
 def main() -> None:

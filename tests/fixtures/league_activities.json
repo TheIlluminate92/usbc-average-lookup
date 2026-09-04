@@ -1,0 +1,57 @@
+{
+  "isSuccess": true,
+  "validationErrors": [],
+  "errors": [],
+  "data": {
+    "results": [
+      {
+        "lid": "league-2025-a",
+        "lname": "Example Monday League",
+        "season": "W",
+        "cid": "center-1",
+        "cname": "Example Center",
+        "aid": "association-1",
+        "aname": "Example Association",
+        "anum": "00000",
+        "avg": 148,
+        "games": 87,
+        "year": "2025",
+        "sport": false,
+        "challenge": false,
+        "rollngrow": false,
+        "bumper": false,
+        "stringpin": false,
+        "pattern": "1",
+        "hand": "",
+        "adjavg": 0
+      },
+      {
+        "lid": "league-2025-b",
+        "lname": "Example String-Pin League",
+        "season": "S",
+        "cid": "center-1",
+        "cname": "Example Center",
+        "aid": "association-1",
+        "aname": "Example Association",
+        "anum": "00000",
+        "avg": 160,
+        "games": 12,
+        "year": "2025",
+        "sport": false,
+        "challenge": false,
+        "rollngrow": false,
+        "bumper": false,
+        "stringpin": true,
+        "pattern": "1",
+        "hand": "",
+        "adjavg": 0
+      }
+    ],
+    "totalCount": 2,
+    "totalPages": 1,
+    "pageSize": 1000,
+    "pageIndex": 1,
+    "sortKey": "",
+    "sortDir": ""
+  }
+}

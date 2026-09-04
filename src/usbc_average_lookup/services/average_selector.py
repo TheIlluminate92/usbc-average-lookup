@@ -28,4 +28,3 @@ def select_latest_standard(
             raise ValueError(f"Unexpected composite-average year: {record.year!r}") from error
 
     return max(eligible, key=year_key)
-

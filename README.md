@@ -1,154 +1,100 @@
-# USBC Average Lookup
+# Average Assistant
 
-A small Windows desktop utility for turning a list of bowler names into
-`Name,Average` results using BOWL.com's JSON-backed member search and composite
-average data.
+A standalone Windows bowler database for BOWL.com member data, average history,
+and BTM26+ exports. Bowlers stay saved between runs; import new people, refresh
+when needed, then choose the stored average to export.
 
-> [!IMPORTANT]
-> This is an early, unofficial foundation. It is not affiliated with or endorsed
-> by the United States Bowling Congress (USBC) or BOWL.com. Endpoint details,
-> authentication requirements, and permission to automate access must be
-> confirmed before real lookups are enabled.
+## Everyday workflow
 
-## Intended workflow
+1. Open the app to your saved bowler directory.
+2. Add a bowler or import CSV, XLSX, TSV, TXT, or JSON. Existing USBC IDs reuse
+   saved records. Name-only duplicates are reviewed before reusing a confirmed member.
+3. Sign in to BOWL.com in the private sign-in window.
+4. Refresh selected, visible/filtered, or all bowlers. Progress appears as each
+   result is saved. Cancel stops further work and retains completed refreshes.
+5. Double-click a bowler for member details, all stored composite averages,
+   revisions, league activity, and sanitized API snapshots.
+6. Export selected, visible, or all bowlers. Choose Composite, League, or Adjusted
+   league data; latest/highest/specific year/type, hand, minimum games, or a manual
+   stored record per bowler. Review missing averages before saving.
 
-1. Open the app; it handles sign-in only if BOWL.com requires it.
-2. Choose a roster file, or use **Single lookup** for one bowler by name or
-   membership ID.
-3. Click **Look Up Averages**.
-4. Pick the right person only when the app finds more than one match.
-5. Click **Save Results** to create the JSON result file.
+## BTM26+ CSV
 
-The app never asks for or stores a BOWL.com password. Authentication opens the
-real BOWL.com page in a private sign-in window owned by Average Assistant. It
-does not open tabs in Edge, Chrome, or Brave. **Sign out** and closing the app
-discard the in-memory session; the private window does not retain cookies or
-browser storage.
-Version 0.3.0 also removes the app-owned browser profiles left by older builds;
-it does not touch the user's normal browser data.
-
-## Result states
-
-Every input name receives exactly one visible result:
-
-- `Found`
-- `Not found`
-- `Multiple matches`
-- `No average`
-- `Inactive member`
-- `Login expired`
-- `API error`
-
-Only `Found` rows belong in the clean `Name,Average` export. All other rows are
-retained in the UI and issue export with an explanatory note.
-
-## Input formats
-
-The model accepts `.csv` and `.txt` files with comma, tab, pipe, or semicolon
-delimiters. A header is optional:
-
-```csv
-Name,Membership ID
-Alex Bowler,1234-567890
-Jamie Bowler,
-```
-
-It also accepts one entry per line:
+The dedicated export writes these seven columns:
 
 ```text
-Alex Bowler (1234-567890)
-Jamie Bowler
+First Name,Middle Initial,Last Name,Gender,Book Average,Book Games,USBC ID Number
 ```
 
-## JSON output
+In BTM's CSV import wizard, skip **1** header line and map the columns. Map
+**Middle Initial** to BTM's **Middle Name** field. The confirmed import field list
+has no team field: assign teams inside BTM after importing. See
+[CDE's import guide](https://support.cdesoftware.com/kb/a3070/import-from-file.aspx).
 
-Every input row remains visible in the output, including failures:
+Year values are BOWL.com's season-ending year: **2025 = 2024–2025**. Average and
+games always come from the same selected stored record. Missing averages default
+to blocking export; explicitly choose Blank or Skip to proceed. Generic CSV/XLSX
+include year, classification, source, association and status context; JSON is also
+available. Export never deletes or changes saved history.
 
-```json
-{
-  "schemaVersion": 1,
-  "generatedAt": "2026-08-30T12:00:00+00:00",
-  "summary": {
-    "processed": 2,
-    "found": 1,
-    "not_found": 1
-  },
-  "bowlers": [
-    {
-      "name": "Alex Bowler",
-      "membershipId": "1234-567890",
-      "average": 187,
-      "status": "Found",
-      "notes": null
-    }
-  ]
-}
+## Saved data
+
+The permanent database is stored at:
+
+```text
+%LOCALAPPDATA%\Average Assistant\bowlers.sqlite3
 ```
 
-## What is included
+It retains normalized member identity, association/state, gender, middle initial,
+membership dates/type/flags, all returned composite records and changes, normalized
+league activity, and sanitized API snapshots. No bearer tokens or authorization
+headers are saved. Unrelated name-search candidates are not saved as bowler snapshots.
 
-- A runnable Tkinter Windows GUI shell
-- Domain models for members, composite averages, and lookup outcomes
-- Verified selection logic for the newest standard composite record
-- Browser-based BOWL.com sign-in through the genuine site; passwords are never
-  exposed to the application
-- JSON export containing every input row, status, average, and notes
-- Unit tests and a GitHub Actions workflow
-- Requirements, architecture, and API discovery notes under [`docs/`](docs/)
+Use **Back up** for a consistent standalone copy, including completed refreshes.
+To restore, close the app and replace the database with that backup. Database schema
+upgrades run automatically in transactions; newer unsupported schemas are rejected.
+Window size, search/filter/sort, and the last export folder are remembered.
 
-## Run locally
+## Run from source
 
-Python 3.11 or newer is recommended.
+Requires Python 3.11+ on Windows and the Microsoft Edge WebView2 Runtime.
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 python -m usbc_average_lookup
 ```
 
-The sign-in flow opens one private WebView2 window containing the genuine
-BOWL.com page and waits for the site to establish an authenticated API session.
-The temporary session token is held only in memory and is never written to
-application logs or configuration. The entire private WebView process is ended
-after sign-in, on sign-out, and when Average Assistant closes.
+Closing the BOWL.com sign-in window or clicking Cancel sign-in returns quietly to
+the app. The directory and exports work offline. A new sign-in is required after
+restarting. HTTP 401/403 or rate limits stop the current batch; sign in again or
+wait before retrying. A failed refresh preserves the last successful data.
 
-## Run tests
+## Development and verification
 
 ```powershell
+python -m ruff check .
 python -m pytest
 ```
 
-## Project layout
+Windows CI includes desktop integration tests for search, dialogs, export rules,
+progress updates, and sign-in cancellation. Service tests cover migrations,
+identity reuse, retained history, pagination, sanitization, cancellation, and
+export formats. Live BOWL.com sign-in and BTM import require operator acceptance.
+The Windows build workflow packages the application and private sign-in helper.
 
-```text
-src/usbc_average_lookup/
-  app.py                 Windows GUI shell
-  models.py              Shared member, average, and result types
-  services/
-    auth.py              Private WebView2 sign-in boundary
-    average_selector.py  Composite-average selection rule
-    bowl_api.py          Member-search and average API boundary
-    exports.py           Results and issues CSV output
-tests/                    Unit tests
-docs/                     Requirements, architecture, and discovery notes
-```
+The implementation is split into SQLite storage (`database.py`), collection and
+export services (`services/`), and desktop presentation (`database_app.py`, `ui.py`).
+See [database design](docs/database-design.md) for schema and behavior details.
 
-## Next milestones
+## Scope
 
-1. Finish the manual-average review workflow and complete independent
-   break-testing before merging it to `main`.
-2. Confirm BOWL.com/USBC terms and acceptable request volume before broader use.
-3. Test signed-out, expired-session, rate-limit, and unexpected-response behavior
-   against the real endpoints.
-4. Complete the final release checklist on the packaged Windows build, especially
-   privacy, process cleanup, memory, and large-roster checks.
-5. Package a signed or clearly identified portable Windows executable.
-6. Define the acceptance and release criteria for promoting the experimental
-   review workflow to a normal release.
+This app does not contain league registration, scheduling, scoring, or standings.
+That development is preserved separately in
+[usbc-league-manager](https://github.com/TheIlluminate92/usbc-league-manager).
 
-See [`docs/requirements.md`](docs/requirements.md) for acceptance criteria and
-[`docs/api-notes.md`](docs/api-notes.md) for what is known versus still unknown.
-Before a build is considered ready, run the permanent
-[`final release checklist`](docs/release-checklist.md), including memory,
-process-cleanup, workload, and privacy checks.
+Harvesting currently covers the verified member, composite-average, and
+league-activity endpoints. `relatedaverages` still needs a sanitized request and
+response sample before integration. Older 0.3 design documents are retained for
+historical context; the database design above describes the current app.

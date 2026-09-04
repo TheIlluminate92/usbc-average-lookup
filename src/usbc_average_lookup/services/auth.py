@@ -8,6 +8,7 @@ from enum import StrEnum
 from os import environ
 from pathlib import Path
 from shutil import rmtree
+from threading import Event
 from typing import Any
 
 AUTH_MESSAGE_PREFIX = "AVERAGE_ASSISTANT_AUTH:"
@@ -17,6 +18,10 @@ class AuthState(StrEnum):
     SIGNED_OUT = "Not signed in"
     SIGNED_IN = "Signed in"
     EXPIRED = "Session expired"
+
+
+class SignInCancelledError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,8 +44,11 @@ class WebViewAuthenticator:
         self._timeout_seconds = timeout_seconds
         self._process: subprocess.Popen[str] | None = None
 
-    def sign_in(self) -> AuthSession:
+    def sign_in(self, cancel: Event | None = None) -> AuthSession:
         self.sign_out()
+        cancel = cancel if cancel is not None else Event()
+        if cancel.is_set():
+            raise SignInCancelledError("The sign-in window was closed")
         process = subprocess.Popen(
             _sign_in_helper_command(self._timeout_seconds),
             stdout=subprocess.PIPE,
@@ -52,11 +60,15 @@ class WebViewAuthenticator:
         )
         self._process = process
         try:
+            if cancel.is_set():
+                raise SignInCancelledError("The sign-in window was closed")
             try:
                 output, error_output = process.communicate(timeout=self._timeout_seconds + 15)
             except subprocess.TimeoutExpired as error:
                 _stop_process(process)
                 raise TimeoutError("BOWL.com sign-in timed out") from error
+            if cancel.is_set():
+                raise SignInCancelledError("The sign-in window was closed")
             try:
                 payload = _payload_from_helper_output(output)
             except RuntimeError:
@@ -139,7 +151,10 @@ def _session_from_payload(payload: Any) -> AuthSession:
         return AuthSession(AuthState.SIGNED_IN, bearer_token=token.strip())
     message = payload.get("error")
     if isinstance(message, str) and message.strip():
-        raise RuntimeError(message.strip())
+        cleaned = message.strip()
+        if cleaned.casefold() == "the sign-in window was closed":
+            raise SignInCancelledError(cleaned)
+        raise RuntimeError(cleaned)
     raise RuntimeError("BOWL.com sign-in did not return a session")
 
 

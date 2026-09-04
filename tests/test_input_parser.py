@@ -79,6 +79,4 @@ def test_parses_excel_and_lists_nonempty_sheets(tmp_path) -> None:
 
     assert workbook_sheet_names(path) == ["League A", "League B"]
     assert parse_input_file(path) == [InputBowler("Alex Bowler", "1234-567890")]
-    assert parse_input_file(path, "League B") == [
-        InputBowler("Jamie Bowler", "9876-54321")
-    ]
+    assert parse_input_file(path, "League B") == [InputBowler("Jamie Bowler", "9876-54321")]
