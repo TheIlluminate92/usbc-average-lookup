@@ -21,6 +21,7 @@ from usbc_average_lookup.services.auth import (
 from usbc_average_lookup.services.bowl_api import HttpBowlApi
 from usbc_average_lookup.services.input_parser import parse_input_file, workbook_sheet_names
 from usbc_average_lookup.services.refresh import refresh_bowlers
+from usbc_average_lookup.theme import apply_theme, status_tag
 from usbc_average_lookup.ui import (
     AddDialog,
     ChoiceDialog,
@@ -57,31 +58,25 @@ class AverageLookupApp(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.close_app)
 
     def _style(self):
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure(".", font=("Segoe UI", 10), background="#F3F5F7", foreground="#183044")
-        style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"))
-        style.configure("TButton", padding=(10, 7))
-        style.configure("Treeview", background="white", fieldbackground="white", rowheight=32)
-        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), padding=7)
-        style.map(
-            "Treeview", background=[("selected", "#194E70")], foreground=[("selected", "white")]
-        )
-        self.configure(background="#F3F5F7")
+        apply_theme(self)
 
     def _build(self):
         page = ttk.Frame(self, padding=20)
         page.pack(fill="both", expand=True)
-        header = ttk.Frame(page)
+        header = ttk.Frame(page, style="Header.TFrame", padding=(16, 12))
         header.pack(fill="x", pady=(0, 14))
-        ttk.Label(header, text="Average Assistant", style="Title.TLabel").pack(side="left")
-        self.sign_button = ttk.Button(header, text="Sign in", command=self.toggle_sign_in)
+        ttk.Label(header, text="Average Assistant", style="HeaderTitle.TLabel").pack(side="left")
+        self.sign_button = ttk.Button(
+            header, text="Sign in", command=self.toggle_sign_in, style="Primary.TButton"
+        )
         self.sign_button.pack(side="right")
-        self.auth_label = ttk.Label(header, text="BOWL.com • Not signed in")
+        self.auth_label = ttk.Label(header, text="BOWL.com • Not signed in", style="Header.TLabel")
         self.auth_label.pack(side="right", padx=14)
         actions = ttk.Frame(page)
         actions.pack(fill="x", pady=(0, 14))
-        self.add_button = ttk.Button(actions, text="Add bowler", command=self.add_bowler)
+        self.add_button = ttk.Button(
+            actions, text="Add bowler", command=self.add_bowler, style="Navy.TButton"
+        )
         self.add_button.pack(side="left")
         self.import_button = ttk.Button(actions, text="Import…", command=self.import_file)
         self.import_button.pack(side="left", padx=6)
@@ -96,7 +91,9 @@ class AverageLookupApp(tk.Tk):
             self.refresh_buttons[scope] = button
         self.cancel_button = ttk.Button(actions, text="Cancel", command=self.cancel_refresh)
         self.cancel_button.pack(side="left")
-        self.export_button = ttk.Button(actions, text="Export…", command=self.export)
+        self.export_button = ttk.Button(
+            actions, text="Export…", command=self.export, style="Primary.TButton"
+        )
         self.export_button.pack(side="right")
         self.backup_button = ttk.Button(actions, text="Back up…", command=self.backup)
         self.backup_button.pack(side="right", padx=6)
@@ -116,7 +113,7 @@ class AverageLookupApp(tk.Tk):
             state="readonly",
             width=18,
         ).pack(side="left", padx=8)
-        self.count = ttk.Label(filters, text="")
+        self.count = ttk.Label(filters, text="", style="Count.TLabel")
         self.count.pack(side="right")
         footer = ttk.Frame(page)
         footer.pack(side="bottom", fill="x", pady=(12, 0))
@@ -129,7 +126,7 @@ class AverageLookupApp(tk.Tk):
         self.details_button = ttk.Button(footer, text="Details / history", command=self.details)
         self.details_button.pack(side="right")
         self.delete_button = ttk.Button(
-            footer, text="Delete selected…", command=self.delete_selected
+            footer, text="Delete selected…", command=self.delete_selected, style="Danger.TButton"
         )
         self.delete_button.pack(side="right", padx=6)
         self.progress = ttk.Progressbar(page, mode="determinate")
@@ -186,6 +183,7 @@ class AverageLookupApp(tk.Tk):
                 "",
                 "end",
                 iid=str(row["id"]),
+                tags=(status_tag(row["status"]),),
                 values=(
                     row["display_name"],
                     row["membership_id"] or "—",
