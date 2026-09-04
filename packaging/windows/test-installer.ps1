@@ -29,7 +29,13 @@ function Assert-DataPreserved {
     }
 }
 function Run-Installer([string]$PathToExe, [string[]]$Arguments) {
-    $process = Start-Process -FilePath $PathToExe -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+    # ProcessStartInfo.ArgumentList preserves spaces inside /DIR= paths. Start-Process
+    # flattens its array and can silently split a selected folder into extra arguments.
+    $info = [System.Diagnostics.ProcessStartInfo]::new($PathToExe)
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    foreach ($argument in $Arguments) { $info.ArgumentList.Add($argument) }
+    $process = [System.Diagnostics.Process]::Start($info)
     if (!$process.WaitForExit(120000)) { throw 'Installer operation timed out.' }
     if ($process.ExitCode -ne 0) { throw "Installer operation failed: $($process.ExitCode)" }
 }
