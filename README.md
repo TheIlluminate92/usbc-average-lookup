@@ -8,17 +8,26 @@ when needed, then choose the stored average to export.
 
 **[Download the latest Windows release](https://github.com/TheIlluminate92/usbc-average-lookup/releases/latest)**
 
-1. Download `Average-Assistant-<version>-Windows.zip` from the release's **Assets**.
-2. Extract the entire ZIP to a folder. Keep `_internal` beside the application.
-3. Run `USBC-Average-Lookup.exe`. No Python installation is needed.
+1. Download `Average-Assistant-<version>-Setup.exe` from the release's **Assets**.
+2. Run Setup. It installs for your Windows account and offers a desktop shortcut.
+3. Open **Average Assistant** from the Start menu. No Python installation is needed.
 4. Add or import bowlers, then sign in to BOWL.com when you want to refresh data.
 
 Windows and the Microsoft Edge WebView2 Runtime are required. A BOWL.com account
 is needed for authenticated refreshes; saved records and exports work offline.
 
-**Updating:** close the app and extract the new release into a new folder.
-Your saved bowler database is reused automatically. Use **Back up** in the app
-before updating if you want a separate copy.
+**Updating:** close the app and run the newer Setup file. Your saved bowler database
+is reused automatically, including data from the ZIP version. Use **Back up** in
+the app before updating if you want a separate copy.
+
+**Uninstalling:** remove Average Assistant from Windows Settings → Apps. This
+removes the installed application and shortcuts but keeps your saved bowler database.
+The application installs in `%LOCALAPPDATA%\Programs\Average Assistant`; your
+database stays in the separate data folder documented below.
+
+**Portable option:** download `Average-Assistant-<version>-Windows.zip`, extract
+the entire ZIP, and run `USBC-Average-Lookup.exe`. Keep `_internal` beside the EXE.
+The portable and installed versions use the same saved bowler database.
 
 See the [changelog](CHANGELOG.md) for changes. Older **Bowling Manager** alpha
 releases are historical league-manager builds; use **Average Assistant** for this app.

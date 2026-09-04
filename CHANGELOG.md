@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.4 — Windows installer
+
+- Added a single Setup EXE with a Start menu shortcut and optional desktop shortcut.
+- Installs for the current Windows account and adds a Windows Settings uninstall entry.
+- Reinstalling and uninstalling preserve the separate saved bowler database.
+- Retained the portable ZIP download.
+- Added packaged installation, reinstall, shortcut, and uninstall checks on Windows CI.
+
 ## 0.4.3 — Bug fixes and About
 
 - Added About with the installed version, creator credits, acknowledgments, and project link.
