@@ -1,5 +1,6 @@
 """Desktop integration checks run with the real Tk widgets on Windows CI."""
 
+import gc
 import os
 import tkinter as tk
 from threading import Event
@@ -16,6 +17,10 @@ from usbc_average_lookup.ui import DetailDialog, ExportDialog
 
 @pytest.fixture
 def app(tmp_path):
+    # Dispose previous Tk interpreter cycles before initializing another one.
+    # Collecting an old interpreter during Tcl's init.tcl load can close the
+    # new interpreter's file channel on Windows.
+    gc.collect()
     db = BowlerDatabase(tmp_path / "ui.sqlite3")
     try:
         window = AverageLookupApp(db)
@@ -28,6 +33,8 @@ def app(tmp_path):
     window.report_callback_exception = lambda *args: errors.append(args)
     yield window
     try:
+        for callback in window.tk.call("after", "info"):
+            window.after_cancel(callback)
         window.destroy()
     except tk.TclError:
         pass
