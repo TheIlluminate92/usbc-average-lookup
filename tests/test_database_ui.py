@@ -163,6 +163,10 @@ def test_export_save_is_visible_at_small_size_and_writes_file(app, monkeypatch, 
     from usbc_average_lookup import ui
 
     app.tk.call("tk", "scaling", scaling)
+    # A transient dialog is hidden while its parent is withdrawn. Show the test
+    # window so these assertions measure real, mapped widgets on Windows.
+    app.deiconify()
+    app.update()
     bowler_id = populate(app)
     missing = app.database.import_bowlers([InputBowler("John Smith")]).added[0]
     dialog = ExportDialog(app, app.database, {"All": [bowler_id, missing]})
