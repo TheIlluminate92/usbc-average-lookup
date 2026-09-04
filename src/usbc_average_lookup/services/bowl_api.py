@@ -1,36 +1,30 @@
 import json
 from collections.abc import Callable, Sequence
+from threading import Event
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from usbc_average_lookup.models import CompositeAverage, Member
+from usbc_average_lookup.models import CompositeAverage, LeagueAverage, Member
+from usbc_average_lookup.services.sanitize import sanitize
 
 
 class BowlApi(Protocol):
     """Contract for the two JSON-backed operations used by the app."""
 
-    def search_members(
-        self, name: str = "", membership_id: str = ""
-    ) -> Sequence[Member]: ...
+    def search_members(self, name: str = "", membership_id: str = "") -> Sequence[Member]: ...
 
-    def get_composite_averages(
-        self, prefix: str, suffix: str
-    ) -> Sequence[CompositeAverage]: ...
+    def get_composite_averages(self, prefix: str, suffix: str) -> Sequence[CompositeAverage]: ...
 
 
 class UnconfiguredBowlApi:
     """Safe placeholder used until sanitized endpoint details are confirmed."""
 
-    def search_members(
-        self, name: str = "", membership_id: str = ""
-    ) -> Sequence[Member]:
+    def search_members(self, name: str = "", membership_id: str = "") -> Sequence[Member]:
         raise NotImplementedError("BOWL.com member-search endpoint is not configured yet")
 
-    def get_composite_averages(
-        self, prefix: str, suffix: str
-    ) -> Sequence[CompositeAverage]:
+    def get_composite_averages(self, prefix: str, suffix: str) -> Sequence[CompositeAverage]:
         raise NotImplementedError("BOWL.com composite-average endpoint is not configured yet")
 
 
@@ -39,6 +33,14 @@ class AuthenticationExpiredError(RuntimeError):
 
 
 class BowlApiError(RuntimeError):
+    pass
+
+
+class RateLimitedError(BowlApiError):
+    pass
+
+
+class ApiCancelledError(RuntimeError):
     pass
 
 
@@ -51,20 +53,60 @@ class HttpBowlApi:
 
     BASE_URL = "https://apps1.bowl.com/Mobile/api/v1"
 
-    def __init__(self, token_provider: Callable[[], str], timeout: float = 20.0) -> None:
+    def __init__(
+        self, token_provider: Callable[[], str], timeout: float = 20.0, cancel: Event | None = None
+    ) -> None:
         self._token_provider = token_provider
         self._timeout = timeout
+        self._cancel = cancel
+        self.snapshots: dict[str, object] = {}
 
-    def search_members(
-        self, name: str = "", membership_id: str = ""
-    ) -> Sequence[Member]:
+    def _pages(
+        self, path: str, parameters: dict[str, str], *, allow_unsuccessful: bool = False
+    ) -> list[dict]:
+        """Collect every reported page; incomplete pagination is never a success."""
+        records: list[dict] = []
+        pages: list[dict] = []
+        page_key = "Page" if "Page" in parameters else "page"
+        for page in range(1, 1001):
+            if self._cancel is not None and self._cancel.is_set():
+                raise ApiCancelledError()
+            payload = self._get_json(
+                path, {**parameters, page_key: str(page)}, allow_unsuccessful=allow_unsuccessful
+            )
+            data = payload.get("data")
+            if not isinstance(data, dict) and payload.get("isSuccess") is True:
+                raise BowlApiError("BOWL.com returned an unexpected response")
+            rows = data.get("results") if isinstance(data, dict) else []
+            if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+                raise BowlApiError("BOWL.com returned an unexpected response")
+            if not rows and payload.get("isSuccess") is not True:
+                detail = _response_error(payload)
+                if detail:
+                    raise BowlApiError(str(sanitize(detail)))
+            pages.append(sanitize(payload))
+            records.extend(rows)
+            try:
+                total = data.get("totalPages", 1) if isinstance(data, dict) else 1
+                if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+                    raise ValueError("Invalid page count")
+            except (ValueError, TypeError) as error:
+                raise BowlApiError("BOWL.com returned invalid pagination") from error
+            if page >= total:
+                self.snapshots[path] = pages
+                return records
+            if not rows:
+                raise BowlApiError("BOWL.com returned an incomplete page; retry refresh")
+        raise BowlApiError("BOWL.com returned too many pages; narrow the search")
+
+    def search_members(self, name: str = "", membership_id: str = "") -> Sequence[Member]:
         prefix, suffix = _split_membership_id(membership_id)
         first, last = _split_name(name) if not membership_id else ("", "")
         # BOWL.com exposes name and membership-ID searches at different routes.
         # Sending a name to members/id returns the site's generic administrator
         # error instead of the candidate list shown by its own member-search page.
         path = "members/id" if membership_id else "members/"
-        payload = self._get_json(
+        records = self._pages(
             path,
             {
                 "First": first,
@@ -76,27 +118,14 @@ class HttpBowlApi:
                 "Radius": "5",
                 "State": "",
                 "Page": "1",
-                "Size": "10",
+                "Size": "200",
             },
             allow_unsuccessful=True,
         )
-        data = payload.get("data")
-        records = data.get("results", []) if isinstance(data, dict) else []
-        if not isinstance(records, list):
-            raise BowlApiError("BOWL.com returned an unexpected member-search response")
-        members = [_parse_member(record) for record in records]
-        if members:
-            return members
-        if payload.get("isSuccess") is not True:
-            detail = _response_error(payload)
-            if detail:
-                raise BowlApiError(detail)
-        return []
+        return [_parse_member(record) for record in records]
 
-    def get_composite_averages(
-        self, prefix: str, suffix: str
-    ) -> Sequence[CompositeAverage]:
-        payload = self._get_json(
+    def get_composite_averages(self, prefix: str, suffix: str) -> Sequence[CompositeAverage]:
+        records = self._pages(
             "compositeaverages",
             {
                 "size": "1000",
@@ -105,11 +134,13 @@ class HttpBowlApi:
                 "suffix": suffix,
             },
         )
-        data = payload.get("data")
-        records = data.get("results", []) if isinstance(data, dict) else []
-        if not isinstance(records, list):
-            raise BowlApiError("BOWL.com returned an unexpected average response")
         return [_parse_composite_average(record) for record in records]
+
+    def get_league_averages(self, prefix: str, suffix: str) -> Sequence[LeagueAverage]:
+        records = self._pages(
+            "leagueactivities", {"size": "1000", "page": "1", "prefix": prefix, "suffix": suffix}
+        )
+        return [_parse_league_average(record) for record in records]
 
     def _get_json(
         self,
@@ -129,6 +160,10 @@ class HttpBowlApi:
             with urlopen(request, timeout=self._timeout) as response:
                 payload = json.load(response)
         except HTTPError as error:
+            if error.code == 429:
+                raise RateLimitedError(
+                    "BOWL.com rate limit reached; wait before refreshing again"
+                ) from error
             if error.code in (401, 403):
                 raise AuthenticationExpiredError("Sign in to BOWL.com again") from error
             raise BowlApiError(f"BOWL.com returned HTTP {error.code}") from error
@@ -140,7 +175,7 @@ class HttpBowlApi:
             detail = _response_error(payload)
             if allow_unsuccessful:
                 return payload
-            raise BowlApiError(detail or "BOWL.com did not complete the lookup")
+            raise BowlApiError(str(sanitize(detail)) or "BOWL.com did not complete the lookup")
         return payload
 
 
@@ -189,12 +224,56 @@ def _parse_member(record: dict) -> Member:
             suffix=str(record["suffix"]),
             first_name=str(record["first"]),
             last_name=str(record["last"]),
-            active=bool(record["active"]),
+            active=_required_boolean(record, "active"),
             association=str(record.get("assn", "")),
             association_state=str(record.get("assnstate", "")),
+            middle_initial=str(record.get("init") or ""),
+            gender=str(record.get("gender") or ""),
+            membership_from=str(record.get("from") or ""),
+            membership_thru=str(record.get("thru") or ""),
+            product=str(record.get("prod") or ""),
+            flags={
+                key: value for key, value in sanitize(record).items() if isinstance(value, bool)
+            },
+            raw=sanitize(record),
         )
     except (KeyError, TypeError) as error:
         raise BowlApiError("BOWL.com returned an incomplete member record") from error
+
+
+def _required_boolean(record: dict, field: str) -> bool:
+    value = record.get(field)
+    if not isinstance(value, bool):
+        raise BowlApiError(f"BOWL.com returned an invalid {field} flag")
+    return value
+
+
+def _parse_league_average(record: dict) -> LeagueAverage:
+    try:
+        return LeagueAverage(
+            league_id=str(record["lid"]),
+            league_name=str(record["lname"]),
+            season=str(record["season"]),
+            center_id=str(record["cid"]),
+            center_name=str(record["cname"]),
+            association_id=str(record["aid"]),
+            association_name=str(record["aname"]),
+            association_number=str(record["anum"]),
+            year=str(record["year"]),
+            average=int(record["avg"]),
+            games=int(record["games"]),
+            sport=_required_boolean(record, "sport"),
+            challenge=_required_boolean(record, "challenge"),
+            roll_and_grow=_required_boolean(record, "rollngrow"),
+            bumper=_required_boolean(record, "bumper"),
+            string_pin=_required_boolean(record, "stringpin"),
+            pattern=str(record.get("pattern") or ""),
+            hand=str(record.get("hand") or ""),
+            adjusted_average=int(record.get("adjavg") or 0),
+            raw=sanitize(record),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise BowlApiError("BOWL.com returned an incomplete league-average record") from error
 
 
 def _parse_composite_average(record: dict) -> CompositeAverage:
@@ -203,8 +282,10 @@ def _parse_composite_average(record: dict) -> CompositeAverage:
             year=str(record["year"]),
             games=int(record["games"]),
             average=int(record["avg"]),
-            sport=bool(record["sport"]),
-            challenge=bool(record["challenge"]),
+            sport=_required_boolean(record, "sport"),
+            challenge=_required_boolean(record, "challenge"),
+            hand=str(record.get("hand") or ""),
+            raw=sanitize(record),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise BowlApiError("BOWL.com returned an incomplete average record") from error

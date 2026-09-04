@@ -40,4 +40,3 @@ def test_returns_none_when_no_standard_average_exists() -> None:
 def test_rejects_unexpected_year_format() -> None:
     with pytest.raises(ValueError, match="Unexpected composite-average year"):
         select_latest_standard([average("2024-25", 170)])
-

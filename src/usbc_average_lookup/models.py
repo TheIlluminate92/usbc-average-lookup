@@ -30,6 +30,13 @@ class Member:
     active: bool
     association: str = ""
     association_state: str = ""
+    middle_initial: str = ""
+    gender: str = ""
+    membership_from: str = ""
+    membership_thru: str = ""
+    product: str = ""
+    flags: dict[str, bool] = field(default_factory=dict)
+    raw: dict = field(default_factory=dict, repr=False, compare=False)
 
     @property
     def display_name(self) -> str:
@@ -43,6 +50,32 @@ class CompositeAverage:
     average: int
     sport: bool
     challenge: bool
+    hand: str = ""
+    raw: dict = field(default_factory=dict, repr=False, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class LeagueAverage:
+    league_id: str
+    league_name: str
+    season: str
+    center_id: str
+    center_name: str
+    association_id: str
+    association_name: str
+    association_number: str
+    year: str
+    average: int
+    games: int
+    sport: bool
+    challenge: bool
+    roll_and_grow: bool
+    bumper: bool
+    string_pin: bool
+    pattern: str = ""
+    hand: str = ""
+    adjusted_average: int = 0
+    raw: dict = field(default_factory=dict, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)

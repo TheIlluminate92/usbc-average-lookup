@@ -63,16 +63,13 @@ def test_preserves_api_error_detail_for_the_fixes_screen() -> None:
 def test_replaces_generic_name_search_error_with_actionable_guidance() -> None:
     class ErrorApi(FakeApi):
         def search_members(self, name="", membership_id=""):
-            raise BowlApiError(
-                "Unexpected error occured, please contact the administrator."
-            )
+            raise BowlApiError("Unexpected error occured, please contact the administrator.")
 
     result = look_up_bowler(ErrorApi(), InputBowler("Common Bowler"))
 
     assert result.status is LookupStatus.API_ERROR
     assert result.note == (
-        "BOWL.com could not resolve this name search. "
-        "Enter a membership ID and retry."
+        "BOWL.com could not resolve this name search. Enter a membership ID and retry."
     )
 
 
@@ -86,9 +83,7 @@ def test_returns_multiple_matches() -> None:
 
 
 def test_returns_inactive_member() -> None:
-    result = look_up_bowler(
-        FakeApi([member(active=False)]), InputBowler("Former Bowler")
-    )
+    result = look_up_bowler(FakeApi([member(active=False)]), InputBowler("Former Bowler"))
 
     assert result.status is LookupStatus.INACTIVE_MEMBER
     assert len(result.candidates) == 1

@@ -29,9 +29,7 @@ def look_up_all(api: BowlApi, bowlers: Iterable[InputBowler]) -> list[LookupResu
     return [look_up_bowler(api, bowler) for bowler in bowlers]
 
 
-def resolve_selected_member(
-    api: BowlApi, bowler: InputBowler, member: Member
-) -> LookupResult:
+def resolve_selected_member(api: BowlApi, bowler: InputBowler, member: Member) -> LookupResult:
     try:
         return resolve_member(api, bowler, member)
     except AuthenticationExpiredError:
@@ -47,9 +45,7 @@ def resolve_selected_member(
         return _result(bowler, LookupStatus.API_ERROR, str(error), member=member)
 
 
-def _resolve_matches(
-    api: BowlApi, bowler: InputBowler, matches: list[Member]
-) -> LookupResult:
+def _resolve_matches(api: BowlApi, bowler: InputBowler, matches: list[Member]) -> LookupResult:
     if not matches:
         return _result(bowler, LookupStatus.NOT_FOUND, "Check the name or membership ID")
 

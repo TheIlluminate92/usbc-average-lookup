@@ -1,4 +1,5 @@
 import json
+from threading import Event
 
 import pytest
 
@@ -119,6 +120,19 @@ def test_parses_only_prefixed_helper_payload() -> None:
     output = f"diagnostic line\n{AUTH_MESSAGE_PREFIX}{json.dumps({'token': 'secret-value'})}\n"
 
     assert _payload_from_helper_output(output) == {"token": "secret-value"}
+
+
+def test_cancelled_before_start_never_opens_browser(monkeypatch):
+    cancel = Event()
+    cancel.set()
+    monkeypatch.setattr(auth.subprocess, "Popen", lambda *a, **k: pytest.fail("Browser opened"))
+    with pytest.raises(auth.SignInCancelledError):
+        WebViewAuthenticator().sign_in(cancel)
+
+
+def test_closed_window_is_a_cancel_result():
+    with pytest.raises(auth.SignInCancelledError):
+        _session_from_payload({"error": "The sign-in window was closed"})
 
 
 def test_force_kills_helper_that_does_not_stop() -> None:

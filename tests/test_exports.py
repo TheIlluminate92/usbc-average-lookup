@@ -50,15 +50,13 @@ def test_selects_full_ready_inactive_and_attention_rosters() -> None:
     ]
 
     assert len(select_results(results, ExportSubset.FULL)) == 3
-    assert [item.input_name for item in select_results(results, ExportSubset.READY)] == [
-        "Ready"
+    assert [item.input_name for item in select_results(results, ExportSubset.READY)] == ["Ready"]
+    assert [item.input_name for item in select_results(results, ExportSubset.INACTIVE)] == [
+        "Inactive"
     ]
-    assert [
-        item.input_name for item in select_results(results, ExportSubset.INACTIVE)
-    ] == ["Inactive"]
-    assert [
-        item.input_name for item in select_results(results, ExportSubset.NEEDS_ATTENTION)
-    ] == ["Missing"]
+    assert [item.input_name for item in select_results(results, ExportSubset.NEEDS_ATTENTION)] == [
+        "Missing"
+    ]
 
 
 def test_exports_csv_tsv_and_excel_with_issue_sheet(tmp_path) -> None:

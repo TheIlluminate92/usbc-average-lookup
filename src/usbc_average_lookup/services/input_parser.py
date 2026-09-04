@@ -11,9 +11,7 @@ from openpyxl import load_workbook
 
 from usbc_average_lookup.models import InputBowler
 
-_LINE_PATTERN = re.compile(
-    r"^\s*(?P<name>.+?)\s*\(\s*[*_]*(?P<id>\d{4}-\d+)[*_]*\s*\)\s*$"
-)
+_LINE_PATTERN = re.compile(r"^\s*(?P<name>.+?)\s*\(\s*[*_]*(?P<id>\d{4}-\d+)[*_]*\s*\)\s*$")
 _NAME_HEADERS = {"name", "bowler", "bowler name", "bowlername", "fullname", "full name"}
 _FIRST_HEADERS = {"first", "first name", "firstname", "given name"}
 _LAST_HEADERS = {"last", "last name", "lastname", "surname", "family name"}
@@ -28,6 +26,7 @@ _ID_HEADERS = {
     "usbc id",
     "usbcid",
     "usbc number",
+    "usbc id number",
 }
 
 
@@ -49,8 +48,7 @@ def workbook_sheet_names(path: Path) -> list[str]:
             sheet.title
             for sheet in workbook.worksheets
             if any(
-                any(_cell_text(value) for value in row)
-                for row in sheet.iter_rows(values_only=True)
+                any(_cell_text(value) for value in row) for row in sheet.iter_rows(values_only=True)
             )
         ]
     finally:
@@ -111,9 +109,9 @@ def parse_input_json(text: str) -> list[InputBowler]:
             first = _first_value(normalized, _FIRST_HEADERS)
             last = _first_value(normalized, _LAST_HEADERS)
             name = " ".join(part for part in (first, last) if part).strip()
-        if not name:
-            raise ValueError(f"JSON bowler {position} is missing a name")
         membership_id = _clean_membership_id(_first_value(normalized, _ID_HEADERS))
+        if not name and not membership_id:
+            raise ValueError(f"JSON bowler {position} is missing a name or USBC ID")
         bowlers.append(InputBowler(name, membership_id))
     return bowlers
 
@@ -157,13 +155,15 @@ def _rows_to_bowlers(rows: Sequence[Sequence[object]]) -> list[InputBowler]:
             name = " ".join(
                 part for part in (_at(row, first_index), _at(row, last_index)) if part
             ).strip()
-        else:
+        elif not has_header:
             name = _at(row, 0)
-        if not name:
-            raise ValueError(f"Row {row_number} is missing a bowler name")
+        else:
+            name = ""
 
         fallback_id_index = 1 if not has_header and len(row) > 1 else id_index
         membership_id = _clean_membership_id(_at(row, fallback_id_index))
+        if not name and not membership_id:
+            raise ValueError(f"Row {row_number} is missing a bowler name or USBC ID")
         bowlers.append(InputBowler(name, membership_id))
     return bowlers
 

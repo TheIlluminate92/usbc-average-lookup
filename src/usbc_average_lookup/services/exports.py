@@ -144,9 +144,7 @@ def export_json(
                 "notes": result.note or None,
                 "active": result.member.active if result.member else None,
                 "association": result.member.association if result.member else None,
-                "associationState": (
-                    result.member.association_state if result.member else None
-                ),
+                "associationState": (result.member.association_state if result.member else None),
             }
             for result in result_list
         ],

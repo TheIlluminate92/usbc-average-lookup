@@ -83,7 +83,7 @@ def test_member_search_uses_candidates_even_when_service_reports_an_error(
     monkeypatch,
 ) -> None:
     response = io.BytesIO(
-        b'''{
+        b"""{
             "isSuccess": false,
             "validationErrors": [],
             "errors": ["Unexpected error occured, please contact the administrator."],
@@ -111,7 +111,7 @@ def test_member_search_uses_candidates_even_when_service_reports_an_error(
                     }
                 ]
             }
-        }'''
+        }"""
     )
     monkeypatch.setattr(bowl_api, "urlopen", lambda request, timeout: response)
 
@@ -136,8 +136,7 @@ def test_member_search_uses_the_correct_route(
     def fake_urlopen(request, timeout):
         requested_urls.append(request.full_url)
         return io.BytesIO(
-            b'{"isSuccess": true, "validationErrors": [], "errors": [], '
-            b'"data": {"results": []}}'
+            b'{"isSuccess": true, "validationErrors": [], "errors": [], "data": {"results": []}}'
         )
 
     monkeypatch.setattr(bowl_api, "urlopen", fake_urlopen)
