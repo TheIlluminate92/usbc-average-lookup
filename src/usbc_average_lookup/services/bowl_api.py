@@ -13,7 +13,9 @@ from usbc_average_lookup.services.sanitize import sanitize
 class BowlApi(Protocol):
     """Contract for the two JSON-backed operations used by the app."""
 
-    def search_members(self, name: str = "", membership_id: str = "") -> Sequence[Member]: ...
+    def search_members(
+        self, name: str = "", membership_id: str = "", *, state: str = "", zip_code: str = ""
+    ) -> Sequence[Member]: ...
 
     def get_composite_averages(self, prefix: str, suffix: str) -> Sequence[CompositeAverage]: ...
 
@@ -44,6 +46,12 @@ class ApiCancelledError(RuntimeError):
     pass
 
 
+class IncompleteMemberSearchError(BowlApiError):
+    def __init__(self, members: Sequence[Member], detail: str):
+        super().__init__(detail)
+        self.members = list(members)
+
+
 class HttpBowlApi:
     """Known member-search integration with an in-memory session token.
 
@@ -62,7 +70,12 @@ class HttpBowlApi:
         self.snapshots: dict[str, object] = {}
 
     def _pages(
-        self, path: str, parameters: dict[str, str], *, allow_unsuccessful: bool = False
+        self,
+        path: str,
+        parameters: dict[str, str],
+        *,
+        allow_unsuccessful: bool = False,
+        on_page: Callable[[list[dict]], None] | None = None,
     ) -> list[dict]:
         """Collect every reported page; incomplete pagination is never a success."""
         records: list[dict] = []
@@ -84,10 +97,18 @@ class HttpBowlApi:
                 detail = _response_error(payload)
                 if detail:
                     raise BowlApiError(str(sanitize(detail)))
+            if rows and any(previous.get("data", {}).get("results") == rows for previous in pages):
+                raise BowlApiError("BOWL.com repeated a page; narrow the search and retry")
             pages.append(sanitize(payload))
             records.extend(rows)
+            if on_page:
+                on_page(rows)
             try:
-                total = data.get("totalPages", 1) if isinstance(data, dict) else 1
+                total = (
+                    data.get("totalPages", data.get("TotalPages", 1))
+                    if isinstance(data, dict)
+                    else 1
+                )
                 if isinstance(total, bool) or not isinstance(total, int) or total < 0:
                     raise ValueError("Invalid page count")
             except (ValueError, TypeError) as error:
@@ -99,30 +120,49 @@ class HttpBowlApi:
                 raise BowlApiError("BOWL.com returned an incomplete page; retry refresh")
         raise BowlApiError("BOWL.com returned too many pages; narrow the search")
 
-    def search_members(self, name: str = "", membership_id: str = "") -> Sequence[Member]:
+    def search_members(
+        self, name: str = "", membership_id: str = "", *, state: str = "", zip_code: str = ""
+    ) -> Sequence[Member]:
         prefix, suffix = _split_membership_id(membership_id)
         first, last = _split_name(name) if not membership_id else ("", "")
         # BOWL.com exposes name and membership-ID searches at different routes.
         # Sending a name to members/id returns the site's generic administrator
         # error instead of the candidate list shown by its own member-search page.
         path = "members/id" if membership_id else "members/"
-        records = self._pages(
-            path,
-            {
-                "First": first,
-                "Last": last,
-                "Prefix": prefix,
-                "Suffix": suffix,
-                "ANum": "",
-                "Zip": "",
-                "Radius": "5",
-                "State": "",
-                "Page": "1",
-                "Size": "200",
-            },
-            allow_unsuccessful=True,
-        )
-        return [_parse_member(record) for record in records]
+        members: list[Member] = []
+
+        def collect(rows):
+            members.extend([_parse_member(record) for record in rows])
+
+        try:
+            self._pages(
+                path,
+                {
+                    "First": first,
+                    "Last": last,
+                    "Prefix": prefix,
+                    "Suffix": suffix,
+                    "ANum": "",
+                    "Zip": zip_code if not membership_id else "",
+                    "Radius": "5",
+                    "State": state if not membership_id else "",
+                    "Page": "1",
+                    # Use the same small pages as BOWL.com's member-search page.
+                    "Size": "10",
+                },
+                allow_unsuccessful=True,
+                on_page=collect,
+            )
+        except RateLimitedError:
+            raise
+        except BowlApiError as error:
+            detail = str(error)
+            if not membership_id:
+                detail += ". Open Resolve identity to narrow by state or ZIP, or enter a USBC ID."
+                if members:
+                    raise IncompleteMemberSearchError(members, detail) from error
+            raise BowlApiError(detail) from error
+        return members
 
     def get_composite_averages(self, prefix: str, suffix: str) -> Sequence[CompositeAverage]:
         records = self._pages(
@@ -167,7 +207,9 @@ class HttpBowlApi:
             if error.code in (401, 403):
                 raise AuthenticationExpiredError("Sign in to BOWL.com again") from error
             raise BowlApiError(f"BOWL.com returned HTTP {error.code}") from error
-        except (URLError, TimeoutError, json.JSONDecodeError) as error:
+        except TimeoutError as error:
+            raise BowlApiError("BOWL.com took too long to respond") from error
+        except (URLError, json.JSONDecodeError) as error:
             raise BowlApiError("BOWL.com could not be reached") from error
         if not isinstance(payload, dict):
             raise BowlApiError("BOWL.com returned an unexpected response")

@@ -17,6 +17,22 @@ while refresh workers commit. The Back up command uses SQLite's online backup AP
 1. Bowler identity, normalized names/aliases, and UI settings.
 2. Current composite records, append-only change history, sanitized/versioned snapshots.
 3. Normalized league activity and its retained revisions.
+4. Optional state and ZIP filters for unresolved name searches.
+
+Select a duplicate and use **Delete selected…**, or **Delete bowler…** in its details.
+The confirmation identifies the selected names and USBC IDs. Deletion removes only
+those local records and their dependent history, atomically; it does not change BOWL.com.
+
+For common names, open **Details / history → Resolve identity**, enter a state or
+ZIP, and choose **Search again**. ZIP uses BOWL.com's five-mile radius. Signed-in
+searches start immediately; saved USBC IDs bypass these filters. Name searches use
+the site's ten-row page size, retain candidates from interrupted searches for manual
+review, and never automatically choose a member from an incomplete result set.
+Returned candidates can be filtered by name, USBC ID, association, state, or active status.
+
+The export footer remains visible when the window shrinks. **Missing average: Error**
+blocks saving until all averages match; **Blank** includes missing averages as blanks,
+and **Skip** leaves those bowlers out. The dialog explains the blocking condition.
 
 A newer schema is rejected without replacing the database. Failed migrations
 roll back. A backup is a complete standalone database and can be restored to the

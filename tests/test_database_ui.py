@@ -132,3 +132,96 @@ def test_progressive_refresh_updates_widgets_on_main_thread(app, monkeypatch):
     assert app.database.averages(bowler_id)[0]["year"] == "2026"
     assert app.progress["value"] == 1
     assert "complete" in app.status.cget("text").lower()
+
+
+def test_delete_cancel_confirm_and_busy_guard(app, monkeypatch):
+    from usbc_average_lookup import ui
+
+    bowler_id = populate(app)
+    duplicate = app.database.import_bowlers(
+        [InputBowler("Alex Bowler")], allow_same_name=True
+    ).added[0]
+    app.render()
+    app.view.selection_set(str(duplicate))
+    monkeypatch.setattr(ui.messagebox, "askyesno", lambda *a, **k: False)
+    app.delete_selected()
+    assert len(app.database.list_bowlers()) == 2
+    monkeypatch.setattr(ui.messagebox, "askyesno", lambda *a, **k: True)
+    app.busy = True
+    app.delete_selected()
+    assert app.database.get(duplicate)
+    app.busy = False
+    app.delete_selected()
+    assert app.view.get_children() == (str(bowler_id),)
+    assert app.database.averages(bowler_id)
+
+
+@pytest.mark.parametrize("scaling", [1.33, 2.0])
+def test_export_save_is_visible_at_small_size_and_writes_file(app, monkeypatch, tmp_path, scaling):
+    import csv
+
+    from usbc_average_lookup import ui
+
+    app.tk.call("tk", "scaling", scaling)
+    bowler_id = populate(app)
+    missing = app.database.import_bowlers([InputBowler("John Smith")]).added[0]
+    dialog = ExportDialog(app, app.database, {"All": [bowler_id, missing]})
+    dialog.geometry("940x560")
+    dialog.update()
+    button = dialog.save_button
+    assert button.winfo_ismapped()
+    assert button.winfo_rooty() >= dialog.winfo_rooty()
+    assert (
+        button.winfo_rooty() + button.winfo_height() <= dialog.winfo_rooty() + dialog.winfo_height()
+    )
+    assert "disabled" in button.state()
+    assert "Blank or Skip" in dialog.export_help.cget("text")
+    dialog.variables["missing"].set("Skip")
+    assert "disabled" not in button.state()
+    filename = tmp_path / "BTM.csv"
+    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: str(filename))
+    button.invoke()
+    with filename.open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 1
+    assert rows[0]["USBC ID Number"] == "1234-1"
+    assert dialog.choice[0] == 1
+
+
+def test_resolve_filter_keeps_candidate_index_and_search_options(app):
+    bowler_id = app.database.import_bowlers([InputBowler("John Smith")]).added[0]
+    candidates = [
+        Member(
+            "1",
+            "1234",
+            "1",
+            "John",
+            "Smith",
+            False,
+            association="Other USBC",
+            association_state="OH",
+        ),
+        Member(
+            "2",
+            "1234",
+            "2",
+            "John",
+            "Smith",
+            True,
+            association="Corpus Christi USBC",
+            association_state="TX",
+        ),
+    ]
+    app.database.save_status(bowler_id, "Choose member", "Choose", candidates)
+    dialog = DetailDialog(app, app.database, bowler_id)
+    dialog.match_query.set("corpus tx")
+    dialog.match_active.set("Active")
+    assert dialog.match_table.get_children() == ("1",)
+    dialog.match_table.selection_set("1")
+    dialog.pick_member()
+    assert dialog.usbc.get() == "1234-2"
+    dialog.search_state.set("TX")
+    dialog.search_again()
+    saved = app.database.get(bowler_id)
+    assert saved["search_state"] == "TX"
+    assert saved["membership_id"] is None

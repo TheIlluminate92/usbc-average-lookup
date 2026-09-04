@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -38,11 +39,42 @@ def table(parent, columns, *, height=12):
     return view
 
 
+def delete_saved_bowlers(parent, database, bowler_ids):
+    """Confirm explicit local deletion, shared by the directory and details dialog."""
+    try:
+        rows = [database.get(bowler_id) for bowler_id in bowler_ids]
+        if not rows:
+            return False
+        names = "\n".join(
+            f"• {row['display_name']} — {row['membership_id'] or 'No USBC ID'}" for row in rows[:10]
+        )
+        if len(rows) > 10:
+            names += f"\n…and {len(rows) - 10} more selected bowlers"
+        if not messagebox.askyesno(
+            "Delete selected bowlers?",
+            f"Delete {len(rows)} saved bowler(s)?\n\n{names}\n\n"
+            "Their saved averages and history will also be deleted from this app. "
+            "This cannot be undone. BOWL.com records are not changed.",
+            parent=parent,
+            default="no",
+        ):
+            return False
+        database.delete_bowlers([row["id"] for row in rows])
+        return True
+    except (ValueError, sqlite3.Error) as error:
+        messagebox.showerror("Could not delete bowlers", str(error), parent=parent)
+        return False
+
+
 class Dialog(tk.Toplevel):
     def __init__(self, parent, title, geometry="520x280"):
         super().__init__(parent)
         self.title(title)
-        self.geometry(geometry)
+        width, height = map(int, geometry.split("x"))
+        self.geometry(
+            f"{min(width, self.winfo_screenwidth() - 60)}x"
+            f"{min(height, self.winfo_screenheight() - 120)}"
+        )
         self.transient(parent)
         self.grab_set()
         self.choice = None
@@ -97,6 +129,10 @@ class DetailDialog(Dialog):
     def __init__(self, parent, database: BowlerDatabase, bowler_id: int):
         super().__init__(parent, "Bowler details and history", "940x650")
         self.database, self.bowler_id = database, bowler_id
+        footer = ttk.Frame(self.content)
+        footer.pack(side="bottom", fill="x", pady=(12, 0))
+        ttk.Button(footer, text="Close", command=self.destroy).pack(side="right")
+        ttk.Button(footer, text="Delete bowler…", command=self.delete_bowler).pack(side="left")
         row = database.get(bowler_id)
         ttk.Label(self.content, text=row["display_name"], style="Title.TLabel").pack(anchor="w")
         ttk.Label(
@@ -215,6 +251,39 @@ class DetailDialog(Dialog):
             for label, variable in [("Name", self.name), ("USBC ID", self.usbc)]:
                 ttk.Label(resolve, text=label).pack(anchor="w")
                 ttk.Entry(resolve, textvariable=variable).pack(fill="x", pady=(2, 8))
+            search_filters = ttk.Frame(resolve)
+            search_filters.pack(fill="x", pady=(0, 8))
+            self.search_state = tk.StringVar(value=row["search_state"])
+            self.search_zip = tk.StringVar(value=row["search_zip"])
+            for label, variable in [
+                ("State (optional)", self.search_state),
+                ("ZIP / 5-mile radius (optional)", self.search_zip),
+            ]:
+                ttk.Label(search_filters, text=label).pack(side="left", padx=(0, 5))
+                ttk.Entry(search_filters, textvariable=variable, width=9).pack(
+                    side="left", padx=(0, 12)
+                )
+            ttk.Button(search_filters, text="Search again", command=self.search_again).pack(
+                side="right"
+            )
+            self.match_query = tk.StringVar()
+            self.match_active = tk.StringVar(value="Any")
+            match_filters = ttk.Frame(resolve)
+            match_filters.pack(fill="x", pady=(0, 6))
+            ttk.Label(match_filters, text="Filter returned matches").pack(side="left", padx=(0, 8))
+            ttk.Entry(match_filters, textvariable=self.match_query).pack(
+                side="left", fill="x", expand=True
+            )
+            ttk.Combobox(
+                match_filters,
+                textvariable=self.match_active,
+                values=["Any", "Active", "Inactive"],
+                state="readonly",
+                width=10,
+            ).pack(side="left", padx=8)
+            ttk.Button(resolve, text="Save identity", command=self.save_identity).pack(
+                side="bottom", anchor="e", pady=8
+            )
             self.matches = stored_candidates(row)
             self.match_table = table(
                 resolve,
@@ -222,11 +291,29 @@ class DetailDialog(Dialog):
                     ("name", "Member", 190),
                     ("id", "USBC ID", 130),
                     ("assn", "Association", 230),
+                    ("state", "State", 65),
                     ("active", "Active", 65),
                 ],
                 height=6,
             )
-            for index, member in enumerate(self.matches):
+            self.match_query.trace_add("write", self.render_matches)
+            self.match_active.trace_add("write", self.render_matches)
+            self.render_matches()
+            self.match_table.bind("<<TreeviewSelect>>", self.pick_member)
+            notebook.select(resolve)
+
+    def render_matches(self, *_args):
+        self.match_table.delete(*self.match_table.get_children())
+        terms = self.match_query.get().casefold().split()
+        active = self.match_active.get()
+        for index, member in enumerate(self.matches):
+            searchable = (
+                f"{member.display_name} {member.prefix}-{member.suffix} "
+                f"{member.association} {member.association_state}".casefold()
+            )
+            if all(term in searchable for term in terms) and (
+                active == "Any" or member.active == (active == "Active")
+            ):
                 self.match_table.insert(
                     "",
                     "end",
@@ -235,16 +322,27 @@ class DetailDialog(Dialog):
                         member.display_name,
                         f"{member.prefix}-{member.suffix}",
                         member.association,
-                        member.active,
+                        member.association_state,
+                        "Yes" if member.active else "No",
                     ),
                 )
-            self.match_table.bind("<<TreeviewSelect>>", self.pick_member)
-            ttk.Button(resolve, text="Save identity", command=self.save_identity).pack(
-                anchor="e", pady=8
+
+    def delete_bowler(self):
+        if delete_saved_bowlers(self, self.database, [self.bowler_id]):
+            self.choice = "deleted"
+            self.destroy()
+
+    def search_again(self):
+        if self.database.get(self.bowler_id)["refreshed_at"]:
+            messagebox.showinfo(
+                "Verified member",
+                "This bowler already has a verified USBC ID. "
+                "Use Save identity to refresh that member.",
+                parent=self,
             )
-            if self.matches:
-                notebook.select(resolve)
-        ttk.Button(self.content, text="Close", command=self.destroy).pack(anchor="e", pady=(12, 0))
+            return
+        self.usbc.set("")
+        self.save_identity()
 
     def pick_member(self, _event=None):
         selected = self.match_table.selection()
@@ -255,7 +353,13 @@ class DetailDialog(Dialog):
 
     def save_identity(self):
         try:
-            self.database.set_identity(self.bowler_id, self.name.get(), self.usbc.get())
+            self.database.set_identity(
+                self.bowler_id,
+                self.name.get(),
+                self.usbc.get(),
+                search_state=self.search_state.get(),
+                search_zip=self.search_zip.get(),
+            )
         except ValueError as error:
             messagebox.showerror("Could not save identity", str(error), parent=self)
             return
@@ -266,7 +370,9 @@ class DetailDialog(Dialog):
 class ExportDialog(Dialog):
     def __init__(self, parent, database: BowlerDatabase, scopes: dict[str, list[int]]):
         super().__init__(parent, "Export bowlers", "1030x700")
-        self.minsize(880, 620)
+        self.minsize(
+            min(880, self.winfo_screenwidth() - 60), min(520, self.winfo_screenheight() - 120)
+        )
         self.database, self.scopes = database, scopes
         self.manual: dict[int, int] = {}
         self.preview: list[dict] = []
@@ -327,6 +433,15 @@ class ExportDialog(Dialog):
         self.minimum.trace_add("write", self.update_preview)
         self.summary = ttk.Label(self.content, text="")
         self.summary.pack(anchor="w", pady=8)
+        # Reserve the footer before packing the expanding table. At Windows display
+        # scaling or smaller window sizes the table must shrink, never the controls.
+        buttons = ttk.Frame(self.content)
+        buttons.pack(side="bottom", fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        self.save_button = ttk.Button(buttons, text="Save export…", command=self.save)
+        self.save_button.pack(side="right", padx=8)
+        self.export_help = ttk.Label(self.content, text="", wraplength=850)
+        self.export_help.pack(side="bottom", anchor="w", pady=(8, 0))
         self.view = table(
             self.content,
             [
@@ -340,18 +455,6 @@ class ExportDialog(Dialog):
             ],
         )
         self.view.bind("<Double-1>", self.choose_average)
-        ttk.Label(
-            self.content,
-            text="Manual rule: double-click a bowler to choose a stored record. "
-            "In BTM, skip 1 header line and map Middle Initial to Middle Name.\n"
-            "BTM team assignments are made inside BTM after importing.",
-            wraplength=970,
-        ).pack(anchor="w", pady=10)
-        buttons = ttk.Frame(self.content)
-        buttons.pack(fill="x")
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
-        self.save_button = ttk.Button(buttons, text="Save export…", command=self.save)
-        self.save_button.pack(side="right", padx=8)
         self.update_preview()
 
     def rule(self):
@@ -409,6 +512,15 @@ class ExportDialog(Dialog):
             missing and self.variables["missing"].get() == "Error"
         )
         self.save_button.configure(state="normal" if allowed else "disabled")
+        self.export_help.configure(
+            text=(
+                "To export, set Missing average to Blank or Skip, or resolve the missing averages."
+                if missing and self.variables["missing"].get() == "Error"
+                else "Manual: double-click a bowler to choose an average. "
+                "In BTM, skip 1 header line; "
+                "map Middle Initial to Middle Name. Assign teams in BTM after import."
+            )
+        )
 
     def source_changed(self, *_args):
         self.manual.clear()

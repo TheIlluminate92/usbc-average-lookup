@@ -16,7 +16,7 @@ from usbc_average_lookup.models import CompositeAverage, InputBowler, LeagueAver
 from usbc_average_lookup.services.bowl_api import _split_membership_id
 from usbc_average_lookup.services.sanitize import sanitize
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MIGRATIONS = (
     (
@@ -68,6 +68,10 @@ MIGRATIONS = (
             UNIQUE(bowler_id,identity_key,digest)
         )""",
         "CREATE INDEX league_averages_bowler ON league_averages(bowler_id,current)",
+    ),
+    (
+        "ALTER TABLE bowlers ADD COLUMN search_state TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE bowlers ADD COLUMN search_zip TEXT NOT NULL DEFAULT ''",
     ),
 )
 
@@ -215,14 +219,55 @@ class BowlerDatabase:
                 db.execute("INSERT INTO aliases VALUES (?,?)", (cursor.lastrowid, key))
         return ImportResult(tuple(added), tuple(reused), tuple(conflicts))
 
-    def set_identity(self, bowler_id: int, name: str, membership_id: str) -> None:
+    def delete_bowlers(self, bowler_ids: Iterable[int]) -> int:
+        """Remove selected local records and their dependent data in one transaction."""
+        ids = list(dict.fromkeys(bowler_ids))
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            for bowler_id in ids:
+                if db.execute("SELECT id FROM bowlers WHERE id=?", (bowler_id,)).fetchone() is None:
+                    raise ValueError("A selected bowler no longer exists; refresh the list")
+            for bowler_id in ids:
+                for table in (
+                    "aliases",
+                    "averages",
+                    "average_history",
+                    "snapshots",
+                    "league_averages",
+                ):
+                    db.execute(f"DELETE FROM {table} WHERE bowler_id=?", (bowler_id,))
+                db.execute("DELETE FROM bowlers WHERE id=?", (bowler_id,))
+        return len(ids)
+
+    def set_identity(
+        self,
+        bowler_id: int,
+        name: str,
+        membership_id: str,
+        *,
+        search_state: str = "",
+        search_zip: str = "",
+    ) -> None:
         """Correct an unresolved identity; never move history to a different person."""
         membership_id = membership_id.strip()
         _split_membership_id(membership_id)
         if not name.strip() and not membership_id:
             raise ValueError("Enter a name or USBC ID")
+        search_state = search_state.strip().upper()
+        search_zip = search_zip.strip()
+        if search_state and (
+            len(search_state) != 2 or not search_state.isascii() or not search_state.isalpha()
+        ):
+            raise ValueError("Enter a two-letter state abbreviation, such as TX")
+        if search_zip and (
+            len(search_zip) != 5 or not search_zip.isascii() or not search_zip.isdigit()
+        ):
+            raise ValueError("Enter a five-digit ZIP code")
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT * FROM bowlers WHERE id=?", (bowler_id,)).fetchone()
+            if row is None:
+                raise ValueError("The bowler no longer exists")
             if row["refreshed_at"] and membership_id != row["membership_id"]:
                 raise ValueError("Add a separate bowler to use a different USBC ID")
             other = db.execute(
@@ -233,8 +278,16 @@ class BowlerDatabase:
             display = " ".join(name.split()) or membership_id
             db.execute(
                 "UPDATE bowlers SET display_name=?,name_key=?,membership_id=?, "
-                "candidates_json='[]',status='Not refreshed',note='' WHERE id=?",
-                (display, name_key(display), membership_id or None, bowler_id),
+                "search_state=?,search_zip=?,candidates_json='[]',"
+                "status='Not refreshed',note='' WHERE id=?",
+                (
+                    display,
+                    name_key(display),
+                    membership_id or None,
+                    search_state,
+                    search_zip,
+                    bowler_id,
+                ),
             )
             db.execute("INSERT OR IGNORE INTO aliases VALUES (?,?)", (bowler_id, name_key(display)))
 

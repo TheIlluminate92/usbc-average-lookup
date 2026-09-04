@@ -21,7 +21,14 @@ from usbc_average_lookup.services.auth import (
 from usbc_average_lookup.services.bowl_api import HttpBowlApi
 from usbc_average_lookup.services.input_parser import parse_input_file, workbook_sheet_names
 from usbc_average_lookup.services.refresh import refresh_bowlers
-from usbc_average_lookup.ui import AddDialog, ChoiceDialog, DetailDialog, ExportDialog, table
+from usbc_average_lookup.ui import (
+    AddDialog,
+    ChoiceDialog,
+    DetailDialog,
+    ExportDialog,
+    delete_saved_bowlers,
+    table,
+)
 
 
 class AverageLookupApp(tk.Tk):
@@ -111,6 +118,22 @@ class AverageLookupApp(tk.Tk):
         ).pack(side="left", padx=8)
         self.count = ttk.Label(filters, text="")
         self.count.pack(side="right")
+        footer = ttk.Frame(page)
+        footer.pack(side="bottom", fill="x", pady=(12, 0))
+        self.status = ttk.Label(
+            footer,
+            text="Add or import bowlers. Saved records stay here between runs.",
+            wraplength=550,
+        )
+        self.status.pack(side="left")
+        self.details_button = ttk.Button(footer, text="Details / history", command=self.details)
+        self.details_button.pack(side="right")
+        self.delete_button = ttk.Button(
+            footer, text="Delete selected…", command=self.delete_selected
+        )
+        self.delete_button.pack(side="right", padx=6)
+        self.progress = ttk.Progressbar(page, mode="determinate")
+        self.progress.pack(side="bottom", fill="x", pady=(10, 0))
         self.view = table(
             page,
             [
@@ -131,17 +154,8 @@ class AverageLookupApp(tk.Tk):
         self.view.bind("<<TreeviewSelect>>", lambda _: self.update_actions())
         self.view.bind("<Double-1>", lambda _: self.details())
         self.view.bind("<Return>", lambda _: self.details())
+        self.view.bind("<Delete>", lambda _: self.delete_selected())
         self.bind("<Control-f>", lambda _: search.focus_set())
-        footer = ttk.Frame(page)
-        footer.pack(fill="x", pady=(12, 0))
-        self.status = ttk.Label(
-            footer, text="Add or import bowlers. Saved records stay here between runs."
-        )
-        self.status.pack(side="left")
-        self.details_button = ttk.Button(footer, text="Details / history", command=self.details)
-        self.details_button.pack(side="right")
-        self.progress = ttk.Progressbar(page, mode="determinate")
-        self.progress.pack(fill="x", pady=(10, 0))
 
     def sort(self, column):
         self.sort_reverse = not self.sort_reverse if self.sort_column == column else False
@@ -209,6 +223,11 @@ class AverageLookupApp(tk.Tk):
         )
         self.details_button.configure(
             state="normal" if scopes["Selected"] and not self.busy else "disabled"
+        )
+        self.delete_button.configure(
+            state="normal"
+            if scopes["Selected"] and not self.busy and not self.closing
+            else "disabled"
         )
         self.cancel_button.configure(state="normal" if self.busy else "disabled")
         self.sign_button.configure(
@@ -284,8 +303,23 @@ class AverageLookupApp(tk.Tk):
             return
         changed = DetailDialog(self, self.database, int(self.view.selection()[0])).show()
         self.render()
-        if changed:
-            self.status.configure(text="Identity saved. Select Refresh to fetch member details.")
+        if changed == "deleted":
+            self.status.configure(text="Bowler deleted from the saved database.")
+        elif changed:
+            if self.auth_session.state == AuthState.SIGNED_IN:
+                self.start_refresh("Selected", bowler_ids=[changed])
+            else:
+                self.status.configure(
+                    text="Identity/search saved. Sign in and refresh to search BOWL.com."
+                )
+
+    def delete_selected(self):
+        if self.busy or self.closing:
+            return
+        ids = self.scopes()["Selected"]
+        if delete_saved_bowlers(self, self.database, ids):
+            self.render()
+            self.status.configure(text=f"Deleted {len(ids)} saved bowler(s).")
 
     def toggle_sign_in(self):
         if self.signing_in or self.auth_session.state == AuthState.SIGNED_IN:
@@ -323,8 +357,8 @@ class AverageLookupApp(tk.Tk):
 
         Thread(target=worker, daemon=True).start()
 
-    def start_refresh(self, scope):
-        ids = self.scopes()[scope]
+    def start_refresh(self, scope, *, bowler_ids=None):
+        ids = self.scopes()[scope] if bowler_ids is None else bowler_ids
         if self.busy or not ids or self.auth_session.state != AuthState.SIGNED_IN:
             return
         self.busy = True

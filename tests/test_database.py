@@ -152,7 +152,7 @@ def test_migrates_version_one_without_losing_bowlers(tmp_path):
     assert db.get(1)["display_name"] == "Existing Bowler"
     assert db.averages(1) == []
     with db.connect() as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 def test_future_schema_is_not_modified(tmp_path):
@@ -184,3 +184,53 @@ def test_schema_migration_rolls_back_on_failure(tmp_path, monkeypatch):
         assert (
             connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall() == []
         )
+
+
+def test_delete_removes_all_dependent_data_and_keeps_other_bowlers(db, member):
+    bowler_id, _ = seed(db, member)
+    keep = db.import_bowlers([InputBowler("Other Bowler", "1234-9")]).added[0]
+    # Exercise the league foreign key even without a full API fixture.
+    with db.connect() as connection:
+        connection.execute(
+            "INSERT INTO league_averages (bowler_id,identity_key,digest,normalized_json,current,"
+            "first_seen_at,last_seen_at) VALUES (?,?,?,'{}',1,'now','now')",
+            (bowler_id, "league", "digest"),
+        )
+    assert db.delete_bowlers([bowler_id, bowler_id]) == 1
+    assert db.get(keep)["display_name"] == "Other Bowler"
+    with db.connect() as connection:
+        for table in ("aliases", "averages", "average_history", "snapshots", "league_averages"):
+            assert (
+                connection.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE bowler_id=?", (bowler_id,)
+                ).fetchone()[0]
+                == 0
+            )
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert BowlerDatabase(db.path).list_bowlers()[0]["id"] == keep
+
+
+def test_delete_invalid_selection_is_atomic(db, member):
+    bowler_id, _ = seed(db, member)
+    with pytest.raises(ValueError):
+        db.delete_bowlers([bowler_id, 999999])
+    assert db.get(bowler_id)["membership_id"] == "1234-567890"
+    assert db.averages(bowler_id)
+
+
+def test_upgrade_v3_keeps_bowlers_and_adds_search_filters(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    with sqlite3.connect(path) as connection:
+        for migration in MIGRATIONS[:3]:
+            for statement in migration:
+                connection.execute(statement)
+        connection.execute(
+            "INSERT INTO bowlers (display_name,name_key,created_at) "
+            "VALUES ('John Smith','john smith','now')"
+        )
+        connection.execute("PRAGMA user_version=3")
+    database = BowlerDatabase(path)
+    row = database.list_bowlers()[0]
+    assert row["search_state"] == row["search_zip"] == ""
+    database.set_identity(row["id"], "John Smith", "", search_state="tx", search_zip="78401")
+    assert BowlerDatabase(path).get(row["id"])["search_state"] == "TX"
