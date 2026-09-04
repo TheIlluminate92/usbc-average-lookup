@@ -19,6 +19,7 @@ from usbc_average_lookup.services.database_exports import (
     year_key,
 )
 from usbc_average_lookup.services.refresh import stored_candidates
+from usbc_average_lookup.theme import BACKGROUND, INK, TEAL, color_table
 
 
 def table(parent, columns, *, height=12):
@@ -27,6 +28,7 @@ def table(parent, columns, *, height=12):
     frame.columnconfigure(0, weight=1)
     frame.rowconfigure(0, weight=1)
     view = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings", height=height)
+    color_table(view)
     for key, title, width in columns:
         view.heading(key, text=title)
         view.column(key, width=width, minwidth=60, anchor="w")
@@ -70,6 +72,7 @@ class Dialog(tk.Toplevel):
     def __init__(self, parent, title, geometry="520x280"):
         super().__init__(parent)
         self.title(title)
+        self.configure(background=BACKGROUND)
         width, height = map(int, geometry.split("x"))
         self.geometry(
             f"{min(width, self.winfo_screenwidth() - 60)}x"
@@ -95,7 +98,9 @@ class ChoiceDialog(Dialog):
         ttk.Combobox(self.content, values=choices, textvariable=self.value, state="readonly").pack(
             fill="x", pady=10
         )
-        ttk.Button(self.content, text="Continue", command=self.accept).pack(side="right")
+        ttk.Button(
+            self.content, text="Continue", command=self.accept, style="Primary.TButton"
+        ).pack(side="right")
         ttk.Button(self.content, text="Cancel", command=self.destroy).pack(side="right", padx=8)
 
     def accept(self):
@@ -112,9 +117,9 @@ class AddDialog(Dialog):
         for label, variable in [("Bowler name", self.name), ("USBC ID (1234-567890)", self.usbc)]:
             ttk.Label(self.content, text=label).pack(anchor="w", pady=(12, 3))
             ttk.Entry(self.content, textvariable=variable).pack(fill="x")
-        ttk.Button(self.content, text="Add to database", command=self.accept).pack(
-            side="right", pady=14
-        )
+        ttk.Button(
+            self.content, text="Add to database", command=self.accept, style="Primary.TButton"
+        ).pack(side="right", pady=14)
         ttk.Button(self.content, text="Cancel", command=self.destroy).pack(side="right", padx=8)
         self.bind("<Return>", lambda _: self.accept())
 
@@ -132,7 +137,9 @@ class DetailDialog(Dialog):
         footer = ttk.Frame(self.content)
         footer.pack(side="bottom", fill="x", pady=(12, 0))
         ttk.Button(footer, text="Close", command=self.destroy).pack(side="right")
-        ttk.Button(footer, text="Delete bowler…", command=self.delete_bowler).pack(side="left")
+        ttk.Button(
+            footer, text="Delete bowler…", command=self.delete_bowler, style="Danger.TButton"
+        ).pack(side="left")
         row = database.get(bowler_id)
         ttk.Label(self.content, text=row["display_name"], style="Title.TLabel").pack(anchor="w")
         ttk.Label(
@@ -145,7 +152,19 @@ class DetailDialog(Dialog):
         notebook.pack(fill="both", expand=True)
         profile = ttk.Frame(notebook, padding=12)
         notebook.add(profile, text="Member")
-        text = tk.Text(profile, wrap="word", font=("Segoe UI", 10), height=12)
+        text = tk.Text(
+            profile,
+            wrap="word",
+            font=("Segoe UI", 10),
+            height=12,
+            background="white",
+            foreground=INK,
+            selectbackground=TEAL,
+            selectforeground="white",
+            relief="flat",
+            padx=12,
+            pady=10,
+        )
         text.pack(fill="both", expand=True)
         fields = [
             ("USBC ID", "membership_id"),
@@ -229,7 +248,18 @@ class DetailDialog(Dialog):
                 ),
             )
         notebook.add(raw_frame, text="Saved API data")
-        raw = tk.Text(raw_frame, wrap="none", font=("Consolas", 10))
+        raw = tk.Text(
+            raw_frame,
+            wrap="none",
+            font=("Consolas", 10),
+            background="white",
+            foreground=INK,
+            selectbackground=TEAL,
+            selectforeground="white",
+            relief="flat",
+            padx=10,
+            pady=8,
+        )
         raw.pack(fill="both", expand=True)
         raw.insert(
             "end",
@@ -263,9 +293,12 @@ class DetailDialog(Dialog):
                 ttk.Entry(search_filters, textvariable=variable, width=9).pack(
                     side="left", padx=(0, 12)
                 )
-            ttk.Button(search_filters, text="Search again", command=self.search_again).pack(
-                side="right"
-            )
+            ttk.Button(
+                search_filters,
+                text="Search again",
+                command=self.search_again,
+                style="Primary.TButton",
+            ).pack(side="right")
             self.match_query = tk.StringVar()
             self.match_active = tk.StringVar(value="Any")
             match_filters = ttk.Frame(resolve)
@@ -281,9 +314,9 @@ class DetailDialog(Dialog):
                 state="readonly",
                 width=10,
             ).pack(side="left", padx=8)
-            ttk.Button(resolve, text="Save identity", command=self.save_identity).pack(
-                side="bottom", anchor="e", pady=8
-            )
+            ttk.Button(
+                resolve, text="Save identity", command=self.save_identity, style="Primary.TButton"
+            ).pack(side="bottom", anchor="e", pady=8)
             self.matches = stored_candidates(row)
             self.match_table = table(
                 resolve,
@@ -318,6 +351,7 @@ class DetailDialog(Dialog):
                     "",
                     "end",
                     iid=str(index),
+                    tags=("ready" if member.active else "muted",),
                     values=(
                         member.display_name,
                         f"{member.prefix}-{member.suffix}",
@@ -438,7 +472,9 @@ class ExportDialog(Dialog):
         buttons = ttk.Frame(self.content)
         buttons.pack(side="bottom", fill="x", pady=(8, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
-        self.save_button = ttk.Button(buttons, text="Save export…", command=self.save)
+        self.save_button = ttk.Button(
+            buttons, text="Save export…", command=self.save, style="Primary.TButton"
+        )
         self.save_button.pack(side="right", padx=8)
         self.export_help = ttk.Label(self.content, text="", wraplength=850)
         self.export_help.pack(side="bottom", anchor="w", pady=(8, 0))
@@ -492,6 +528,7 @@ class ExportDialog(Dialog):
                 "",
                 "end",
                 iid=str(b["id"]),
+                tags=("ready" if a else "attention",),
                 values=(
                     b["display_name"],
                     b["membership_id"] or "",
