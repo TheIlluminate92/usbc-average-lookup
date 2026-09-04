@@ -9,7 +9,9 @@ when needed, then choose the stored average to export.
 **[Download the latest Windows release](https://github.com/TheIlluminate92/usbc-average-lookup/releases/latest)**
 
 1. Download `Average-Assistant-<version>-Setup.exe` from the release's **Assets**.
-2. Run Setup. It installs for your Windows account and offers a desktop shortcut.
+2. Run Setup. Choose whether to install just for you or for everyone, then choose
+   the destination folder. You can browse back to `C:\` or select another drive.
+   Setup offers an optional desktop shortcut.
 3. Open **Average Assistant** from the Start menu. No Python installation is needed.
 4. Add or import bowlers, then sign in to BOWL.com when you want to refresh data.
 
@@ -22,8 +24,9 @@ the app before updating if you want a separate copy.
 
 **Uninstalling:** remove Average Assistant from Windows Settings → Apps. This
 removes the installed application and shortcuts but keeps your saved bowler database.
-The application installs in `%LOCALAPPDATA%\Programs\Average Assistant`; your
-database stays in the separate data folder documented below.
+The default is your account's Programs folder for a personal installation or
+Program Files for an all-users installation. Your database stays in the separate
+data folder documented below regardless of the application destination.
 
 **Portable option:** download `Average-Assistant-<version>-Windows.zip`, extract
 the entire ZIP, and run `USBC-Average-Lookup.exe`. Keep `_internal` beside the EXE.
