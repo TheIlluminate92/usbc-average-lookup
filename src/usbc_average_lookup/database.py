@@ -199,6 +199,8 @@ class BowlerDatabase:
                         continue
                 if row:
                     reused.append(row["id"])
+                    if key:
+                        db.execute("INSERT OR IGNORE INTO aliases VALUES (?,?)", (row["id"], key))
                     continue
                 display = " ".join(bowler.name.split()) or membership_id
                 parts = bowler.name.split()
@@ -218,6 +220,18 @@ class BowlerDatabase:
                 added.append(cursor.lastrowid)
                 db.execute("INSERT INTO aliases VALUES (?,?)", (cursor.lastrowid, key))
         return ImportResult(tuple(added), tuple(reused), tuple(conflicts))
+
+    def find_name_matches(self, name: str) -> list[dict]:
+        """Use the same exact saved-name/alias matching as import duplicate detection."""
+        with self.connect() as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT DISTINCT b.* FROM bowlers b LEFT JOIN aliases a ON a.bowler_id=b.id "
+                    "WHERE b.name_key=? OR a.name_key=? ORDER BY b.id",
+                    (name_key(name), name_key(name)),
+                )
+            ]
 
     def delete_bowlers(self, bowler_ids: Iterable[int]) -> int:
         """Remove selected local records and their dependent data in one transaction."""
@@ -276,14 +290,27 @@ class BowlerDatabase:
             if other:
                 raise ValueError("That USBC ID is already saved; use the existing bowler")
             display = " ".join(name.split()) or membership_id
+            parts = name.split()
+            if display != row["display_name"] or not row["refreshed_at"]:
+                first, middle, last = (
+                    parts[0] if parts else "",
+                    parts[1][:1] if len(parts) > 2 else "",
+                    parts[-1] if len(parts) > 1 else "",
+                )
+            else:
+                first, middle, last = row["first_name"], row["middle_initial"], row["last_name"]
             db.execute(
                 "UPDATE bowlers SET display_name=?,name_key=?,membership_id=?, "
+                "first_name=?,middle_initial=?,last_name=?, "
                 "search_state=?,search_zip=?,candidates_json='[]',"
                 "status='Not refreshed',note='' WHERE id=?",
                 (
                     display,
                     name_key(display),
                     membership_id or None,
+                    first,
+                    middle,
+                    last,
                     search_state,
                     search_zip,
                     bowler_id,
@@ -496,9 +523,18 @@ class BowlerDatabase:
                 (key, value),
             )
 
+    def validate_destination(self, destination: Path) -> None:
+        target = destination.resolve()
+        for protected in (self.path, Path(str(self.path) + "-wal"), Path(str(self.path) + "-shm")):
+            if target == protected.resolve() or (
+                target.exists() and protected.exists() and target.samefile(protected)
+            ):
+                raise ValueError(
+                    "Choose a separate file; the live bowler database cannot be overwritten"
+                )
+
     def backup(self, destination: Path) -> None:
-        if destination.resolve() == self.path.resolve():
-            raise ValueError("Choose a separate backup file")
+        self.validate_destination(destination)
         with self.connect() as source:
             target = sqlite3.connect(destination)
             try:

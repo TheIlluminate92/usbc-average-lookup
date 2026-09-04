@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "usbc-average-lookup"
-version = "0.4.2"
+version = "0.4.3"
 description = "Permanent BOWL.com bowler database and BTM26+ average exports"
 readme = "README.md"
 requires-python = ">=3.11"
