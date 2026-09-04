@@ -1,5 +1,8 @@
 # Architecture
 
+> Historical 0.3 design. For the current persistent database app, see
+> [Database design](database-design.md) and the [README](../README.md).
+
 The application is intentionally split so BOWL.com-specific details do not leak
 through the GUI or export logic.
 

@@ -16,7 +16,8 @@ never exposed to application code.
 
 ## Reporting
 
-Keep this repository private during discovery. Report security concerns to the
-repository owner without including live credentials or unnecessary personal
-data in an issue.
-
+This repository and its issues are public. Report security concerns privately
+to the repository owner; do not disclose live credentials, personal data, or
+exploitable vulnerability details in a public issue. If a private contact
+channel has not been established, ask the owner for one without posting the
+sensitive details.

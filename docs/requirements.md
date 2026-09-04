@@ -1,5 +1,8 @@
 # Product requirements
 
+> Historical 0.3 requirements. Current behavior and supported exports are
+> documented in the [README](../README.md) and [Database design](database-design.md).
+
 ## Goal
 
 Give a league operator a small Windows application that converts a roster of

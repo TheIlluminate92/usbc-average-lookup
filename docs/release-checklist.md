@@ -29,14 +29,14 @@ for normal users.
 ## Roster workload
 
 - Import and process a 1,000-bowler test roster.
-- Clear the results, load another roster, and repeat the lookup.
-- Confirm memory settles after clearing and that the interface remains usable.
+- Import a second roster and verify existing USBC IDs reuse saved records.
+- Confirm search, selection, and export remain responsive with the saved directory.
 - Confirm cancelling, closing, and retrying do not leave worker or WebView2
   processes running.
 
 ## Privacy and shutdown
 
-- Sign out and verify that single lookup and roster lookup are disabled.
+- Sign out and verify refresh is disabled while saved records and exports remain usable.
 - Close and reopen the app and verify it starts signed out.
 - Confirm no bearer token, password, cookie, or browser-storage file appears in
   the application folder, exports, logs, or temporary test files.
