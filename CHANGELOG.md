@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.5 — Selectable install folder
+
+- Added the normal destination-folder page with full drive and folder browsing.
+- Added a choice between personal and all-users installation.
+- Kept the selected application location separate from the saved bowler database.
+- Extended Windows CI to install and uninstall from a custom folder directly on `C:\`.
+
 ## 0.4.4 — Windows installer
 
 - Added a single Setup EXE with a Start menu shortcut and optional desktop shortcut.
