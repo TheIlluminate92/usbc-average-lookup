@@ -4,15 +4,24 @@ A standalone Windows bowler database for BOWL.com member data, average history,
 and BTM26+ exports. Bowlers stay saved between runs; import new people, refresh
 when needed, then choose the stored average to export.
 
-## Credits
+## Download and start
 
-Created by **Erik Boettcher (TheIlluminate92)**, with development assistance from
-OpenAI Codex. Open **About** in the app for the version, project link, and credits.
+**[Download the latest Windows release](https://github.com/TheIlluminate92/usbc-average-lookup/releases/latest)**
 
-Member information and averages come from BOWL.com / USBC. BTM is Bowling
-Tournament Manager by CDE Software. Average Assistant uses Python, Tcl/Tk, SQLite,
-openpyxl, pywebview, Microsoft Edge WebView2, and PyInstaller. Thanks to their
-maintainers and contributors, and to the bowlers who help test this app.
+1. Download `Average-Assistant-<version>-Windows.zip` from the release's **Assets**.
+2. Extract the entire ZIP to a folder. Keep `_internal` beside the application.
+3. Run `USBC-Average-Lookup.exe`. No Python installation is needed.
+4. Add or import bowlers, then sign in to BOWL.com when you want to refresh data.
+
+Windows and the Microsoft Edge WebView2 Runtime are required. A BOWL.com account
+is needed for authenticated refreshes; saved records and exports work offline.
+
+**Updating:** close the app and extract the new release into a new folder.
+Your saved bowler database is reused automatically. Use **Back up** in the app
+before updating if you want a separate copy.
+
+See the [changelog](CHANGELOG.md) for changes. Older **Bowling Manager** alpha
+releases are historical league-manager builds; use **Average Assistant** for this app.
 
 ## Everyday workflow
 
@@ -101,10 +110,28 @@ See [database design](docs/database-design.md) for schema and behavior details.
 ## Scope
 
 This app does not contain league registration, scheduling, scoring, or standings.
-That development is preserved separately in
-[usbc-league-manager](https://github.com/TheIlluminate92/usbc-league-manager).
+That development is preserved separately in a private league-manager repository.
 
 Harvesting currently covers the verified member, composite-average, and
 league-activity endpoints. `relatedaverages` still needs a sanitized request and
 response sample before integration. Older 0.3 design documents are retained for
 historical context; the database design above describes the current app.
+
+## Help and bug reports
+
+[Open an issue](https://github.com/TheIlluminate92/usbc-average-lookup/issues/new/choose)
+with your app version (shown in **About**), Windows version, what you did, and
+what happened. Include a small fictional example when an import or export fails.
+Remove names, member IDs, and other personal details from screenshots. Do not
+upload your bowler database, account credentials, or browser captures. See
+[SECURITY.md](SECURITY.md) for handling sensitive reports.
+
+## Credits
+
+Created by **Erik Boettcher (TheIlluminate92)**, with development assistance from
+OpenAI Codex. Open **About** in the app for the version, project link, and credits.
+
+Member information and averages come from BOWL.com / USBC. BTM is Bowling
+Tournament Manager by CDE Software. Average Assistant uses Python, Tcl/Tk, SQLite,
+openpyxl, pywebview, Microsoft Edge WebView2, and PyInstaller. Thanks to their
+maintainers and contributors, and to the bowlers who help test this app.
