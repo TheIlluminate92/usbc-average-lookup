@@ -11,6 +11,7 @@ from queue import Empty, Queue
 from threading import Event, Thread
 from tkinter import filedialog, messagebox, ttk
 
+from usbc_average_lookup.about import AboutDialog
 from usbc_average_lookup.database import BowlerDatabase
 from usbc_average_lookup.services.auth import (
     AuthSession,
@@ -71,6 +72,9 @@ class AverageLookupApp(tk.Tk):
             header, text="Sign in", command=self.toggle_sign_in, style="Primary.TButton"
         )
         self.sign_button.pack(side="right")
+        ttk.Button(header, text="About", command=lambda: AboutDialog(self)).pack(
+            side="right", padx=(0, 8)
+        )
         self.auth_label = ttk.Label(header, text="BOWL.com • Not signed in", style="Header.TLabel")
         self.auth_label.pack(side="right", padx=14)
         actions = ttk.Frame(page)

@@ -4,6 +4,16 @@ A standalone Windows bowler database for BOWL.com member data, average history,
 and BTM26+ exports. Bowlers stay saved between runs; import new people, refresh
 when needed, then choose the stored average to export.
 
+## Credits
+
+Created by **Erik Boettcher (TheIlluminate92)**, with development assistance from
+OpenAI Codex. Open **About** in the app for the version, project link, and credits.
+
+Member information and averages come from BOWL.com / USBC. BTM is Bowling
+Tournament Manager by CDE Software. Average Assistant uses Python, Tcl/Tk, SQLite,
+openpyxl, pywebview, Microsoft Edge WebView2, and PyInstaller. Thanks to their
+maintainers and contributors, and to the bowlers who help test this app.
+
 ## Everyday workflow
 
 1. Open the app to your saved bowler directory.
