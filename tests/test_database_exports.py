@@ -12,6 +12,7 @@ from usbc_average_lookup.services.database_exports import (
     export_database,
     export_preview,
 )
+from usbc_average_lookup.services.input_parser import parse_input_file
 
 
 @pytest.fixture
@@ -120,3 +121,12 @@ def test_csv_quotes_names_and_neutralizes_formulas(stored, tmp_path):
         row = list(csv.reader(handle))[1]
     assert row[0] == "'=DANGEROUS()"
     assert row[2] == "Bowler, Jr."
+
+
+def test_json_round_trip_reuses_the_same_bowler(stored, tmp_path):
+    db, bowler_id = stored
+    target = tmp_path / "bowlers.json"
+    export_database(target, export_preview(db, [bowler_id], AverageRule()), format="JSON")
+    imported = db.import_bowlers(parse_input_file(target))
+    assert imported.added == ()
+    assert imported.reused == (bowler_id,)

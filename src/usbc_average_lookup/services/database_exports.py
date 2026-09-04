@@ -200,7 +200,19 @@ def export_database(
             workbook.save(target)
             workbook.close()
         elif format == "JSON":
-            target.write_text(json.dumps(selected, ensure_ascii=False, indent=2), encoding="utf-8")
+            document = {
+                "schemaVersion": 3,
+                "bowlers": [
+                    {
+                        "name": item["bowler"]["display_name"],
+                        "membershipId": item["bowler"]["membership_id"],
+                        "member": item["bowler"],
+                        "selectedAverage": item["average"],
+                    }
+                    for item in selected
+                ],
+            }
+            target.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
         else:
             with target.open("w", encoding="utf-8-sig", newline="") as handle:
                 writer = csv.writer(handle)
