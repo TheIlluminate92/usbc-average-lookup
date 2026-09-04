@@ -51,7 +51,7 @@ def app(desktop, tmp_path):
     window.events = Queue()
     window.cancel = Event()
     window.signin_cancel = Event()
-    window.busy = window.signing_in = window.closing = False
+    window.busy = window.signing_in = window.signing_out = window.closing = False
     window.query.set("")
     window.filter.set("All")
     window.sort_column, window.sort_reverse = "name", False
@@ -265,3 +265,79 @@ def test_resolve_filter_keeps_candidate_index_and_search_options(app):
     saved = app.database.get(bowler_id)
     assert saved["search_state"] == "TX"
     assert saved["membership_id"] is None
+
+
+def test_export_cannot_overwrite_live_database(app, monkeypatch):
+    from usbc_average_lookup import ui
+
+    bowler_id = populate(app)
+    dialog = ExportDialog(app, app.database, {"All": [bowler_id]})
+    errors = []
+    monkeypatch.setattr(ui.filedialog, "asksaveasfilename", lambda **kwargs: str(app.database.path))
+    monkeypatch.setattr(ui.messagebox, "showerror", lambda *args, **kwargs: errors.append(args))
+    dialog.save()
+    assert errors and "database" in errors[0][1]
+    assert app.database.get(bowler_id)["membership_id"] == "1234-1"
+    assert app.database.averages(bowler_id)[0]["average"] == 180
+    dialog.destroy()
+
+
+def test_alias_reimport_offers_saved_person(app, monkeypatch):
+    from usbc_average_lookup import database_app
+
+    bowler_id = app.database.import_bowlers([InputBowler("Alex Oldname")]).added[0]
+    app.database.save_refresh(bowler_id, Member("1", "1234", "1", "Alex", "Newname", True), [], {})
+    offered = []
+
+    class Choice:
+        def __init__(self, parent, title, prompt, choices):
+            offered.extend(choices)
+
+        def show(self):
+            return offered[0]
+
+    monkeypatch.setattr(database_app, "ChoiceDialog", Choice)
+    app.import_rows([InputBowler("Alex Oldname")])
+    assert offered[0].startswith("Reuse Alex Newname")
+    assert len(app.database.list_bowlers()) == 1
+
+
+def test_new_signin_waits_for_pending_signout(app, monkeypatch):
+    from usbc_average_lookup import database_app
+
+    pending = []
+
+    class DeferredThread:
+        def __init__(self, target, daemon):
+            self.target = target
+
+        def start(self):
+            pending.append(self.target)
+
+    monkeypatch.setattr(database_app, "Thread", DeferredThread)
+    app.auth_session = AuthSession(AuthState.SIGNED_IN, bearer_token="old")
+    app.toggle_sign_in()
+    app.toggle_sign_in()
+    assert len(pending) == 1
+    assert app.signing_out and "disabled" in app.sign_button.state()
+    pending[0]()
+    app.poll_events()
+    app.toggle_sign_in()
+    assert len(pending) == 2 and app.signing_in
+
+
+def test_old_refresh_expiry_cannot_expire_new_session(app):
+    from usbc_average_lookup.services.refresh import RefreshEvent
+
+    bowler_id = populate(app)
+    app.auth_session = AuthSession(AuthState.SIGNED_IN, bearer_token="new")
+    app.events.put(
+        (
+            "progress",
+            RefreshEvent(bowler_id, "Sign in again", completed=1, total=1),
+            app.auth_generation - 1,
+        )
+    )
+    app.poll_events()
+    assert app.auth_session.state == AuthState.SIGNED_IN
+    assert app.auth_session.bearer_token == "new"

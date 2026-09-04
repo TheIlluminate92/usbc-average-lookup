@@ -6,14 +6,18 @@ import json
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
+from zipfile import BadZipFile
 
 from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 from usbc_average_lookup.models import InputBowler
 
 _LINE_PATTERN = re.compile(r"^\s*(?P<name>.+?)\s*\(\s*[*_]*(?P<id>\d{4}-\d+)[*_]*\s*\)\s*$")
 _NAME_HEADERS = {"name", "bowler", "bowler name", "bowlername", "fullname", "full name"}
 _FIRST_HEADERS = {"first", "first name", "firstname", "given name"}
+_MIDDLE_HEADERS = {"middle", "middle name", "middlename", "middle initial", "middleinitial", "mi"}
 _LAST_HEADERS = {"last", "last name", "lastname", "surname", "family name"}
 _ID_HEADERS = {
     "id",
@@ -42,7 +46,7 @@ def parse_input_file(path: Path, sheet_name: str | None = None) -> list[InputBow
 def workbook_sheet_names(path: Path) -> list[str]:
     """Return non-empty worksheet names in workbook order."""
 
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook = _load_excel(path)
     try:
         return [
             sheet.title
@@ -51,6 +55,8 @@ def workbook_sheet_names(path: Path) -> list[str]:
                 any(_cell_text(value) for value in row) for row in sheet.iter_rows(values_only=True)
             )
         ]
+    except (BadZipFile, ParseError, KeyError) as error:
+        raise ValueError("The Excel workbook is damaged or incomplete") from error
     finally:
         workbook.close()
 
@@ -64,9 +70,15 @@ def parse_input_text(text: str) -> list[InputBowler]:
 
     combined = "\n".join(cleaned)
     if not any(delimiter in combined for delimiter in (",", "\t", "|", ";")):
+        if _normalize_header(cleaned[0]) in (
+            _NAME_HEADERS | _FIRST_HEADERS | _LAST_HEADERS | _ID_HEADERS
+        ):
+            return _rows_to_bowlers([[line] for line in cleaned])
         line_matches = [_LINE_PATTERN.match(line) for line in cleaned]
         return [
-            InputBowler(
+            InputBowler("", line)
+            if re.fullmatch(r"[0-9]+-[0-9]+", line)
+            else InputBowler(
                 match.group("name").strip() if match else line,
                 match.group("id") if match else "",
             )
@@ -107,8 +119,9 @@ def parse_input_json(text: str) -> list[InputBowler]:
         name = _first_value(normalized, _NAME_HEADERS)
         if not name:
             first = _first_value(normalized, _FIRST_HEADERS)
+            middle = _first_value(normalized, _MIDDLE_HEADERS)
             last = _first_value(normalized, _LAST_HEADERS)
-            name = " ".join(part for part in (first, last) if part).strip()
+            name = " ".join(part for part in (first, middle, last) if part).strip()
         membership_id = _clean_membership_id(_first_value(normalized, _ID_HEADERS))
         if not name and not membership_id:
             raise ValueError(f"JSON bowler {position} is missing a name or USBC ID")
@@ -116,8 +129,15 @@ def parse_input_json(text: str) -> list[InputBowler]:
     return bowlers
 
 
+def _load_excel(path: Path):
+    try:
+        return load_workbook(path, read_only=True, data_only=True)
+    except (BadZipFile, InvalidFileException, ParseError, KeyError) as error:
+        raise ValueError("The Excel workbook is damaged or is not a valid .xlsx file") from error
+
+
 def _parse_excel(path: Path, sheet_name: str | None) -> list[InputBowler]:
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook = _load_excel(path)
     try:
         if sheet_name:
             if sheet_name not in workbook.sheetnames:
@@ -129,6 +149,8 @@ def _parse_excel(path: Path, sheet_name: str | None) -> list[InputBowler]:
             rows = [list(row) for row in sheet.iter_rows(values_only=True)]
             if any(any(_cell_text(value) for value in row) for row in rows):
                 return _rows_to_bowlers(rows)
+    except (BadZipFile, ParseError, KeyError) as error:
+        raise ValueError("The Excel workbook is damaged or incomplete") from error
     finally:
         workbook.close()
     return []
@@ -142,6 +164,7 @@ def _rows_to_bowlers(rows: Sequence[Sequence[object]]) -> list[InputBowler]:
     header = [_normalize_header(_cell_text(cell)) for cell in nonempty[0]]
     name_index = _find_header(header, _NAME_HEADERS)
     first_index = _find_header(header, _FIRST_HEADERS)
+    middle_index = _find_header(header, _MIDDLE_HEADERS)
     last_index = _find_header(header, _LAST_HEADERS)
     id_index = _find_header(header, _ID_HEADERS)
     has_header = any(index is not None for index in (name_index, first_index, last_index, id_index))
@@ -153,7 +176,9 @@ def _rows_to_bowlers(rows: Sequence[Sequence[object]]) -> list[InputBowler]:
             name = _at(row, name_index)
         elif first_index is not None or last_index is not None:
             name = " ".join(
-                part for part in (_at(row, first_index), _at(row, last_index)) if part
+                part
+                for part in (_at(row, first_index), _at(row, middle_index), _at(row, last_index))
+                if part
             ).strip()
         elif not has_header:
             name = _at(row, 0)

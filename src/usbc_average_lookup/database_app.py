@@ -49,6 +49,7 @@ class AverageLookupApp(tk.Tk):
         self.signin_cancel = Event()
         self.busy = False
         self.signing_in = False
+        self.signing_out = False
         self.closing = False
         self.auth_generation = 0
         self._style()
@@ -229,9 +230,17 @@ class AverageLookupApp(tk.Tk):
         )
         self.cancel_button.configure(state="normal" if self.busy else "disabled")
         self.sign_button.configure(
-            text="Cancel sign-in" if self.signing_in else "Sign out" if signed_in else "Sign in"
+            text="Signing out…"
+            if self.signing_out
+            else "Cancel sign-in"
+            if self.signing_in
+            else "Sign out"
+            if signed_in
+            else "Sign in"
         )
-        self.sign_button.configure(state="disabled" if self.closing else "normal")
+        self.sign_button.configure(
+            state="disabled" if self.closing or self.signing_out else "normal"
+        )
         self.auth_label.configure(text=f"BOWL.com • {self.auth_session.state.value}")
 
     def add_bowler(self):
@@ -244,7 +253,7 @@ class AverageLookupApp(tk.Tk):
             result = self.database.import_bowlers(inputs)
             added, reused = list(result.added), list(result.reused)
             for bowler in result.conflicts:
-                matches = self.database.list_bowlers(bowler.name)
+                matches = self.database.find_name_matches(bowler.name)
                 options = {
                     f"Reuse {row['display_name']} ({row['membership_id'] or 'unresolved'}) "
                     f"[#{row['id']}]": row["id"]
@@ -320,12 +329,14 @@ class AverageLookupApp(tk.Tk):
             self.status.configure(text=f"Deleted {len(ids)} saved bowler(s).")
 
     def toggle_sign_in(self):
+        if self.closing or self.signing_out:
+            return
         if self.signing_in or self.auth_session.state == AuthState.SIGNED_IN:
             self.signin_cancel.set()
             self.auth_generation += 1
             self.cancel.set()
             self.auth_session = AuthSession(AuthState.SIGNED_OUT)
-            Thread(target=self.authenticator.sign_out, daemon=True).start()
+            self.start_sign_out()
             self.status.configure(text="Sign-in cancelled." if self.signing_in else "Signed out.")
             self.update_actions()
             return
@@ -355,6 +366,19 @@ class AverageLookupApp(tk.Tk):
 
         Thread(target=worker, daemon=True).start()
 
+    def start_sign_out(self):
+        if self.signing_out:
+            return
+        self.signing_out = True
+
+        def worker():
+            try:
+                self.authenticator.sign_out()
+            finally:
+                self.events.put(("signout_done",))
+
+        Thread(target=worker, daemon=True).start()
+
     def start_refresh(self, scope, *, bowler_ids=None):
         ids = self.scopes()[scope] if bowler_ids is None else bowler_ids
         if self.busy or not ids or self.auth_session.state != AuthState.SIGNED_IN:
@@ -362,6 +386,7 @@ class AverageLookupApp(tk.Tk):
         self.busy = True
         self.cancel = Event()
         token = self.auth_session.bearer_token
+        auth_generation = self.auth_generation
         self.progress.configure(maximum=len(ids), value=0)
         self.status.configure(text=f"Refreshing {len(ids)} bowlers…")
         self.update_actions()
@@ -373,7 +398,7 @@ class AverageLookupApp(tk.Tk):
                     lambda: HttpBowlApi(lambda: token, cancel=self.cancel),
                     ids,
                     cancel=self.cancel,
-                    progress=lambda event: self.events.put(("progress", event)),
+                    progress=lambda event: self.events.put(("progress", event, auth_generation)),
                 )
                 self.events.put(("refresh_done", results))
             except Exception:
@@ -390,7 +415,9 @@ class AverageLookupApp(tk.Tk):
         try:
             while True:
                 kind, *values = self.events.get_nowait()
-                if kind.startswith("auth"):
+                if kind == "signout_done":
+                    self.signing_out = False
+                elif kind.startswith("auth"):
                     generation, value = values
                     if kind == "auth_done":
                         self.signing_in = False
@@ -409,7 +436,7 @@ class AverageLookupApp(tk.Tk):
                     self.status.configure(
                         text=f"{event.completed} / {event.total} • {event.status}"
                     )
-                    if event.status == "Sign in again":
+                    if event.status == "Sign in again" and values[1] == self.auth_generation:
                         self.auth_session = AuthSession(AuthState.EXPIRED)
                     changed = True
                 elif kind == "refresh_done":
@@ -430,7 +457,7 @@ class AverageLookupApp(tk.Tk):
         if changed:
             self.render()
         self.update_actions()
-        if self.closing and not self.busy and not self.signing_in:
+        if self.closing and not self.busy and not self.signing_in and not self.signing_out:
             self.destroy()
             return
         self.after(100, self.poll_events)
@@ -473,7 +500,7 @@ class AverageLookupApp(tk.Tk):
         self.auth_generation += 1
         self.auth_session = AuthSession(AuthState.SIGNED_OUT)
         self.cancel.set()
-        Thread(target=self.authenticator.sign_out, daemon=True).start()
+        self.start_sign_out()
         self.status.configure(text="Closing… finishing current requests safely.")
         self.update_actions()
 

@@ -597,11 +597,12 @@ class ExportDialog(Dialog):
         if not filename:
             return
         try:
+            self.database.validate_destination(Path(filename))
             count = export_database(
                 Path(filename), self.preview, format=format, missing=self.variables["missing"].get()
             )
             self.database.set_setting("export_directory", str(Path(filename).parent))
-        except (ValueError, OSError) as error:
+        except (ValueError, OSError, sqlite3.Error) as error:
             messagebox.showerror("Could not save export", str(error), parent=self)
             return
         self.choice = (count, filename)
