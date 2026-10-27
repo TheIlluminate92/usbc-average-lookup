@@ -1,5 +1,20 @@
 # Average Assistant
 
+<!-- historian-overview:start -->
+## Project overview
+
+| Field | Project |
+|---|---|
+| Purpose | Windows bowler database, average lookup and reviewed exports. |
+| Status | Maintained desktop application; live provider/import acceptance remains separate. |
+| Owner | Repository: TheIlluminate92. Worker: Unassigned; project worker not recorded. |
+| Continue here | [Current work / guidance](docs/database-design.md) · [Checks / context](CHANGELOG.md) |
+| Related projects | Independent scope; no related repository is designated here. |
+
+Documentation reviewed October 27, 2026. Existing evidence dates below still apply;
+this overview is not a new release, deployment or live-system verification.
+<!-- historian-overview:end -->
+
 A standalone Windows bowler database for BOWL.com member data, average history,
 and BTM26+ exports. Bowlers stay saved between runs; import new people, refresh
 when needed, then choose the stored average to export.
