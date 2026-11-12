@@ -1,19 +1,41 @@
 # Average Assistant
 
-<!-- historian-overview:start -->
-## Project overview
+<!-- reader-guide:start -->
+## Meet the project
 
-| Field | Project |
+A Windows application for keeping bowler records, refreshing available average history and exporting selected averages for tournament work. Saved records remain useful offline between provider refreshes.
+
+### What it is built with
+
+Python 3.11+, Tcl/Tk desktop UI, SQLite data storage and Microsoft Edge WebView2 for sign-in. The Windows installer bundles Python; source development has separate prerequisites.
+
+### Find your way around
+
+| Start here | What you will find |
 |---|---|
-| Purpose | Windows bowler database, average lookup and reviewed exports. |
-| Status | Maintained desktop application; live provider/import acceptance remains separate. |
-| Owner | Repository: TheIlluminate92. Worker: Unassigned; project worker not recorded. |
-| Continue here | [Current work / guidance](docs/database-design.md) · [Checks / context](CHANGELOG.md) |
-| Related projects | Independent scope; no related repository is designated here. |
+| [src/usbc_average_lookup/__main__.py](src/usbc_average_lookup/__main__.py) | Application entry point. |
+| [src/usbc_average_lookup/database_app.py](src/usbc_average_lookup/database_app.py) | Database-oriented desktop workflow. |
+| [src/usbc_average_lookup/database.py](src/usbc_average_lookup/database.py) | Stored records and schema. |
+| [src/usbc_average_lookup/services/average_selector.py](src/usbc_average_lookup/services/average_selector.py) | Average-selection rules. |
+| [docs/database-design.md](docs/database-design.md) | Canonical data and recovery model. |
 
-Documentation reviewed October 27, 2026. Existing evidence dates below still apply;
-this overview is not a new release, deployment or live-system verification.
-<!-- historian-overview:end -->
+### When something goes wrong
+
+Start by reading the relevant source or guide below. These are investigation
+starting points, not instructions to change a live system.
+
+| Symptom or question | First place to look |
+|---|---|
+| Record or average looks wrong | Check stored identity/history and the selection rules before refreshing or replacing data. |
+| Sign-in or refresh fails | Read SECURITY and provider-adapter behavior; preserve saved data and respect authentication/rate-limit failures. |
+| Export disagrees with the screen | Compare the chosen stored average and export mapping using fictional test records; live tournament import acceptance is separate. |
+
+The repository owner maintains this project; a dedicated technical worker is not recorded.
+
+Reader guide reviewed November 12, 2026 against repository source and available
+owner records. Existing test, deployment and recovery evidence keeps its original
+date; this prose review did not run the application or test a restore.
+<!-- reader-guide:end -->
 
 A standalone Windows bowler database for BOWL.com member data, average history,
 and BTM26+ exports. Bowlers stay saved between runs; import new people, refresh
