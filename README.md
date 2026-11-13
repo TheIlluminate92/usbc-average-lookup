@@ -184,3 +184,8 @@ Member information and averages come from BOWL.com / USBC. BTM is Bowling
 Tournament Manager by CDE Software. Average Assistant uses Python, Tcl/Tk, SQLite,
 openpyxl, pywebview, Microsoft Edge WebView2, and PyInstaller. Thanks to their
 maintainers and contributors, and to the bowlers who help test this app.
+
+
+## License and redistribution
+
+[MIT License](LICENSE): reuse and modification are allowed with the notice retained. Provided as is, without warranty. See [licensing and packaging scope](LICENSING.md) for third-party terms and release limitations.

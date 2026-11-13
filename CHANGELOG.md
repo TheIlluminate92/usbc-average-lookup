@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — licensing maintenance (2026-11-13)
+
+Windows packaging copies the project license, matching Python license and available build-environment dependency notices into the application directory before ZIP and installer creation. Existing release assets remain unchanged. See [LICENSING.md](LICENSING.md). No runtime behavior or existing release asset changed.
+
 ## 0.4.5 — Selectable install folder
 
 - Added the normal destination-folder page with full drive and folder browsing.

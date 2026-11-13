@@ -7,6 +7,7 @@ name = "usbc-average-lookup"
 version = "0.4.5"
 description = "Permanent BOWL.com bowler database and BTM26+ average exports"
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.11"
 authors = [{ name = "USBC Average Lookup contributors" }]
 dependencies = [

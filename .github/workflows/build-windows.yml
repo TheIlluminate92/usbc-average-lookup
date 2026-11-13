@@ -55,6 +55,8 @@ jobs:
           --name USBC-Average-Lookup
           --add-binary "helper-dist/Average-Assistant-SignIn.exe;."
           src/usbc_average_lookup/__main__.py
+      - name: Collect redistribution notices
+        run: python collect_license_notices.py dist/USBC-Average-Lookup
       - name: Verify packaged sign-in helper starts
         shell: pwsh
         run: |
